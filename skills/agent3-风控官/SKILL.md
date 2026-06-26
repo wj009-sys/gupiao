@@ -206,9 +206,10 @@ python -X utf8 scripts/agent3-风控/risk_check.py --env-score 70
 > - 如果无异常（全部 🟢），只发摘要即可
 >
 > **微信推送（可选）：**
-> 3. 调用 `wechat_send_text`，用纯文本发到微信：
+> 3. 调用 `wechat_agent_notify`，用机器人3（风控官）发送：
 > ```
-> content: "【风控报告 YYYY-MM-DD】
+> agent_id: 3
+> content: "风控报告 YYYY-MM-DD
 > 大盘风险等级：高/中/低
 > 止损触发：N 个
 > 仓位超限：N 个

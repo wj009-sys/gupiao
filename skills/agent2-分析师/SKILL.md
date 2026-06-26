@@ -209,9 +209,10 @@ python -X utf8 scripts/agent2-技术分析/analyze.py [YYYYMMDD]
 > 2. 调用 `telegram_send_file` 附上完整报告文件（`reports/日报/分析/分析报告_YYYY-MM-DD.md`）
 >
 > **微信推送（可选）：**
-> 3. 调用 `wechat_send_text`，用纯文本发到微信：
+> 3. 调用 `wechat_agent_notify`，用机器人2（分析师）发送：
 > ```
-> content: "【技术分析 YYYY-MM-DD】
+> agent_id: 2
+> content: "技术分析 YYYY-MM-DD
 > 大盘评分：xx/100
 > 强势板块：XX、XX、XX
 > 风险信号：XX、XX

@@ -268,9 +268,10 @@ knowledge/复盘记录/复盘_YYYYMMDD.json
 > 3. 如果有策略更新，附上 `knowledge/策略/` 中新增/修改的文件
 >
 > **微信推送（可选）：**
-> 4. 调用 `wechat_send_text`，用纯文本发到微信：
+> 4. 调用 `wechat_agent_notify`，用机器人4（复盘师）发送：
 > ```
-> content: "【复盘报告 YYYY-MM-DD】
+> agent_id: 4
+> content: "复盘报告 YYYY-MM-DD
 > 综合准确率：xx%
 > 看涨准确率：xx%
 > 看跌准确率：xx%

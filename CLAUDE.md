@@ -138,25 +138,36 @@ skills/            - 自定义 Skills
 **MCP 服务器**：`.claude/mcp-servers/wechat/server.js`（自动发现）
 
 **提供工具**：
-- `wechat_send_markdown` — 发送 Markdown 格式消息
-- `wechat_send_text` — 发送纯文本消息
+- `wechat_send_text` — 发送纯文本（可指定 `agent_id` 选择机器人）
+- `wechat_send_markdown` — 发送 Markdown（可指定 `agent_id`）
+- `wechat_agent_notify` — 按 Agent 编号发送（自动带角色名称前缀）
 
-**支持三种推送方式（任选其一，企业微信推荐）：**
+**支持4个独立机器人！** 每个 Agent 使用自己专属的机器人推送：
 
-| 方式 | 配置字段 | 说明 | 限制 |
-|------|---------|------|------|
-| 🏢 企业微信群机器人 | `WECHAT_WEBHOOK_URL` | 建群→添加机器人→获取 Webhook | 免费无限制 ✅ |
-| 📨 Server酱 | `WECHAT_SERVERCHAN_KEY` | sct.ftqq.com 扫码获取 SendKey | 免费5条/天 |
-| 📨 PushPlus | `WECHAT_PUSHPLUS_TOKEN` | pushplus.plus 扫码获取 Token | 免费200条/天 |
+| 机器人 | 字段 | Agent | 机器人名称建议 |
+|-------|------|-------|--------------|
+| 🤖 1号 | `WECHAT_WEBHOOK_1` | 🕵️ 情报员 | "情报员" |
+| 🤖 2号 | `WECHAT_WEBHOOK_2` | 📊 分析师 | "分析师" |
+| 🤖 3号 | `WECHAT_WEBHOOK_3` | 🛡️ 风控官 | "风控官" |
+| 🤖 4号 | `WECHAT_WEBHOOK_4` | 🔄 复盘师 | "复盘师" |
+| 通用 | `WECHAT_WEBHOOK_URL` | 兼容旧配置 | — |
 
-**配置示例**（在 `.claude/settings.local.json` 的 `env` 中填写）：
+**配置方法**：
+
+1. 在企业微信中 **新建一个群**（或使用现有群）
+2. 群设置 → 群机器人 → **添加机器人**（可添加最多4个）
+3. 每个机器人设置不同的名称和头像（情报员/分析师/风控官/复盘师）
+4. 分别复制 Webhook URL，填入 `.claude/settings.local.json`：
+
 ```json
-// 三选一，优先级：企业微信 > Server酱 > PushPlus
-"WECHAT_WEBHOOK_URL": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",
-// 或
-"WECHAT_SERVERCHAN_KEY": "你的Server酱 SendKey",
-// 或
-"WECHAT_PUSHPLUS_TOKEN": "你的PushPlus Token"
+// 每个 Agent 各一个机器人（推荐）
+"WECHAT_WEBHOOK_1": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 情报员
+"WECHAT_WEBHOOK_2": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 分析师
+"WECHAT_WEBHOOK_3": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 风控官
+"WECHAT_WEBHOOK_4": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 复盘师
+
+// 或只配一个通用机器人（所有Agent共用）
+"WECHAT_WEBHOOK_URL": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
 ```
 
 ### 推送时机
