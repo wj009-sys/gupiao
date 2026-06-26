@@ -347,8 +347,8 @@ async function main() {
   if (!APP_ID || !APP_SECRET) {
     console.error(`[qqbot-keepalive] ❌ 错误：QQBOT_APP_ID 和 QQBOT_APP_SECRET 未配置`);
     console.error(`  请在 .claude/settings.local.json 中配置：`);
-    console.error(`    "QQBOT_APP_ID": "REDACTED"`);
-    console.error(`    "QQBOT_APP_SECRET": "REDACTED"`);
+    console.error(`    "QQBOT_APP_ID": "你的机器人AppID"`);
+    console.error(`    "QQBOT_APP_SECRET": "你的机器人AppSecret"`);
     process.exit(1);
   }
 
