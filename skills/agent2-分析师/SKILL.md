@@ -209,10 +209,13 @@ python -X utf8 scripts/agent2-技术分析/analyze.py [YYYYMMDD]
 > 2. 调用 `telegram_send_file` 附上完整报告文件（`reports/日报/分析/分析报告_YYYY-MM-DD.md`）
 >
 > **微信推送（可选）：**
-> 3. 调用 `wechat_send_markdown`，将同样的摘要发到微信：
+> 3. 调用 `wechat_send_text`，用纯文本发到微信：
 > ```
-> title: "📈 技术分析 — YYYY-MM-DD"
-> content: "📊 大盘评分：xx/100（xxx）\n🔥 强势板块：XX、XX、XX\n⚠️ 风险信号：XX、XX\n💡 操作建议：XX"
+> content: "【技术分析 YYYY-MM-DD】
+> 大盘评分：xx/100
+> 强势板块：XX、XX、XX
+> 风险信号：XX、XX
+> 操作建议：XX"
 > ```
 >
 > 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。

@@ -216,10 +216,14 @@ limit_list = pro.limit_list(trade_date='YYYYMMDD')
 > 2. 再调用 `telegram_send_file` 附上完整报告文件（路径：`reports/日报/情报/情报摘要_YYYY-MM-DD.md`）
 >
 > **微信推送（可选）：**
-> 3. 调用 `wechat_send_markdown`，将同样的摘要发到微信：
+> 3. 调用 `wechat_send_text`，将摘要用纯文本发到微信（避免 Markdown 兼容问题）：
 > ```
-> title: "📊 情报摘要 — YYYY-MM-DD"
-> content: "📈 大盘：上证±x% | 深证±x% | 创业板±x%\n💰 北向资金：净流入/出 xx亿\n📰 关键资讯：N条\n🏭 热点板块：XX、XX、XX\n\n⚠️ 风险提示：..."
+> content: "【情报摘要 YYYY-MM-DD】
+> 大盘：上证±x% | 深证±x% | 创业板±x%
+> 北向资金：净流入/出 xx亿
+> 关键资讯：N条
+> 热点板块：XX、XX、XX
+> 风险提示：..."
 > ```
 >
 > 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
