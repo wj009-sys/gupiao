@@ -56,8 +56,13 @@
 ## 目录结构
 
 ```
+.mcp.json            - MCP 服务器配置（claw 定时调度）
+.env.example         - 环境变量模板
+构想.md              - 项目初始构想文档
+投研团队设计方案.md   - 投研团队详细设计方案
 data/              - 数据文件（持仓、自选、规则配置）
-reports/           - 报告输出
+  ├── raw/          - 原始数据缓存（gitignored）
+reports/           - 报告输出（日报/周报/月报，日报文件已 gitignored）
   ├── 日报/情报/   - Agent1 情报摘要
   ├── 日报/分析/   - Agent2 分析报告
   ├── 日报/风控/   - Agent3 风控报告
@@ -77,8 +82,7 @@ scripts/           - Python 分析脚本
   │   ├── wechat/      - 企业微信通知推送
   │   ├── qq/          - QQ通知推送 (PushPlus + SMTP)
   │   └── qqbot/       - QQ机器人官方API (WebSocket)
-  ├── settings.json     - 项目 MCP 配置
-  ├── settings.local.json - 本地凭据（gitignored）
+  ├── settings.local.json - 本地凭据与Token（gitignored）
   └── scheduled_tasks.json - 定时任务存储
 knowledge/         - 知识库（Agent4 维护更新）
   ├── 策略/        - 选股/择时策略
