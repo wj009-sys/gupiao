@@ -70,6 +70,13 @@ scripts/           - Python 分析脚本
   ├── agent3-风控/
   ├── agent4-复盘/
   └── utils/       - 工具函数（Tushare客户端、技术指标库）
+.claude/           - Claude 配置
+  ├── mcp-servers/
+  │   ├── claw/        - 定时调度 MCP 服务器 (cron)
+  │   └── telegram/    - 通知推送 MCP 服务器 (Telegram)
+  ├── settings.json     - 项目 MCP 配置
+  ├── settings.local.json - 本地凭据（gitignored）
+  └── scheduled_tasks.json - 定时任务存储
 knowledge/         - 知识库（Agent4 维护更新）
   ├── 策略/        - 选股/择时策略
   └── 复盘记录/    - 历史复盘
@@ -100,13 +107,66 @@ skills/            - 自定义 Skills
 
 | 时间 | 任务 | cron | 触发方式 |
 |------|------|------|---------|
-| 07:00 工作日 | Agent1 情报采集 | `0 7 * * 1-5` | claw MCP + Python脚本 |
-| 08:30 工作日 | Agent2 技术分析 | `30 8 * * 1-5` | claw MCP + Python脚本 |
-| 21:00 工作日 | Agent4 复盘分析 | `0 21 * * 1-5` | claw MCP + Python脚本 |
-| 按需 | Agent3 风控检查 | - | 手动 `/风控官` |
+| 07:00 工作日 | Agent1 情报采集 | `0 7 * * 1-5` | claw MCP + Python脚本 → Telegram+微信推送 |
+| 08:30 工作日 | Agent2 技术分析 | `30 8 * * 1-5` | claw MCP + Python脚本 → Telegram+微信推送 |
+| 21:00 工作日 | Agent4 复盘分析 | `0 21 * * 1-5` | claw MCP + Python脚本 → Telegram+微信推送 |
+| 按需 | Agent3 风控检查 | - | 手动 `/风控官` → Telegram+微信推送 |
 
 > MCP server: `.claude/mcp-servers/claw/server.js` (stdio JSON-RPC)
 > 工具: `mcp__claw__cron` (创建) / `cron_list` (查询) / `cron_delete` (删除)
+
+## 📱 通知推送（Telegram + 微信）
+
+每个 Agent 在生成报告后，自动推送摘要到手机。支持双通道：Telegram（国际通用）和微信（国内首选）。
+
+### Telegram 通道
+
+**MCP 服务器**：`.claude/mcp-servers/telegram/server.js`（自动发现）
+
+**提供工具**：
+- `telegram_send_message` — 发送文本摘要（Markdown 格式）
+- `telegram_send_file` — 发送完整报告文件（.md 文档）
+
+**配置**（在 `.claude/settings.local.json` 的 `env` 中填写）：
+```json
+"TELEGRAM_BOT_TOKEN": "你的Bot Token（从 @BotFather 获取）",
+"TELEGRAM_CHAT_ID": "你的Chat ID（从 @userinfobot 获取）"
+```
+
+### 微信通道
+
+**MCP 服务器**：`.claude/mcp-servers/wechat/server.js`（自动发现）
+
+**提供工具**：
+- `wechat_send_markdown` — 发送 Markdown 格式消息
+- `wechat_send_text` — 发送纯文本消息
+
+**支持三种推送方式（任选其一，企业微信推荐）：**
+
+| 方式 | 配置字段 | 说明 | 限制 |
+|------|---------|------|------|
+| 🏢 企业微信群机器人 | `WECHAT_WEBHOOK_URL` | 建群→添加机器人→获取 Webhook | 免费无限制 ✅ |
+| 📨 Server酱 | `WECHAT_SERVERCHAN_KEY` | sct.ftqq.com 扫码获取 SendKey | 免费5条/天 |
+| 📨 PushPlus | `WECHAT_PUSHPLUS_TOKEN` | pushplus.plus 扫码获取 Token | 免费200条/天 |
+
+**配置示例**（在 `.claude/settings.local.json` 的 `env` 中填写）：
+```json
+// 三选一，优先级：企业微信 > Server酱 > PushPlus
+"WECHAT_WEBHOOK_URL": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",
+// 或
+"WECHAT_SERVERCHAN_KEY": "你的Server酱 SendKey",
+// 或
+"WECHAT_PUSHPLUS_TOKEN": "你的PushPlus Token"
+```
+
+### 推送时机
+
+| Agent | 触发时间 | 推送内容 |
+|-------|---------|---------|
+| 🕵️ 情报员 | 07:00 报告生成后 | 大盘概况 + 关键资讯 + 热点板块 |
+| 📊 分析师 | 08:30 报告生成后 | 大盘评分 + 强势板块 + 操作建议 |
+| 🛡️ 风控官 | 按需/盘中 | 风险等级 + 止损/仓位预警 |
+| 🔄 复盘师 | 21:00 报告生成后 | 综合准确率 + 偏差总结 + 知识库更新 |
 
 ## 使用方式
 
@@ -123,6 +183,7 @@ skills/            - 自定义 Skills
 - **环境变量**：所有 Token 通过 settings 的 `env` 字段注入，不在脚本中硬编码
 - **Git 清理**：已执行 `git filter-branch` 清除历史中的所有 token 痕迹
 - **批处理文件**：`run-agent*.bat` 不包含任何凭证，依赖自动加载的环境变量
+- **Telegram 通知**：Bot Token 和 Chat ID 同样存储在 `.claude/settings.local.json`（已在 `.gitignore` 中排除）
 
 ## Agent 数据脚本
 

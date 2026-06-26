@@ -197,6 +197,33 @@ limit_list = pro.limit_list(trade_date='YYYYMMDD')
 - 东方财富、财联社、华尔街见闻、Tushare Pro
 ```
 
+### 第五步：推送通知到手机
+
+报告生成后，用 Telegram 推送摘要到手机。注意只发摘要（不要发全文），格式如下：
+
+> 1. 调用 `telegram_send_message`，消息内容：
+> ```
+> 📊 情报摘要 — YYYY-MM-DD
+> 
+> 📈 大盘：上证±x% | 深证±x% | 创业板±x%
+> 💰 北向资金：净流入/出 xx亿
+> 📰 关键资讯：N条
+> 🏭 热点板块：XX、XX、XX
+> 
+> ⚠️ 风险提示：...
+> ```
+> 
+> 2. 再调用 `telegram_send_file` 附上完整报告文件（路径：`reports/日报/情报/情报摘要_YYYY-MM-DD.md`）
+>
+> **微信推送（可选）：**
+> 3. 调用 `wechat_send_markdown`，将同样的摘要发到微信：
+> ```
+> title: "📊 情报摘要 — YYYY-MM-DD"
+> content: "📈 大盘：上证±x% | 深证±x% | 创业板±x%\n💰 北向资金：净流入/出 xx亿\n📰 关键资讯：N条\n🏭 热点板块：XX、XX、XX\n\n⚠️ 风险提示：..."
+> ```
+>
+> 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
+
 ---
 
 ## 工作原则
