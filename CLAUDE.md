@@ -73,7 +73,10 @@ scripts/           - Python 分析脚本
 .claude/           - Claude 配置
   ├── mcp-servers/
   │   ├── claw/        - 定时调度 MCP 服务器 (cron)
-  │   └── telegram/    - 通知推送 MCP 服务器 (Telegram)
+  │   ├── telegram/    - 通知推送 MCP 服务器 (Telegram)
+  │   ├── wechat/      - 企业微信通知推送
+  │   ├── qq/          - QQ通知推送 (PushPlus + SMTP)
+  │   └── qqbot/       - QQ机器人官方API (WebSocket)
   ├── settings.json     - 项目 MCP 配置
   ├── settings.local.json - 本地凭据（gitignored）
   └── scheduled_tasks.json - 定时任务存储
