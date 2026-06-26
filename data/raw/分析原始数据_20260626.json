@@ -1,0 +1,99 @@
+{
+  "date": "20260626",
+  "indices": [
+    {
+      "name": "上证指数",
+      "ts_code": "000001.SH",
+      "close": 4027.26,
+      "pct_chg": -2.26,
+      "volume": 660108666.0,
+      "signals": {
+        "macd": "多头趋势 (diff>0)",
+        "kdj": "K=11.6 D=49.6",
+        "rsi": "偏弱 (43.7)",
+        "boll": "中轨下方 (偏空)",
+        "ma": "多头排列 (MA5>MA10>MA20)"
+      },
+      "ma_align": "均线缠绕",
+      "ma_5": 4105.54,
+      "ma_20": 4063.33,
+      "ma_60": 4071.79,
+      "above_ma5": "False",
+      "above_ma20": "False",
+      "above_ma60": "False"
+    },
+    {
+      "name": "深证成指",
+      "ts_code": "399001.SZ",
+      "close": 15782.22,
+      "pct_chg": -3.44,
+      "volume": 836510615.0,
+      "signals": {
+        "macd": "多头趋势 (diff>0)",
+        "kdj": "K=55.1 D=77.9",
+        "rsi": "偏强 (52.3)",
+        "boll": "中轨上方 (偏多)",
+        "ma": "多头排列 (MA5>MA10>MA20)"
+      },
+      "ma_align": "多头排列",
+      "ma_5": 16080.86,
+      "ma_20": 15578.47,
+      "ma_60": 15168.22,
+      "above_ma5": "False",
+      "above_ma20": "True",
+      "above_ma60": "True"
+    },
+    {
+      "name": "创业板指",
+      "ts_code": "399006.SZ",
+      "close": 4194.21,
+      "pct_chg": -4.07,
+      "volume": 240931473.0,
+      "signals": {
+        "macd": "多头趋势 (diff>0)",
+        "kdj": "K=65.3 D=82.0",
+        "rsi": "偏强 (55.7)",
+        "boll": "中轨上方 (偏多)",
+        "ma": "多头排列 (MA5>MA10>MA20)"
+      },
+      "ma_align": "多头排列",
+      "ma_5": 4273.84,
+      "ma_20": 4070.48,
+      "ma_60": 3810.47,
+      "above_ma5": "False",
+      "above_ma20": "True",
+      "above_ma60": "True"
+    },
+    {
+      "name": "科创50",
+      "ts_code": "000688.SH",
+      "close": 2032.28,
+      "pct_chg": -1.65,
+      "volume": 19695170.0,
+      "signals": {
+        "macd": "多头趋势 (diff>0)",
+        "kdj": "超买区 (可能回调)",
+        "rsi": "偏强 (68.7)",
+        "boll": "中轨上方 (偏多)",
+        "ma": "多头排列 (MA5>MA10>MA20)"
+      },
+      "ma_align": "多头排列",
+      "ma_5": 1990.64,
+      "ma_20": 1784.4,
+      "ma_60": 1626.63,
+      "above_ma5": "True",
+      "above_ma20": "True",
+      "above_ma60": "True"
+    }
+  ],
+  "sectors": {
+    "top_gainers": [],
+    "top_losers": [],
+    "anomalies": [],
+    "rotation": []
+  },
+  "watchlist_signals": [],
+  "market_summary": "市场整体偏弱",
+  "errors": [],
+  "environment_score": 70.0
+}

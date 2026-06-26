@@ -1,0 +1,71 @@
+{
+  "timestamp": "2026-06-27 00:13",
+  "environment": {
+    "score": 70,
+    "assessment": "震荡市",
+    "max_position": 80,
+    "max_single": 20
+  },
+  "portfolio_summary": {
+    "total_asset": 1000000,
+    "total_position": 0,
+    "holding_count": 3
+  },
+  "alerts": [
+    {
+      "level": "INFO",
+      "type": "大盘环境",
+      "asset": "大盘",
+      "message": "环境评分 70，震荡市，控制仓位在 80% 以内",
+      "action": "谨慎交易"
+    },
+    {
+      "level": "CRITICAL",
+      "type": "固定止损",
+      "asset": "紫光国微(002049.SZ)",
+      "message": "亏损 -14.7%，触发 -7% 止损线！建议立即执行止损",
+      "pnl_pct": -14.74,
+      "threshold": -7,
+      "action": "强制止损"
+    },
+    {
+      "level": "CRITICAL",
+      "type": "固定止损",
+      "asset": "贵州茅台(600519.SH)",
+      "message": "亏损 -26.0%，触发 -7% 止损线！建议立即执行止损",
+      "pnl_pct": -26.04,
+      "threshold": -7,
+      "action": "强制止损"
+    },
+    {
+      "level": "WARNING",
+      "type": "移动止损",
+      "asset": "宁德时代(300750.SZ)",
+      "message": "从高点回撤 5.2%，触发移动止损线",
+      "pnl_pct": 55.51,
+      "threshold": -5,
+      "action": "止盈/减仓"
+    },
+    {
+      "level": "WARNING",
+      "type": "单票超限",
+      "asset": "贵州茅台(600519.SH)",
+      "message": "贵州茅台 仓位 23%，超过单票上限 20%",
+      "actual": 23.4,
+      "limit": 20,
+      "action": "减仓"
+    },
+    {
+      "level": "WARNING",
+      "type": "单票超限",
+      "asset": "宁德时代(300750.SZ)",
+      "message": "宁德时代 仓位 38%，超过单票上限 20%",
+      "actual": 38.1,
+      "limit": 20,
+      "action": "减仓"
+    }
+  ],
+  "risk_level": "HIGH",
+  "suggested_action": "立即执行风控措施",
+  "errors": []
+}

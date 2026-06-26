@@ -1,0 +1,223 @@
+"""
+Agent1 情报员 - 数据采集核心脚本
+一键获取：大盘行情 + 龙虎榜 + 资金流向 + 板块涨跌
+
+用法：
+    source venv/Scripts/activate
+    python scripts/agent1-情报采集/fetch_all.py YYYYMMDD
+
+    # 省略日期则默认取最新交易日
+    python scripts/agent1-情报采集/fetch_all.py
+"""
+
+import os
+import sys
+import json
+import pandas as pd
+from datetime import datetime, timedelta
+
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+from scripts.utils.tushare_client import pro
+
+
+def get_today() -> str:
+    """获取今天的 YYYYMMDD 格式"""
+    return datetime.now().strftime("%Y%m%d")
+
+
+def get_last_trade_day() -> str:
+    """获取上一个交易日（如今天有数据就用今天，否则用上一个交易日）"""
+    today = get_today()
+    for offset in range(1, 8):  # 最多往前找7天
+        date = (datetime.now() - timedelta(days=offset)).strftime("%Y%m%d")
+        try:
+            df = pro.daily(trade_date=date)
+            if not df.empty:
+                return date
+        except:
+            continue
+    return today
+
+
+def fetch_market_overview(trade_date: str) -> dict:
+    """获取大盘概况"""
+    indices = {
+        "上证指数": "000001.SH",
+        "深证成指": "399001.SZ",
+        "创业板指": "399006.SZ",
+    }
+    result = {}
+    for name, code in indices.items():
+        df = pro.index_daily(ts_code=code, start_date=trade_date, end_date=trade_date)
+        if not df.empty:
+            row = df.iloc[0]
+            result[name] = {
+                "close": float(row["close"]),
+                "pct_change": float(row["pct_chg"]),
+                "amount": float(row["amount"]) / 1e8,  # 转为亿
+            }
+    return result
+
+
+def fetch_moneyflow_hsgt(trade_date: str) -> dict:
+    """获取北向资金流向（单位：万元）"""
+    try:
+        df = pro.moneyflow_hsgt(start_date=trade_date, end_date=trade_date)
+        if not df.empty:
+            row = df.iloc[0]
+            # north_money 单位为万元，转为亿元
+            north = float(row.get("north_money", 0)) / 1e4
+            hgt = float(row.get("hgt", 0)) / 1e4
+            sgt = float(row.get("sgt", 0)) / 1e4
+            return {
+                "north_net": round(north, 2),
+                "hgt": round(hgt, 2),
+                "sgt": round(sgt, 2),
+            }
+    except Exception as e:
+        print(f"    北向资金API异常: {e}")
+        pass
+    return {"north_net": 0, "hgt": 0, "sgt": 0}
+
+
+def fetch_limit_list(trade_date: str) -> pd.DataFrame:
+    """获取龙虎榜（Tushare接口名可能变化，失败时静默处理）"""
+    try:
+        df = pro.limit_list(trade_date=trade_date)
+        if not df.empty:
+            cols = [c for c in ["ts_code", "name", "close", "pct_chg", "amount", "buy_amount", "sell_amount"] if c in df.columns]
+            return df[cols]
+    except Exception as e:
+        print(f"    龙虎榜API不可用: {e}")
+    return pd.DataFrame()
+
+
+def fetch_ths_hot(trade_date: str) -> pd.DataFrame:
+    """获取同花顺概念板块涨跌排名"""
+    try:
+        df = pro.ths_daily(trade_date=trade_date)
+        if not df.empty:
+            df = df.sort_values("pct_chg", ascending=False)
+            return df[["ts_code", "name", "pct_chg"]]
+    except:
+        pass
+    return pd.DataFrame()
+
+
+def fetch_up_down_count(trade_date: str) -> dict:
+    """获取每日涨跌家数（使用 daily 接口，含 pct_chg）"""
+    try:
+        df = pro.daily(trade_date=trade_date)
+        if not df.empty:
+            up = int((df["pct_chg"] > 0).sum())
+            down = int((df["pct_chg"] < 0).sum())
+            flat = int((df["pct_chg"] == 0).sum())
+            return {"up": up, "down": down, "flat": flat, "total": len(df)}
+    except Exception as e:
+        print(f"    涨跌统计异常: {e}")
+    return {"up": 0, "down": 0, "flat": 0, "total": 0}
+
+
+def fetch_stock_daily(stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """获取个股行情"""
+    try:
+        df = pro.daily(ts_code=stock_code, start_date=start_date, end_date=end_date)
+        return df
+    except:
+        return pd.DataFrame()
+
+
+def generate_data_json(trade_date: str = None) -> dict:
+    """
+    主函数：采集所有数据并返回 JSON 结构
+    """
+    if trade_date is None:
+        trade_date = get_last_trade_day()
+
+    # Windows GBK 兼容输出
+    _ok = "[OK]"
+    _fail = "[FAIL]"
+
+    print(f"[情报员] 采集日期: {trade_date}")
+
+    data = {
+        "date": trade_date,
+        "market_overview": {},
+        "moneyflow_hsgt": {},
+        "up_down_count": {},
+        "top_gainers": [],
+        "top_losers": [],
+        "limit_list": [],
+        "ths_hot": [],
+        "errors": [],
+    }
+
+    # 1. 大盘概况
+    try:
+        data["market_overview"] = fetch_market_overview(trade_date)
+        print(f"  {_ok} 大盘概况: {len(data['market_overview'])} 个指数")
+    except Exception as e:
+        data["errors"].append(f"大盘概况获取失败: {e}")
+        print(f"  {_fail} 大盘概况: {e}")
+
+    # 2. 北向资金
+    try:
+        data["moneyflow_hsgt"] = fetch_moneyflow_hsgt(trade_date)
+        net = data["moneyflow_hsgt"].get("north_net", 0)
+        print(f"  {_ok} 北向资金: {net:.2f} 亿")
+    except Exception as e:
+        data["errors"].append(f"北向资金获取失败: {e}")
+        print(f"  {_fail} 北向资金: {e}")
+
+    # 3. 涨跌家数
+    try:
+        data["up_down_count"] = fetch_up_down_count(trade_date)
+        print(f"  {_ok} 涨跌统计: {data['up_down_count'].get('up', 0)}涨 / {data['up_down_count'].get('down', 0)}跌")
+    except Exception as e:
+        data["errors"].append(f"涨跌统计获取失败: {e}")
+        print(f"  {_fail} 涨跌统计: {e}")
+
+    # 4. 龙虎榜
+    try:
+        limit_df = fetch_limit_list(trade_date)
+        if not limit_df.empty:
+            data["limit_list"] = limit_df.head(10).to_dict("records")
+            print(f"  {_ok} 龙虎榜: {len(limit_df)} 只个股")
+    except Exception as e:
+        data["errors"].append(f"龙虎榜获取失败: {e}")
+        print(f"  {_fail} 龙虎榜: {e}")
+
+    # 5. 板块涨跌排名
+    try:
+        ths_df = fetch_ths_hot(trade_date)
+        if not ths_df.empty:
+            data["ths_hot"] = ths_df.to_dict("records")
+            data["top_gainers"] = ths_df.head(5).to_dict("records")
+            # 跌幅靠前的
+            losers = ths_df[ths_df["pct_chg"] < 0].tail(5)
+            data["top_losers"] = losers.to_dict("records") if not losers.empty else []
+            print(f"  {_ok} 板块排名: {len(ths_df)} 个概念板块")
+    except Exception as e:
+        data["errors"].append(f"板块排名获取失败: {e}")
+        print(f"  {_fail} 板块排名: {e}")
+
+    return data
+
+
+if __name__ == "__main__":
+    date_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    data = generate_data_json(date_arg)
+
+    # 输出 JSON 到 stdout，供 Claude 读取
+    print("\n=== DATA_JSON ===")
+    print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+    print("=== END ===")
+
+    # 同时保存到文件
+    output_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, f"情报原始数据_{data['date']}.json")
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+    print(f"\n原始数据已保存: {output_path}")

@@ -1,0 +1,7 @@
+{
+  "env": {
+    "TUSHARE_TOKEN": "TUSHARE_TOKEN_PLACEHOLDER",
+    "PYTHON_PATH": "C:\\Users\\65004\\AppData\\Local\\Programs\\Python\\Python314",
+    "PATH": "${env:PATH};C:\\Users\\65004\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\65004\\AppData\\Local\\Programs\\Python\\Python314\\Scripts"
+  }
+}
