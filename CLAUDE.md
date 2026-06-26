@@ -115,9 +115,9 @@ skills/            - 自定义 Skills
 > MCP server: `.claude/mcp-servers/claw/server.js` (stdio JSON-RPC)
 > 工具: `mcp__claw__cron` (创建) / `cron_list` (查询) / `cron_delete` (删除)
 
-## 📱 通知推送（Telegram + 微信）
+## 📱 通知推送（Telegram + 微信 + QQ）
 
-每个 Agent 在生成报告后，自动推送摘要到手机。支持双通道：Telegram（国际通用）和微信（国内首选）。
+每个 Agent 在生成报告后，自动推送摘要到手机。支持三个通道：Telegram（国际通用）、微信（国内首选）和 QQ（备用方案）。
 
 ### Telegram 通道
 
@@ -170,6 +170,79 @@ skills/            - 自定义 Skills
 "WECHAT_WEBHOOK_URL": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
 ```
 
+### QQ 通道（PushPlus）
+
+**MCP 服务器**：`.claude/mcp-servers/qq/server.js`（自动发现）
+
+**提供工具**：
+- `qq_send_text` — 发送纯文本通知到 QQ（PushPlus 推送到绑定 QQ）
+- `qq_send_report` — 发送完整报告（Markdown 格式渲染）
+- `qq_agent_notify` — 按 Agent 编号发送（自动带角色名称前缀）
+
+**配置方法（PushPlus，推荐）：**
+1. 打开 [PushPlus 官网](https://pushplus.hxtrip.com) 微信扫码登录
+2. 在 **个人中心** 获取你的推送 Token
+3. 在 **推送配置** → **QQ好友** 或 **QQ群** 中绑定接收通知的目标
+4. 在 `.claude/settings.local.json` 的 `env` 中填写：
+
+```json
+"PUSHPLUS_TOKEN": "你的PushPlus Token（从 pushplus.hxtrip.com 获取）"
+```
+
+**备用方案（QQ邮箱 SMTP）：**
+如果不想用 PushPlus，也可以直接用 QQ邮箱 SMTP 触发手机推送：
+
+```json
+"QQ_MAIL_USER": "你的QQ号@qq.com",
+"QQ_MAIL_PASS": "你的SMTP授权码（QQ邮箱 → 设置 → 账户 → 生成授权码）"
+```
+
+> QQ邮箱方式收到的是普通邮件通知，PushPlus 方式可以在 QQ 好友/群中直接显示消息。
+
+### QQ 机器人通道（官方 API）
+
+**MCP 服务器**：`.claude/mcp-servers/qqbot/server.js`（自动发现）
+
+**提供工具**：
+- `qqbot_send_text` — 发送文本消息到 QQ（单聊/群聊）
+- `qqbot_send_markdown` — 发送 Markdown 格式消息
+- `qqbot_agent_notify` — 按 Agent 编号发送（自动带角色名称前缀）
+- `qqbot_listen` — 事件监听模式（获取用户 OpenID）
+
+**特点：**
+- 使用 [QQ 开放平台](https://q.qq.com) 官方 API v2
+- 基于 WebSocket 持久连接，机器人需要保持在线
+- ⚠️ **主动消息每月仅 4 条/用户**，适合交互式查询不适合每日自动推送
+- 推荐用于 `/风控官` 等按需查询场景
+
+**配置方法：**
+1. 访问 [QQ 开放平台](https://q.qq.com) 创建机器人，获取 AppID 和 AppSecret
+2. 在 `.claude/settings.local.json` 的 `env` 中填写：
+
+```json
+"QQBOT_APP_ID": "你的机器人AppID",
+"QQBOT_APP_SECRET": "你的机器人AppSecret",
+"QQBOT_TARGET_OPENID": "目标用户的OpenID（可选，配好前两个后调用 qqbot_listen 获取）"
+```
+
+**获取用户 OpenID：**
+```bash
+# MCP 工具方式（在 Claude Code 中执行）：
+# 调用 qqbot_listen(duration=120)
+# 然后用手机 QQ 加机器人好友并发送一条消息
+# 系统会自动检测到用户的 OpenID
+```
+
+**后台保活服务**（可选，用于长期保持机器人在线）：
+```bash
+# 启动保活服务（保持 WebSocket 持久连接）
+node .claude/mcp-servers/qqbot/keepalive.js
+
+# 或在 Windows 中直接双击 start-qqbot.bat
+```
+
+> 💡 **建议**：每日自动推送用 PushPlus（无限制），QQ 机器人用于您主动询问时的交互式回复（被动回复无限制）。
+
 ### 推送时机
 
 | Agent | 触发时间 | 推送内容 |
@@ -178,6 +251,8 @@ skills/            - 自定义 Skills
 | 📊 分析师 | 08:30 报告生成后 | 大盘评分 + 强势板块 + 操作建议 |
 | 🛡️ 风控官 | 按需/盘中 | 风险等级 + 止损/仓位预警 |
 | 🔄 复盘师 | 21:00 报告生成后 | 综合准确率 + 偏差总结 + 知识库更新 |
+
+> 所有四个通道（Telegram / 微信 / QQ-PushPlus / QQ机器人）都是可选的，配置哪个就用哪个，未配置的通道自动跳过。
 
 ## 使用方式
 
@@ -195,6 +270,8 @@ skills/            - 自定义 Skills
 - **Git 清理**：已执行 `git filter-branch` 清除历史中的所有 token 痕迹
 - **批处理文件**：`run-agent*.bat` 不包含任何凭证，依赖自动加载的环境变量
 - **Telegram 通知**：Bot Token 和 Chat ID 同样存储在 `.claude/settings.local.json`（已在 `.gitignore` 中排除）
+- **QQ 通知（PushPlus）**：PushPlus Token 和 QQ邮箱授权码同样存储在 `.claude/settings.local.json`（已在 `.gitignore` 中排除）
+- **QQ 机器人**：QQ Bot AppSecret 存储在 `.claude/settings.local.json`（已在 `.gitignore` 中排除）
 
 ## Agent 数据脚本
 

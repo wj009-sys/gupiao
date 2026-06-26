@@ -220,6 +220,19 @@ python -X utf8 scripts/agent2-技术分析/analyze.py [YYYYMMDD]
 > ```
 >
 > 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
+>
+> **QQ推送（可选）：**
+> 4. 调用 `qq_agent_notify`，用 QQ 推送：
+> ```
+> agent_id: 2
+> title: "技术分析 YYYY-MM-DD"
+> content: "📊 大盘评分：xx/100（xxx）
+> 🔥 强势板块：XX、XX、XX
+> ⚠️ 风险信号：XX、XX
+> 💡 操作建议：XX"
+> ```
+>
+> 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
 
 ---
 

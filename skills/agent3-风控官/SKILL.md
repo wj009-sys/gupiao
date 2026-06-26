@@ -217,6 +217,19 @@ python -X utf8 scripts/agent3-风控/risk_check.py --env-score 70
 > ```
 >
 > 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
+>
+> **QQ推送（可选）：**
+> 4. 调用 `qq_agent_notify`，用 QQ 推送：
+> ```
+> agent_id: 3
+> title: "风控报告 YYYY-MM-DD"
+> content: "📊 大盘风险等级：高/中/低
+> 🚨 止损触发：N 个
+> ⚠️ 仓位超限：N 个
+> 🛡️ 风控指令：必须执行 N 条 / 建议执行 N 条"
+> ```
+>
+> 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
 
 ---
 

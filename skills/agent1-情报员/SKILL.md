@@ -228,6 +228,19 @@ limit_list = pro.limit_list(trade_date='YYYYMMDD')
 > ```
 >
 > 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
+>
+> **QQ推送（可选）：**
+> 4. 调用 `qq_agent_notify`，用 QQ 推送：
+> ```
+> agent_id: 1
+> title: "情报摘要 YYYY-MM-DD"
+> content: "📈 大盘：上证±x% | 深证±x% | 创业板±x%
+> 💰 北向资金：净流入/出 xx亿
+> 📰 关键资讯：N条
+> 🏭 热点板块：XX、XX、XX"
+> ```
+>
+> 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
 
 ---
 
