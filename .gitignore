@@ -1,0 +1,16 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Node
+node_modules/
+
+# Temp
+*.tmp
+
+# Reports (auto-generated daily, keep template only)
+reports/日报/*/*.md
+reports/日报/*/*.json
+data/raw/
