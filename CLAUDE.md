@@ -107,10 +107,10 @@ skills/            - 自定义 Skills
 
 | 时间 | 任务 | cron | 触发方式 |
 |------|------|------|---------|
-| 07:00 工作日 | Agent1 情报采集 | `0 7 * * 1-5` | claw MCP + Python脚本 → Telegram+微信推送 |
-| 08:30 工作日 | Agent2 技术分析 | `30 8 * * 1-5` | claw MCP + Python脚本 → Telegram+微信推送 |
-| 21:00 工作日 | Agent4 复盘分析 | `0 21 * * 1-5` | claw MCP + Python脚本 → Telegram+微信推送 |
-| 按需 | Agent3 风控检查 | - | 手动 `/风控官` → Telegram+微信推送 |
+| 07:00 工作日 | Agent1 情报采集 | `0 7 * * 1-5` | claw MCP + Python脚本 → Telegram+微信+QQ推送 |
+| 08:30 工作日 | Agent2 技术分析 | `30 8 * * 1-5` | claw MCP + Python脚本 → Telegram+微信+QQ推送 |
+| 21:00 工作日 | Agent4 复盘分析 | `0 21 * * 1-5` | claw MCP + Python脚本 → Telegram+微信+QQ推送 |
+| 按需 | Agent3 风控检查 | - | 手动 `/风控官` → Telegram+微信+QQ推送 |
 
 > MCP server: `.claude/mcp-servers/claw/server.js` (stdio JSON-RPC)
 > 工具: `mcp__claw__cron` (创建) / `cron_list` (查询) / `cron_delete` (删除)
