@@ -7,11 +7,14 @@ Agent3 风控官 - 风险管理核心脚本
 3. 根据大盘环境评估当前风险等级
 4. 检查每笔持仓是否触发止损
 5. 检查总仓位和单票仓位是否超限
-6. 输出风控报告结构化数据
+6. 【新增】审查操盘手交易计划（买入/卖出清单风险评估）
+7. 【新增】持仓加减仓建议（与操盘手的持仓管理建议对比）
+8. 【新增】输出与操盘手的冲突项（供投资领导仲裁）
+9. 输出风控报告结构化数据
 
 用法：
     source venv/Scripts/activate
-    python -X utf8 scripts/agent3-风控/risk_check.py [--portfolio data/portfolio.json] [--env-score 70]
+    python -X utf8 scripts/agent3-风控/risk_check.py [--portfolio data/portfolio.json] [--env-score 70] [--trade-plan data/raw/交易原始数据_YYYYMMDD.json]
 
 如果不传环境评分，则从 data/raw/分析原始数据_*.json 中自动读取
 """
@@ -299,7 +302,286 @@ def check_market_risk(env_score: int, index_analysis: list = None) -> list:
     return alerts
 
 
-def generate_risk_report(portfolio_path: str = None, env_score: int = None) -> dict:
+# ============================================================
+# 【新增】操盘手交易计划风控审查
+# ============================================================
+
+
+def load_trade_plan(trade_plan_path: str = None) -> dict:
+    """读取操盘手的交易计划原始数据"""
+    if trade_plan_path:
+        return load_json(trade_plan_path)
+
+    # 自动查找最新交易计划
+    raw_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    pattern = os.path.join(raw_dir, "交易原始数据_*.json")
+    files = sorted(glob.glob(pattern), reverse=True)
+    if not files:
+        return {}
+    return load_json(files[0])
+
+
+def risk_assess_trade(trade_item: dict, market_env: dict, portfolio: dict, current_position: float = 0) -> dict:
+    """对单笔交易（买入/卖出）进行风险审查"""
+    result = {
+        "verdict": "APPROVED",    # APPROVED / REJECTED / CONDITIONAL
+        "risk_factors": [],
+        "conditions": [],
+        "reason": "",
+    }
+
+    # === 买入审查 ===
+    if trade_item.get("action", "").startswith("买入") or "buy" in str(trade_item).lower():
+        result["type"] = "买入审查"
+
+        # 1. 大盘环境检查
+        env_level = market_env.get("level", "")
+        if env_level == "extreme":
+            result["verdict"] = "REJECTED"
+            result["risk_factors"].append("极端行情，禁止任何买入")
+        elif env_level == "bear":
+            result["verdict"] = "CONDITIONAL"
+            result["risk_factors"].append("弱市，买入需满足仓位<50%且单票≤10%")
+
+        # 2. 仓位冲突检查
+        max_position = market_env.get("max_position", 80)
+        max_single = market_env.get("max_single", 20)
+        suggested_pos = trade_item.get("suggested_position_pct", 0)
+        if suggested_pos > max_single:
+            result["verdict"] = "REJECTED"
+            result["risk_factors"].append(
+                f"建议仓位 {suggested_pos}% 超过单票上限 {max_single}%"
+            )
+
+        if current_position > max_position * 0.9:
+            result["verdict"] = "CONDITIONAL"
+            result["risk_factors"].append(
+                f"当前仓位 {current_position:.0f}% 接近上限 {max_position}%，买入需先减仓"
+            )
+
+        # 3. 止损检查
+        stop_loss = trade_item.get("stop_loss", 0)
+        current_price = trade_item.get("current_price", 0)
+        if stop_loss == 0 or current_price == 0:
+            result["verdict"] = "REJECTED"
+            result["risk_factors"].append("缺少止损位，不可买入")
+        else:
+            stop_pct = (stop_loss - current_price) / current_price * 100
+            if stop_pct > -3:
+                result["verdict"] = "CONDITIONAL"
+                result["risk_factors"].append(
+                    f"止损位过紧（{stop_pct:.1f}%），容易被噪音触发"
+                )
+                result["conditions"].append(f"建议放宽止损至-5%~-7%")
+
+        # 4. 行业集中度
+        code = trade_item.get("code", "")
+        holdings = portfolio.get("持仓列表", [])
+        same_sector_count = sum(1 for h in holdings if h.get("代码", "")[:3] == code[:3])
+        if same_sector_count >= 2:
+            result["verdict"] = "CONDITIONAL"
+            result["risk_factors"].append(
+                f"同板块已持有{same_sector_count + 1}只，注意行业集中风险"
+            )
+            result["conditions"].append("建议降低该行业总仓位不超过40%")
+
+    # === 卖出审查 ===
+    elif trade_item.get("action", "").startswith("卖出") or "sell" in str(trade_item).lower():
+        result["type"] = "卖出审查"
+
+        priority = trade_item.get("priority", "")
+        reason = trade_item.get("reason", "")
+
+        if "止损" in reason:
+            # 止损卖出 - 自动批准
+            result["verdict"] = "APPROVED"
+            result["reason"] = "止损为硬规则，自动批准"
+        elif "止盈" in reason:
+            # 止盈卖出 - 检查是否过早
+            pnl = trade_item.get("pnl_pct", 0)
+            if pnl < 10:
+                result["verdict"] = "CONDITIONAL"
+                result["risk_factors"].append(f"盈利仅{pnl:.0f}%，建议等待+15%目标")
+                result["conditions"].append("建议改为部分止盈（1/3仓）而非全部卖出")
+            else:
+                result["verdict"] = "APPROVED"
+        else:
+            result["verdict"] = "APPROVED"
+
+    return result
+
+
+def risk_assess_trade_plan(trade_plan: dict, market_env: dict, portfolio: dict, current_position: float = 0) -> dict:
+    """审查操盘手整个交易计划"""
+    buy_assessments = []
+    for buy_item in trade_plan.get("buy_plan", []):
+        assessment = risk_assess_trade(buy_item, market_env, portfolio, current_position)
+        buy_assessments.append({
+            "code": buy_item.get("code", ""),
+            "name": buy_item.get("name", ""),
+            "suggested_position": buy_item.get("suggested_position_pct", 0),
+            "current_price": buy_item.get("current_price", 0),
+            "stop_loss": buy_item.get("stop_loss", 0),
+            "verdict": assessment["verdict"],
+            "risk_factors": assessment.get("risk_factors", []),
+            "conditions": assessment.get("conditions", []),
+        })
+
+    sell_assessments = []
+    for sell_item in trade_plan.get("sell_plan", []):
+        assessment = risk_assess_trade(sell_item, market_env, portfolio)
+        sell_assessments.append({
+            "code": sell_item.get("code", ""),
+            "name": sell_item.get("name", ""),
+            "reason": sell_item.get("reason", ""),
+            "pnl_pct": sell_item.get("pnl_pct", 0),
+            "verdict": assessment["verdict"],
+            "risk_factors": assessment.get("risk_factors", []),
+            "conditions": assessment.get("conditions", []),
+        })
+
+    return {
+        "buy_assessments": buy_assessments,
+        "sell_assessments": sell_assessments,
+        "summary": {
+            "approved_buys": len([b for b in buy_assessments if b["verdict"] == "APPROVED"]),
+            "conditional_buys": len([b for b in buy_assessments if b["verdict"] == "CONDITIONAL"]),
+            "rejected_buys": len([b for b in buy_assessments if b["verdict"] == "REJECTED"]),
+            "approved_sells": len([s for s in sell_assessments if s["verdict"] == "APPROVED"]),
+            "conditional_sells": len([s for s in sell_assessments if s["verdict"] == "CONDITIONAL"]),
+            "rejected_sells": len([s for s in sell_assessments if s["verdict"] == "REJECTED"]),
+        },
+    }
+
+
+def suggest_position_adjustment(
+    portfolio: dict, market_env: dict, trade_plan: dict = None
+) -> dict:
+    """基于风控视角，给出持仓加减仓建议（与操盘手独立对比）"""
+    suggestions = []
+    holdings = portfolio.get("持仓列表", [])
+    total_asset = portfolio.get("总资产", 0) or 1
+    max_single = market_env.get("max_single", 20)
+
+    for h in holdings:
+        code = h.get("代码", "")
+        if code == "000000" or not code:
+            continue
+        name = h.get("名称", "未知")
+        cost = h.get("成本价", 0)
+        market_value = h.get("市值", 0) or h.get("持股数量", 0) * h.get("当前价", 0)
+        pnl_pct = h.get("当前盈亏%", 0)
+        single_pct = (market_value / total_asset * 100) if total_asset > 0 else 0
+
+        adj = {"code": code, "name": name, "action": "持有", "reason": "", "priority": "低"}
+
+        # 加仓条件
+        if -3 <= pnl_pct <= 5 and single_pct < max_single * 0.5:
+            adj["action"] = "可加仓"
+            adj["reason"] = f"浮盈/亏可控({pnl_pct:.1f}%)，仓位未饱和({single_pct:.0f}%<{max_single}%上限的一半)"
+            adj["priority"] = "中"
+
+        # 减仓条件
+        if pnl_pct <= -5:
+            adj["action"] = "建议减仓"
+            adj["reason"] = f"浮亏{pnl_pct:.1f}%，接近-7%止损线，建议提前减仓"
+            adj["priority"] = "高"
+        elif single_pct > max_single * 1.2:
+            adj["action"] = "需减仓"
+            adj["reason"] = f"仓位{single_pct:.0f}%超单票上限{max_single}%，必须减至合规"
+            adj["priority"] = "高"
+        elif pnl_pct >= 15:
+            adj["action"] = "部分止盈"
+            adj["reason"] = f"浮盈{pnl_pct:.1f}%已达标，建议止盈1/3"
+            adj["priority"] = "中"
+
+        suggestions.append(adj)
+
+    return {
+        "suggestions": suggestions,
+        "note": "这些建议基于风控规则独立判断，可能与操盘手的交易计划不同。分歧处见冲突检测。",
+    }
+
+
+def detect_trade_conflicts(
+    risk_assessment: dict, trade_plan: dict, position_suggestions: dict
+) -> list:
+    """检测风控官与操盘手的意见分歧，供投资领导仲裁"""
+    conflicts = []
+    trade_plan_buys = trade_plan.get("buy_plan", [])
+    risk_buys = risk_assessment.get("buy_assessments", [])
+
+    # 1. 买入分歧：风控否决但操盘手建议买入
+    for rb in risk_buys:
+        if rb["verdict"] == "REJECTED":
+            tp_match = next(
+                (tp for tp in trade_plan_buys if tp.get("code") == rb["code"]),
+                None
+            )
+            if tp_match:
+                conflicts.append({
+                    "type": "风控否决买入",
+                    "code": rb["code"],
+                    "name": rb["name"],
+                    "severity": "HIGH",
+                    "risk_view": f"否决（{'；'.join(rb['risk_factors'])}）",
+                    "trader_view": (
+                        f"建议买入{tp_match.get('suggested_position_pct', '?')}%仓位"
+                    ),
+                    "arbitration_required": True,
+                })
+
+    # 2. 加减仓分歧：风控建议减仓但操盘手建议持有/买入
+    for suggestion in position_suggestions.get("suggestions", []):
+        if suggestion["action"] in ("建议减仓", "需减仓", "部分止盈"):
+            code = suggestion["code"]
+            # 检查操盘手是否在买入该票
+            tp_buy = next(
+                (tp for tp in trade_plan_buys if tp.get("code") == code),
+                None
+            )
+            if tp_buy:
+                conflicts.append({
+                    "type": "加减仓分歧",
+                    "code": code,
+                    "name": suggestion["name"],
+                    "severity": "HIGH" if suggestion["priority"] == "高" else "MEDIUM",
+                    "risk_view": f"建议{suggestion['action']}（{suggestion['reason']}）",
+                    "trader_view": (
+                        f"建议买入{tp_buy.get('suggested_position_pct', '?')}%仓位"
+                    ),
+                    "arbitration_required": True,
+                })
+
+    # 3. 止盈分歧：风控建议部分止盈，操盘手还继续持有（未在卖出清单）
+    for suggestion in position_suggestions.get("suggestions", []):
+        if suggestion["action"] == "部分止盈":
+            code = suggestion["code"]
+            trade_sells = trade_plan.get("sell_plan", [])
+            tp_sell = next(
+                (tp for tp in trade_sells if tp.get("code") == code),
+                None
+            )
+            if not tp_sell:
+                conflicts.append({
+                    "type": "止盈分歧",
+                    "code": code,
+                    "name": suggestion["name"],
+                    "severity": "MEDIUM",
+                    "risk_view": f"建议部分止盈（{suggestion['reason']}）",
+                    "trader_view": "建议继续持有，未列入卖出计划",
+                    "arbitration_required": True,
+                })
+
+    return conflicts
+
+
+# ============================================================
+# 主函数
+# ============================================================
+
+
+def generate_risk_report(portfolio_path: str = None, env_score: int = None, trade_plan_path: str = None) -> dict:
     """主函数：生成完整风控报告"""
     print("[风控官] 开始风险评估...")
     _ok = "[OK]"
@@ -385,19 +667,78 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None) -> d
         report["errors"].append(f"仓位检查失败: {e}")
         print(f"  {_fail} 仓位检查: {e}")
 
-    # 7. 综合风险等级
+    # 7. 【新增】审查操盘手交易计划
+    trade_plan = load_trade_plan(trade_plan_path)
+    trade_assessment = {}
+    position_suggestions = {}
+    trade_conflicts = []
+
+    if trade_plan and trade_plan.get("buy_plan", []) or trade_plan.get("sell_plan", []):
+        print(f"  {_ok} 发现操盘手交易计划，开始风控审查...")
+        # 计算当前总仓位百分比
+        total_asset = portfolio.get("总资产", 1)
+        total_market_value = sum(
+            h.get("市值", 0) or h.get("持股数量", 0) * h.get("当前价", 0)
+            for h in portfolio.get("持仓列表", [])
+        )
+        current_position_pct = (total_market_value / total_asset * 100) if total_asset > 0 else 0
+
+        trade_assessment = risk_assess_trade_plan(trade_plan, market_env, portfolio, current_position_pct)
+        report["trade_plan_assessment"] = trade_assessment
+
+        summary = trade_assessment.get("summary", {})
+        print(f"    🟢 买入批准: {summary.get('approved_buys', 0)} 项")
+        print(f"    🟡 买入有条件: {summary.get('conditional_buys', 0)} 项")
+        print(f"    🔴 买入否决: {summary.get('rejected_buys', 0)} 项")
+        print(f"    🟢 卖出批准: {summary.get('approved_sells', 0)} 项")
+        print(f"    🟡 卖出有条件: {summary.get('conditional_sells', 0)} 项")
+        print(f"    🔴 卖出否决: {summary.get('rejected_sells', 0)} 项")
+
+        # 8. 【新增】持仓加减仓独立建议
+        position_suggestions = suggest_position_adjustment(portfolio, market_env, trade_plan)
+        report["position_suggestions"] = position_suggestions
+        print(f"  {_ok} 持仓调整建议完成")
+        for s in position_suggestions.get("suggestions", []):
+            print(f"    {s['action']}: {s['name']}({s['code']}) — {s['reason']}")
+
+        # 9. 【新增】检测与操盘手的冲突
+        trade_conflicts = detect_trade_conflicts(trade_assessment, trade_plan, position_suggestions)
+        report["trade_conflicts"] = trade_conflicts
+        if trade_conflicts:
+            print(f"  {_warn} 检测到 {len(trade_conflicts)} 项与操盘手的分歧!")
+            for c in trade_conflicts:
+                print(f"    [{c['severity']}] {c['type']}: {c['name']}({c['code']})")
+                print(f"      风控: {c['risk_view']}")
+                print(f"      操盘: {c['trader_view']}")
+        else:
+            print(f"  {_ok} 与操盘手无意见分歧")
+    else:
+        print(f"  {_warn} 未发现操盘手交易计划，跳过审查")
+
+    # 10. 综合风险等级（含与操盘手冲突）
     critical_count = sum(1 for a in report["alerts"] if a["level"] == "CRITICAL")
     warning_count = sum(1 for a in report["alerts"] if a["level"] == "WARNING")
+    rejected_count = len(trade_conflicts)
 
     if critical_count > 0:
         report["risk_level"] = "HIGH"
         report["suggested_action"] = "立即执行风控措施"
-    elif warning_count > 0:
+    elif warning_count > 0 or rejected_count > 0:
         report["risk_level"] = "MEDIUM"
         report["suggested_action"] = "关注预警项，准备应对"
     else:
         report["risk_level"] = "LOW"
         report["suggested_action"] = "维持当前操作"
+
+    # 如有与操盘手的冲突，标记需要投资领导介入
+    if trade_conflicts:
+        report["needs_leadership"] = True
+        report["leadership_note"] = (
+            f"检测到 {len(trade_conflicts)} 项与操盘手的意见分歧，"
+            "请投资领导（Agent7）仲裁后发布最终指令"
+        )
+    else:
+        report["needs_leadership"] = False
 
     return report
 
@@ -408,9 +749,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="风控检查")
     parser.add_argument("--portfolio", default=None, help="持仓JSON路径")
     parser.add_argument("--env-score", type=int, default=None, help="大盘环境评分(0-100)")
+    parser.add_argument("--trade-plan", dest="trade_plan", default=None, help="交易计划原始数据JSON路径")
     args = parser.parse_args()
 
-    report = generate_risk_report(args.portfolio, args.env_score)
+    report = generate_risk_report(args.portfolio, args.env_score, args.trade_plan)
 
     print("\n=== RISK_REPORT ===")
     print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
