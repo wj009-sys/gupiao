@@ -261,7 +261,40 @@ node .claude/mcp-servers/qqbot/keepalive.js
 
 > 所有四个通道（Telegram / 微信 / QQ-PushPlus / QQ机器人）都是可选的，配置哪个就用哪个，未配置的通道自动跳过。
 
-## 使用方式
+## 交互式命令（手机端触发）
+
+你可以在 **Telegram** 或 **QQ Bot** 中给机器人发送命令，Claude Code 检测到后自动执行对应的 Agent。
+
+### 支持的手机命令
+
+| 手机命令 | 触发Agent | 说明 | 支持通道 |
+|---------|----------|------|---------|
+| `/情报员` | agent1-情报员 | 情报采集+报告生成 | Telegram, QQ Bot |
+| `/分析师` | agent2-分析师 | 技术分析+板块排名 | Telegram, QQ Bot |
+| `/风控官` | agent3-风控官 | 风控检查+止损监控 | Telegram, QQ Bot |
+| `/复盘师` | agent4-复盘师 | 复盘+偏差分析+知识库更新 | Telegram, QQ Bot |
+
+### 交互流程
+
+```
+你发消息 → 机器人收到 → 你运行 listen 工具 → Claude 解析命令 → 执行 Agent → 回复到手机
+```
+
+### 使用方法
+
+**Telegram：**
+1. 在 Telegram 中给 `@Qby0001bot` 发送命令（如 `/情报员`）
+2. 在 Claude Code 中调用 `telegram_listen(duration=60)` 
+3. 系统会检测到命令并自动执行
+
+**QQ Bot：**
+1. 在 QQ 中给机器人发送命令（如 `/情报员`）
+2. 在 Claude Code 中调用 `qqbot_listen(duration=60)`
+3. 系统会检测到事件并自动执行
+
+> 微信企业微信机器人和 QQ PushPlus 仅支持单向推送，不支持接收消息互动。
+
+### 本地命令
 
 | 命令 | 触发Skill | 说明 |
 |------|----------|------|

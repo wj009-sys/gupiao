@@ -16,15 +16,159 @@
  */
 
 const https = require("https");
+const http = require("http");
+const net = require("net");
+const tls = require("tls");
 const fs = require("fs");
 const path = require("path");
+const { URL } = require("url");
 
 // ============ 配置 ============
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
+const SOCKS_PROXY = process.env.SOCKS_PROXY || process.env.HTTPS_PROXY || "";
 
-const API_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const API_HOST = "api.telegram.org";
+const API_BASE = `https://${API_HOST}/bot${BOT_TOKEN}`;
+
+// Telegram 长轮询状态
+let tgUpdateOffset = 0;
+let tgUpdateFile = path.join(__dirname, ".telegram_offset");
+
+// ============ SOCKS5 代理支持 ============
+
+/** 从 socket 读取精确字节数 */
+function readExact(socket, n) {
+  return new Promise((resolve, reject) => {
+    const buf = [];
+    let len = 0;
+    const onData = (chunk) => {
+      buf.push(chunk);
+      len += chunk.length;
+      if (len >= n) {
+        socket.removeListener("data", onData);
+        resolve(Buffer.concat(buf));
+      }
+    };
+    socket.on("data", onData);
+    socket.on("error", reject);
+  });
+}
+
+/** 通过 SOCKS5 代理建立 TLS 连接到目标主机 */
+function socks5Connect(host, port) {
+  return new Promise((resolve, reject) => {
+    if (!SOCKS_PROXY) {
+      const socket = net.connect(port, host, () => resolve(socket));
+      socket.on("error", reject);
+      return;
+    }
+
+    let proxyHost, proxyPort;
+    if (SOCKS_PROXY.startsWith("socks5://")) {
+      const u = new URL(SOCKS_PROXY);
+      proxyHost = u.hostname;
+      proxyPort = parseInt(u.port, 10) || 10808;
+    } else {
+      proxyHost = "127.0.0.1";
+      proxyPort = parseInt(SOCKS_PROXY, 10) || 10808;
+    }
+
+    const socket = net.connect(proxyPort, proxyHost, async () => {
+      try {
+        // 第1步: 认证协商
+        socket.write(Buffer.from([0x05, 0x01, 0x00]));
+        const authResp = await readExact(socket, 2);
+        if (authResp[0] !== 0x05 || authResp[1] !== 0x00) {
+          throw new Error(`SOCKS5 握手失败: ${authResp[1]}`);
+        }
+
+        // 第2步: 连接请求
+        const hostParts = host.split(".");
+        let addr;
+        if (hostParts.length === 4 && hostParts.every((p) => !isNaN(p) && p >= 0 && p <= 255)) {
+          addr = Buffer.concat([Buffer.from([0x01]), Buffer.from(hostParts.map(Number))]);
+        } else {
+          const domainBuf = Buffer.from(host, "utf8");
+          addr = Buffer.concat([Buffer.from([0x03, domainBuf.length]), domainBuf]);
+        }
+        const portBuf = Buffer.alloc(2);
+        portBuf.writeUInt16BE(port);
+        socket.write(Buffer.concat([Buffer.from([0x05, 0x01, 0x00]), addr, portBuf]));
+
+        // 读取响应: VER+REP+RSV+ATYPE = 4字节，然后根据ATYPE读取地址
+        const header = await readExact(socket, 4);
+        if (header[0] !== 0x05 || header[1] !== 0x00) {
+          throw new Error(`SOCKS5 连接拒绝: ${header[1]}`);
+        }
+        let addrLen;
+        switch (header[3]) {
+          case 0x01: addrLen = 4; break;  // IPv4
+          case 0x03: const lenByte = (await readExact(socket, 1))[0]; addrLen = lenByte; break; // 域名
+          case 0x04: addrLen = 16; break; // IPv6
+          default: throw new Error(`SOCKS5 未知地址类型: ${header[3]}`);
+        }
+        await readExact(socket, addrLen + 2); // 地址 + 端口
+
+        // 升级到 TLS
+        const tlsSocket = tls.connect({ socket, servername: host, host, port });
+        tlsSocket.on("ready", () => resolve(tlsSocket));
+        tlsSocket.on("error", reject);
+      } catch (err) {
+        socket.destroy();
+        reject(err);
+      }
+    });
+    socket.on("error", reject);
+  });
+}
+
+/** HTTP 代理 CONNECT 隧道 */
+function httpConnectTunnel(host, port, proxyHost, proxyPort) {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(proxyPort, proxyHost, () => {
+      socket.write(`CONNECT ${host}:${port} HTTP/1.1\r\nHost: ${host}:${port}\r\n\r\n`);
+    });
+    let buf = "";
+    socket.on("data", (chunk) => {
+      buf += chunk.toString();
+      if (buf.includes("\r\n\r\n")) {
+        if (buf.startsWith("HTTP/1.1 200") || buf.startsWith("HTTP/1.0 200")) {
+          const tlsSocket = tls.connect({ socket, servername: host, host, port });
+          tlsSocket.on("ready", () => resolve(tlsSocket));
+          tlsSocket.on("error", reject);
+        } else {
+          reject(new Error(`HTTP CONNECT 失败: ${buf.slice(0, 100)}`));
+        }
+      }
+    });
+    socket.on("error", reject);
+  });
+}
+
+/** 通过代理或直连发送 HTTPS 请求 */
+function requestWithProxy(options, body) {
+  return new Promise((resolve, reject) => {
+    if (SOCKS_PROXY) {
+      // 通过 SOCKS5/HTTP 代理
+      socks5Connect(API_HOST, 443)
+        .then((tlsSocket) => {
+          const req = https.request({ ...options, createConnection: () => tlsSocket, socket: tlsSocket, agent: false }, resolve);
+          req.on("error", reject);
+          if (body) req.write(body);
+          req.end();
+        })
+        .catch(reject);
+    } else {
+      // 直连
+      const req = https.request(options, resolve);
+      req.on("error", reject);
+      if (body) req.write(body);
+      req.end();
+    }
+  });
+}
 
 // ============ 工具定义 ============
 
@@ -67,19 +211,31 @@ const TOOLS = [
       required: ["file_path"],
     },
   },
+  {
+    name: "telegram_listen",
+    description: "监听 Telegram 收到的消息（交互模式）。启动监听后，在 Telegram 中给机器人发消息，系统会检测到并返回消息内容和发送者 Chat ID。支持识别 /指令 格式的命令。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        duration: {
+          type: "number",
+          description: "监听时长（秒），默认 120，最长 600",
+          default: 120,
+        },
+      },
+    },
+  },
 ];
 
 // ============ Telegram API 调用 ============
 
-/** POST JSON 到 Telegram Bot API */
+/** POST JSON 到 Telegram Bot API（支持代理） */
 function tgPost(method, body) {
   return new Promise((resolve, reject) => {
-    const url = new URL(`/bot${BOT_TOKEN}/${method}`, "https://api.telegram.org");
     const data = JSON.stringify(body);
-
-    const req = https.request(
+    requestWithProxy(
       {
-        hostname: "api.telegram.org",
+        hostname: API_HOST,
         path: `/bot${BOT_TOKEN}/${method}`,
         method: "POST",
         headers: {
@@ -88,7 +244,9 @@ function tgPost(method, body) {
         },
         timeout: 15000,
       },
-      (res) => {
+      data
+    )
+      .then((res) => {
         let chunks = "";
         res.on("data", (c) => (chunks += c));
         res.on("end", () => {
@@ -100,16 +258,8 @@ function tgPost(method, body) {
             reject(new Error(`Failed to parse Telegram response: ${chunks.slice(0, 200)}`));
           }
         });
-      }
-    );
-
-    req.on("error", reject);
-    req.on("timeout", () => {
-      req.destroy();
-      reject(new Error("Telegram API request timed out"));
-    });
-    req.write(data);
-    req.end();
+      })
+      .catch(reject);
   });
 }
 
@@ -151,9 +301,9 @@ function tgUploadFile(method, fields, filePath) {
 
     const body = Buffer.concat(chunks);
 
-    const req = https.request(
+    requestWithProxy(
       {
-        hostname: "api.telegram.org",
+        hostname: API_HOST,
         path: `/bot${BOT_TOKEN}/${method}`,
         method: "POST",
         headers: {
@@ -162,7 +312,9 @@ function tgUploadFile(method, fields, filePath) {
         },
         timeout: 60000,
       },
-      (res) => {
+      body
+    )
+      .then((res) => {
         let data = "";
         res.on("data", (c) => (data += c));
         res.on("end", () => {
@@ -174,16 +326,57 @@ function tgUploadFile(method, fields, filePath) {
             reject(new Error(`Failed to parse upload response: ${data.slice(0, 200)}`));
           }
         });
-      }
-    );
+      })
+      .catch(reject);
+  });
+}
 
-    req.on("error", reject);
-    req.on("timeout", () => {
-      req.destroy();
-      reject(new Error("Telegram upload timed out"));
-    });
-    req.write(body);
-    req.end();
+// ============ Telegram 长轮询（交互监听） ============
+
+/** 持久化保存 offset */
+function saveOffset() {
+  try { fs.writeFileSync(tgUpdateFile, String(tgUpdateOffset), "utf8"); } catch {}
+}
+
+/** 加载持久化的 offset */
+function loadOffset() {
+  try {
+    const d = fs.readFileSync(tgUpdateFile, "utf8").trim();
+    tgUpdateOffset = parseInt(d, 10) || 0;
+  } catch { tgUpdateOffset = 0; }
+}
+
+/** 轮询 Telegram 获取新消息 */
+function tgGetUpdates(timeout) {
+  return new Promise((resolve, reject) => {
+    loadOffset();
+    const params = new URLSearchParams({ offset: tgUpdateOffset + 1, timeout: String(timeout), allowed_updates: '["message"]' });
+    requestWithProxy({
+      hostname: API_HOST,
+      path: `/bot${BOT_TOKEN}/getUpdates?${params}`,
+      method: "GET",
+      timeout: (timeout + 5) * 1000,
+    })
+      .then((res) => {
+        let data = "";
+        res.on("data", (c) => (data += c));
+        res.on("end", () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (!parsed.ok) return reject(new Error(`Telegram API: ${parsed.description}`));
+            const updates = parsed.result || [];
+            // 更新 offset
+            for (const u of updates) {
+              if (u.update_id > tgUpdateOffset) tgUpdateOffset = u.update_id;
+            }
+            saveOffset();
+            resolve(updates);
+          } catch (e) {
+            reject(new Error(`解析 getUpdates 响应失败: ${e.message}`));
+          }
+        });
+      })
+      .catch(reject);
   });
 }
 
@@ -305,6 +498,65 @@ async function handleMessage(msg) {
           } catch (err) {
             return { id, error: { code: -32000, message: `发送文件失败: ${err.message}` } };
           }
+        }
+
+        case "telegram_listen": {
+          const duration = Math.min(args.duration || 120, 600);
+          console.error(`[telegram] 📡 监听模式启动（${duration}秒）`);
+          console.error(`[telegram] 📡 给机器人发消息，系统会检测到`);
+
+          const startTime = Date.now();
+          const detectedMessages = [];
+
+          return new Promise((resolve) => {
+            const pollInterval = setInterval(async () => {
+              try {
+                const updates = await tgGetUpdates(5);
+                for (const u of updates) {
+                  const msg = u.message;
+                  if (!msg || !msg.text) continue;
+                  const chat = msg.chat || {};
+                  detectedMessages.push({
+                    update_id: u.update_id,
+                    text: msg.text,
+                    chat_id: chat.id,
+                    chat_name: chat.first_name || chat.title || "",
+                    date: msg.date,
+                    is_command: msg.text.startsWith("/"),
+                    from_id: msg.from?.id,
+                    from_name: msg.from?.first_name || "",
+                  });
+                }
+              } catch {}
+            }, 3000);
+
+            const timeout = setTimeout(() => {
+              clearInterval(pollInterval);
+              const result = {
+                success: true,
+                duration_seconds: Math.round((Date.now() - startTime) / 1000),
+                messages_detected: detectedMessages.length,
+                messages: detectedMessages,
+                tip: detectedMessages.length > 0
+                  ? "检测到消息！可以用 telegram_send_message 回复。如果是 /指令 格式的命令，可以触发对应的 Agent 技能。"
+                  : `${Math.round((Date.now() - startTime) / 1000)}秒监听结束，未检测到新消息。请在 Telegram 中给 @Qby0001bot 发消息。`,
+              };
+              resolve({
+                id,
+                result: {
+                  content: [{ type: "text", text: JSON.stringify(result) }],
+                },
+              });
+            }, duration * 1000);
+
+            // 如果 MCP 请求被取消，清理定时器
+            if (id.cancel) {
+              id.cancel.then(() => {
+                clearInterval(pollInterval);
+                clearTimeout(timeout);
+              });
+            }
+          });
         }
 
         default:
