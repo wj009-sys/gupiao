@@ -67,7 +67,7 @@ def extract_top_picks(intelligence_text: str) -> list:
 def get_stock_real_price(ts_code: str) -> dict:
     """获取个股实时/最新行情"""
     try:
-        df = pro.daily(ts_code=ts_code, start_date="", end_date="")
+        df = pro.daily(ts_code=ts_code)
         if df is not None and not df.empty:
             last = df.iloc[0]
             return {
@@ -106,7 +106,7 @@ def calculate_position_size(
 def fetch_technical_levels(ts_code: str) -> dict:
     """获取技术支撑/压力位"""
     try:
-        df = pro.daily(ts_code=ts_code, start_date="", end_date="")
+        df = pro.daily(ts_code=ts_code)
         if df is None or df.empty or len(df) < 20:
             return {"support": None, "resistance": None}
 

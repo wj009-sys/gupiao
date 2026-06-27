@@ -383,7 +383,10 @@ def fetch_real_prices(stocks: list, trade_date: str) -> list:
             s["verdict"] = "error"
             verified.append(s)
     return verified
-    """更新知识库"""
+
+
+def update_knowledge(review_data: dict, trade_date: str) -> str:
+    """更新知识库（复盘记录 + 策略建议）"""
     复盘记录_dir = p("knowledge/复盘记录")
     os.makedirs(复盘记录_dir, exist_ok=True)
 

@@ -170,13 +170,12 @@ def score_valuation(ts_code: str, trade_date: str) -> dict:
         return {"score": max(0, min(100, score)), "details": details}
     except:
         return {"score": 50, "details": {"reason": "估值评分异常"}}
-    return {"score": 50, "details": {"reason": "无估值数据"}}
 
 
 def score_momentum(ts_code: str) -> dict:
     """动量因子评分（0-100）"""
     try:
-        df = pro.daily(ts_code=ts_code, start_date="", end_date="")
+        df = pro.daily(ts_code=ts_code)
         if df is None or df.empty or len(df) < 40:
             return {"score": 50, "details": {"reason": "行情数据不足"}}
 
@@ -209,13 +208,12 @@ def score_momentum(ts_code: str) -> dict:
         }
     except:
         return {"score": 50, "details": {"reason": "动量评分异常"}}
-    return {"score": 50, "details": {"reason": "无动量数据"}}
 
 
 def score_technical(ts_code: str) -> dict:
     """技术面因子评分（0-100）"""
     try:
-        df = pro.daily(ts_code=ts_code, start_date="", end_date="")
+        df = pro.daily(ts_code=ts_code)
         if df is None or df.empty or len(df) < 30:
             return {"score": 50, "details": {"reason": "技术数据不足"}}
 
@@ -250,7 +248,6 @@ def score_technical(ts_code: str) -> dict:
         return {"score": max(0, min(100, score + vol_score)), "details": {"summary": detail}}
     except:
         return {"score": 50, "details": {"reason": "技术评分异常"}}
-    return {"score": 50, "details": {"reason": "无技术数据"}}
 
 
 def score_sentiment(ts_code: str) -> dict:
@@ -262,9 +259,11 @@ def score_sentiment(ts_code: str) -> dict:
 def get_stock_name(ts_code: str) -> str:
     """获取股票名称"""
     try:
-        df = pro.daily(ts_code=ts_code, start_date="", end_date="")
+        df = pro.stock_basic(ts_code=ts_code, fields="ts_code,name")
         if df is not None and not df.empty:
-            return df.iloc[0].get("ts_code", ts_code)
+            name = df.iloc[0].get("name")
+            if name:
+                return name
     except:
         pass
     return ts_code
