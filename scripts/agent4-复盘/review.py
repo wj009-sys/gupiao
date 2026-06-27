@@ -469,6 +469,78 @@ def extract_trade_plan(trade_text: str) -> dict:
     return plan
 
 
+def extract_leader_decision(decision_text: str) -> dict:
+    """从投资决策报告中提取决策内容用于复盘"""
+    result = {
+        "sell_decisions": [],
+        "buy_decisions": [],
+        "hold_decisions": [],
+        "conflicts": [],
+        "rework_items": [],
+        "quality_review": {},
+    }
+    if not decision_text:
+        return result
+
+    # 提取强制卖出指令
+    for line in decision_text.split('\n'):
+        stripped = line.strip()
+        if '强制卖出' in stripped or '强制止损' in stripped:
+            code_match = re.search(r'(\d{6})', stripped)
+            name_match = re.match(r'.*?\*\*(.*?)\*\*', stripped)
+            reason_match = re.search(r'-(.*?)(?:\||$)', stripped)
+            if code_match:
+                result["sell_decisions"].append({
+                    "code": code_match.group(0),
+                    "name": name_match.group(1) if name_match else "",
+                    "reason": reason_match.group(1).strip() if reason_match else "",
+                })
+
+    # 提取止盈指令
+    for line in decision_text.split('\n'):
+        if '分批止盈' in line or '止盈' in line:
+            code_match = re.search(r'(\d{6})', line)
+            name_match = re.search(r'\*\*(.*?)\*\*', line)
+            if code_match:
+                result["sell_decisions"].append({
+                    "code": code_match.group(0),
+                    "name": name_match.group(1) if name_match else "",
+                    "reason": "止盈",
+                })
+
+    # 提取持有指令
+    for line in decision_text.split('\n'):
+        if '继续持有' in line or '✅' in line:
+            name_match = re.search(r'\*\*(.*?)\*\*', line)
+            if name_match and '强制' not in line and '止损' not in line:
+                result["hold_decisions"].append({"name": name_match.group(1)})
+
+    # 提取冲突项
+    in_conflict = False
+    for line in decision_text.split('\n'):
+        if '分歧' in line or '争议' in line or '冲突' in line:
+            in_conflict = True
+        if in_conflict and '|' in line and '仲裁' in line:
+            parts = [p.strip() for p in line.split('|') if p.strip()]
+            if len(parts) >= 4:
+                result["conflicts"].append({
+                    "asset": parts[0],
+                    "risk_opinion": parts[1],
+                    "trader_opinion": parts[2],
+                    "verdict": parts[3],
+                })
+
+    # 检测质量审核
+    qa_items = re.findall(r'审核结果[：:]\s*(✅|⚠️|❌|通过|需补充|不合格)', decision_text)
+    result["quality_review"] = {
+        "passed": qa_items.count("✅") + qa_items.count("通过"),
+        "needs_work": qa_items.count("⚠️") + qa_items.count("需补充"),
+        "rejected": qa_items.count("❌") + qa_items.count("不合格"),
+    }
+
+    return result
+
+
 def fetch_real_prices(stocks: list, trade_date: str) -> list:
     """获取候选股票的实际行情来验证选股评分"""
     verified = []
@@ -539,6 +611,7 @@ def generate_review_report(trade_date: str = None) -> dict:
         "predictions": {},
         "stock_picks": {"stocks": [], "verified": [], "total": 0},
         "trade_plan": {"buy": [], "sell": [], "hold": []},
+        "leader": {"sell_decisions": [], "buy_decisions": [], "hold_decisions": [], "conflicts": [], "quality_review": {}},
         "actual": {},
         "comparison": {},
         "accuracy": {"大盘方向": {}, "板块预测": {}, "选股准确率": {}, "综合准确率": 0},
@@ -554,6 +627,7 @@ def generate_review_report(trade_date: str = None) -> dict:
     风控 = read_report(f"reports/日报/风控/风控报告_{日期显示}.md")
     选股 = read_report(f"reports/日报/选股/选股建议_{日期显示}.md")
     操盘 = read_report(f"reports/日报/操盘/交易计划_{日期显示}.md")
+    决策 = read_report(f"reports/日报/决策/投资决策_{日期显示}.md")
 
     if 情报:
         review["inputs"]["情报"] = True
@@ -570,6 +644,9 @@ def generate_review_report(trade_date: str = None) -> dict:
     if 操盘:
         review["inputs"]["操盘"] = True
         print(f"  {ok} 交易计划已读取")
+    if 决策:
+        review["inputs"]["决策"] = True
+        print(f"  {ok} 投资决策报告已读取")
 
     # 2. 提取预测
     predictions = extract_predictions(分析)
@@ -667,6 +744,15 @@ def generate_review_report(trade_date: str = None) -> dict:
         review["trade_plan"]["hold"] = trade_plan.get("hold", [])
         if trade_plan["buy"] or trade_plan["sell"]:
             print(f"  {ok} 交易计划已提取: {len(trade_plan['buy'])}买入 {len(trade_plan['sell'])}卖出")
+
+    # 4d. 投资领导复盘
+    if 决策:
+        leader_review = extract_leader_decision(决策)
+        review["leader"] = leader_review
+        decisions_count = len(leader_review.get("sell_decisions", [])) + len(leader_review.get("hold_decisions", []))
+        if leader_review.get("buy_decisions"):
+            decisions_count += len(leader_review["buy_decisions"])
+        print(f"  {ok} 投资决策已提取: {decisions_count}项决策")
 
     # 5. 计算准确率
     # 大盘方向：如果有涨跌预测（结构市=偏震荡，准确率中等）
