@@ -319,6 +319,75 @@ Telegram 和 QQ Bot 支持**后台常驻监听**，启动后自动检测手机�
 | `/风控官` | agent3-风控官 | 风控检查+止损监控 |
 | `/复盘师` | agent4-复盘师 | 复盘+偏差分析+知识库更新 |
 
+---
+
+## 🔄 Telegram ↔ Claude Code 双向交互
+
+项目实现了手机端和 Claude Code AI 之间的双向对话能力。
+
+### 架构概览
+
+```
+手机发消息 ──→ keepalive.js ──→ .telegram_queue/pending.json ──→ Claude Code AI ──→ 回复到手机
+                                   (消息队列)      ↑                    │
+                                                   └── cron 定时检查 ───┘
+                                                   或 /收件箱 手动触发
+```
+
+### 两条路径
+
+| 路径 | 工作方式 | 响应速度 | 适用场景 |
+|------|---------|---------|---------|
+| **预设命令** | keepalive 直接执行 Python 脚本 | 即时 (~2秒) | `/情报员` `/分析师` `/风控官` `/复盘师` |
+| **AI 对话** | keepalive 写入队列 → Claude Code 处理 | 定时 (~30分钟) | 自由提问、综合查询、需要 AI 推理的复杂问题 |
+
+### 消息队列机制
+
+当 keepalive 收到**非预设命令**的消息时（如"帮我看看XX股票"），不会直接执行脚本，而是：
+
+1. **写入队列**：消息存储在 `.telegram_queue/pending.json`
+2. **回复确认**：手机收到 "📨 消息已收到，我正在处理..."
+3. **Claude Code 处理**：定时任务检测到新消息后，Claude Code 用 AI 理解并处理
+4. **回复发出**：通过 `telegram_reply` 工具回复到手机
+
+### MCP 工具
+
+`server.js` 新增两个 MCP 工具供 Claude Code 使用：
+
+| 工具名 | 功能 | 调用时机 |
+|-------|------|---------|
+| `telegram_check_inbox` | 读取所有待处理的用户消息 | 定时任务 / 手动 |
+| `telegram_reply` | 回复消息并标记已处理 | 处理完每条消息后 |
+
+### 定时收件箱检查
+
+系统已注册 claw cron 定时任务，**工作日 9:07~15:37 每30分钟**自动检查收件箱：
+
+```json
+7,37 9-15 * * 1-5
+```
+
+当 Claude Code 处于空闲状态时，定时任务会自动触发 → 检查收件箱 → AI 处理 → 回复。
+
+你也可在 Claude Code 中手动输入任意查询语句（如"帮我看看 Telegram 有什么消息"）来触发收件箱检查。
+
+### 完整数据流示例
+
+```
+手机发 "帮我看看持仓里哪只票风险最大"
+  ↓ keepalive 轮询检测到（非命令消息）
+  ├── 写入 .telegram_queue/pending.json
+  └── 回复 "📨 消息已收到，正在处理..."
+  ↓ claw cron 定时触发（或手动查询）
+Claude Code AI:
+  ├── 调用 telegram_check_inbox → 获取消息
+  ├── 分析问题：需要查询持仓 + 风控规则
+  ├── 调用 agent3-风控 Python 脚本
+  ├── 综合 AI 推理 → 给出回答
+  └── 调用 telegram_reply → 回复到手机
+手机收到 AI 回复
+```
+
 ## Security
 
 - **Token 管理**：Tushare Token 存储在 `.claude/settings.local.json`（已在 `.gitignore` 中排除）

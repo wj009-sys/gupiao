@@ -67,6 +67,36 @@ const PROJECT_ROOT = (() => {
 
 console.error(`[tg-keepalive] Project root: ${PROJECT_ROOT}`);
 
+// ============ 消息队列 ============
+
+const QUEUE_DIR = path.join(PROJECT_ROOT, ".telegram_queue");
+const PENDING_FILE = path.join(QUEUE_DIR, "pending.json");
+
+/** 存储消息到待处理队列 */
+function storeMessage(msg) {
+  try {
+    if (!fs.existsSync(QUEUE_DIR)) fs.mkdirSync(QUEUE_DIR, { recursive: true });
+    let queue = [];
+    try { queue = JSON.parse(fs.readFileSync(PENDING_FILE, "utf8")); } catch {}
+    // 去重: 同 chat_id + 同文本 + 最近30秒的不重复添加
+    const now = Date.now();
+    queue = queue.filter((m) => m.status !== "done");
+    const isDup = queue.some(
+      (m) => m.chat_id === msg.chat_id && m.text === msg.text && now - m.timestamp < 30000
+    );
+    if (isDup) return false;
+    queue.push(msg);
+    // 最多保留100条
+    if (queue.length > 100) queue = queue.slice(-100);
+    fs.writeFileSync(PENDING_FILE, JSON.stringify(queue, null, 2), "utf8");
+    console.error(`[tg-keepalive] 📥 Queued message from ${msg.from_name}: ${msg.text.slice(0, 60)}`);
+    return true;
+  } catch (err) {
+    console.error(`[tg-keepalive] ⚠️ storeMessage error: ${err.message}`);
+    return false;
+  }
+}
+
 // ============ 命令路由 ============
 
 const COMMANDS = {
@@ -230,6 +260,28 @@ async function pollOnce() {
       const matchedKey = Object.keys(COMMANDS).find((k) => cmd === k || cmd === k.toLowerCase());
       if (matchedKey) {
         await handleCommand(matchedKey, chatId || CHAT_ID, text);
+      } else if (chatId && text) {
+        // 非命令消息 → 写入队列，等待 Claude Code 处理
+        const srcMsg = msg; // 保留原始 Telegram 消息对象引用
+        const queueEntry = {
+          id: `${Date.now()}-${chatId}`,
+          text: text,
+          chat_id: chatId,
+          from_name: srcMsg.from?.first_name || srcMsg.from?.username || "User",
+          timestamp: Date.now(),
+          status: "pending",
+        };
+        const stored = storeMessage(queueEntry);
+        if (stored) {
+          try {
+            await tgSendMessage(
+              "📨 *消息已收到！*\n\n我正在处理你的消息，请稍候片刻...\n\n" +
+              "> *提示：* 实时回复需要 Claude Code 正在运行。\n" +
+              "> 如果长时间未收到回复，请稍后重试。",
+              chatId
+            );
+          } catch {}
+        }
       }
     }
     try { fs.writeFileSync(offsetFile, String(offset), "utf8"); } catch {}

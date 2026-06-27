@@ -32,6 +32,18 @@ const SOCKS_PROXY = process.env.SOCKS_PROXY || process.env.HTTPS_PROXY || "";
 const API_HOST = "api.telegram.org";
 const API_BASE = `https://${API_HOST}/bot${BOT_TOKEN}`;
 
+// 消息队列路径（相对于项目根目录）
+const PROJECT_ROOT = (() => {
+  for (const p of [__dirname, process.cwd()].flatMap((d) => [
+    d, path.resolve(d, ".."), path.resolve(d, "..", ".."),
+  ])) {
+    if (fs.existsSync(path.join(p, "CLAUDE.md"))) return p;
+  }
+  return process.cwd();
+})();
+const QUEUE_DIR = path.join(PROJECT_ROOT, ".telegram_queue");
+const PENDING_FILE = path.join(QUEUE_DIR, "pending.json");
+
 // Telegram 长轮询状态
 let tgUpdateOffset = 0;
 let tgUpdateFile = path.join(__dirname, ".telegram_offset");
@@ -223,6 +235,32 @@ const TOOLS = [
           default: 120,
         },
       },
+    },
+  },
+  {
+    name: "telegram_check_inbox",
+    description: "📬 检查 Telegram 收件箱，返回所有待处理的用户消息。这些消息由常驻监听服务(keepalive)自动接收并排队。调用此工具获取消息列表，然后用 telegram_reply 回复。",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "telegram_reply",
+    description: "📤 回复 Telegram 消息并标记为已处理。传入消息ID和回复内容(Markdown格式)。回复成功后，该消息从待处理队列中移除。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        message_id: {
+          type: "string",
+          description: "要回复的消息ID（从 telegram_check_inbox 获取的 id 字段）",
+        },
+        reply_text: {
+          type: "string",
+          description: "回复内容（支持 Markdown 格式）",
+        },
+      },
+      required: ["message_id", "reply_text"],
     },
   },
 ];
@@ -557,6 +595,93 @@ async function handleMessage(msg) {
               });
             }
           });
+        }
+
+        case "telegram_check_inbox": {
+          // 读取待处理消息队列
+          let messages = [];
+          try {
+            if (fs.existsSync(PENDING_FILE)) {
+              const data = fs.readFileSync(PENDING_FILE, "utf8");
+              messages = JSON.parse(data).filter((m) => m.status === "pending");
+            }
+          } catch (err) {
+            console.error(`[telegram] ⚠️ 读取队列失败: ${err.message}`);
+          }
+          return {
+            id,
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({
+                    count: messages.length,
+                    messages: messages.map((m) => ({
+                      id: m.id,
+                      text: m.text,
+                      from_name: m.from_name,
+                      timestamp: m.timestamp,
+                      time: new Date(m.timestamp).toLocaleString("zh-CN"),
+                    })),
+                    tip: messages.length === 0
+                      ? "📭 收件箱为空，没有待处理的消息。"
+                      : `📬 共 ${messages.length} 条待处理消息，请用 telegram_reply 逐一回复。`,
+                  }),
+                },
+              ],
+            },
+          };
+        }
+
+        case "telegram_reply": {
+          const { message_id, reply_text } = args;
+          if (!message_id || !reply_text) {
+            return { id, error: { code: -32602, message: "缺少必填参数: message_id 和 reply_text" } };
+          }
+          try {
+            // 1. 发送回复到 Telegram
+            const sendResult = await tgPost("sendMessage", {
+              chat_id: CHAT_ID,
+              text: reply_text,
+              parse_mode: "Markdown",
+              disable_web_page_preview: false,
+            });
+
+            // 2. 从队列中移除/标记已处理
+            try {
+              if (fs.existsSync(PENDING_FILE)) {
+                const data = fs.readFileSync(PENDING_FILE, "utf8");
+                let queue = JSON.parse(data);
+                queue = queue.map((m) =>
+                  m.id === message_id ? { ...m, status: "done", replied_at: Date.now() } : m
+                );
+                // 清理已处理的消息（保留最近50条历史）
+                const done = queue.filter((m) => m.status === "done").slice(-50);
+                const pending = queue.filter((m) => m.status !== "done");
+                fs.writeFileSync(PENDING_FILE, JSON.stringify([...pending, ...done], null, 2), "utf8");
+              }
+            } catch (err) {
+              console.error(`[telegram] ⚠️ 标记已处理失败: ${err.message}`);
+            }
+
+            return {
+              id,
+              result: {
+                content: [
+                  {
+                    type: "text",
+                    text: JSON.stringify({
+                      success: true,
+                      message_id: sendResult.result?.message_id,
+                      replied_to: message_id,
+                    }),
+                  },
+                ],
+              },
+            };
+          } catch (err) {
+            return { id, error: { code: -32000, message: `回复失败: ${err.message}` } };
+          }
         }
 
         default:
