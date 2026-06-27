@@ -2,7 +2,7 @@
 
 ## 项目目标
 
-构建A股自动化投研团队，包含4个AI Agent角色，每天自动完成情报采集→技术分析→风控检查→复盘迭代的完整闭环。每个Agent都经过Darwin Skill优化（评分从平均65.1提升至77.4）。
+构建A股自动化投研团队，包含7个AI Agent角色，每天自动完成情报采集→技术分析→选股推荐→风控检查→交易计划→复盘迭代的完整闭环，由投资领导统筹管理。每个Agent都经过Darwin Skill优化（评分从平均65.1提升至77.4）。
 
 ## Agent 团队
 
@@ -12,6 +12,9 @@
 | 📊 Agent2 分析师 | `skills/agent2-分析师/SKILL.md` | `analyze.py` | **79.1** (+12.0) | 08:30 |
 | 🛡️ Agent3 风控官 | `skills/agent3-风控官/SKILL.md` | `risk_check.py` | **76.2** (+12.6) | 按需 |
 | 🔄 Agent4 复盘师 | `skills/agent4-复盘师/SKILL.md` | `review.py` | **80.3** (+11.4) | 21:00 |
+| 🔍 Agent5 选股机器人 | `skills/agent5-选股机器人/SKILL.md` | `stock_picker.py` | **新建** | 按需 |
+| 🎯 Agent6 操盘手 | `skills/agent6-操盘手/SKILL.md` | `trader.py` | **新建** | 按需 |
+| 🏆 Agent7 投资领导 | `skills/agent7-投资领导/SKILL.md` | `leader.py` | **新建** | 按需 |
 
 ### 优化后新增通用模块（所有Skill均含）
 
@@ -53,6 +56,30 @@
 - **D4检查**：每个偏差必须附带改进措施；知识库必须实际更新
 - **D9反例**：禁止只报喜不报忧、流于表面的偏差分析、改框架过频
 
+### Agent5：选股机器人（多因子选股）
+- **职责**：基于情报热点+技术面+基本面因子，筛选候选股票池
+- **输出**：`reports/日报/选股/选股建议_YYYY-MM-DD.md`
+- **配置**：`data/选股规则.json` + `knowledge/策略/选股策略.md`
+- **D3异常**：6条fallback（行情失败、无候选票、财务数据缺失等）
+- **D4检查**：候选票多因子交叉验证、持仓冲突检查、否决记录
+- **D9反例**：禁止单一因子决策、追涨、忽视持仓冲突
+
+### Agent6：操盘手（交易计划）
+- **职责**：基于选股建议+风控约束+仓位规则，制定交易计划
+- **输出**：`reports/日报/操盘/交易计划_YYYY-MM-DD.md`
+- **配置**：`data/仓位管理规则.json` + `knowledge/策略/交易执行规则.md`
+- **D3异常**：5条fallback（无风控报告、无选股建议、行情缺失等）
+- **D4检查**：买入合规、止损必设、总仓位上限、优先级别注
+- **D9反例**：禁止全仓一只、频繁交易、逆势加仓、忽视风控
+
+### Agent7：投资领导（团队管理）
+- **职责**：统筹调度所有Agent，分工派活、审核产出、仲裁冲突、最终决策
+- **输出**：`reports/日报/决策/投资决策_YYYY-MM-DD.md`
+- **管理对象**：Agent1-6全部归属投资领导调度
+- **D3异常**：6条fallback（部分Agent未运行、产出不合格、冲突等）
+- **D4检查**：团队出勤记录、风控一票否决、决策可追溯
+- **D9反例**：禁止代劳Agent工作、模糊分工、模糊结论
+
 ## 目录结构
 
 ```
@@ -65,7 +92,10 @@ data/              - 数据文件（持仓、自选、规则配置）
 reports/           - 报告输出（日报/周报/月报，日报文件已 gitignored）
   ├── 日报/情报/   - Agent1 情报摘要
   ├── 日报/分析/   - Agent2 分析报告
+  ├── 日报/选股/   - Agent5 选股建议
   ├── 日报/风控/   - Agent3 风控报告
+  ├── 日报/操盘/   - Agent6 交易计划
+  ├── 日报/决策/   - Agent7 投资决策
   ├── 日报/复盘/   - Agent4 复盘报告
   ├── 周报/        - 每周汇总
   └── 月报/        - 每月汇总
@@ -74,6 +104,9 @@ scripts/           - Python 分析脚本
   ├── agent2-技术分析/
   ├── agent3-风控/
   ├── agent4-复盘/
+  ├── agent5-选股/
+  ├── agent6-操盘/
+  ├── agent7-决策/
   └── utils/       - 工具函数（Tushare客户端、技术指标库）
 .claude/           - Claude 配置
   ├── mcp-servers/
@@ -85,14 +118,17 @@ scripts/           - Python 分析脚本
   ├── settings.local.json - 本地凭据与Token（gitignored）
   └── scheduled_tasks.json - 定时任务存储
 knowledge/         - 知识库（Agent4 维护更新）
-  ├── 策略/        - 选股/择时策略
+  ├── 策略/        - 选股/择时/交易策略
   └── 复盘记录/    - 历史复盘
 memory/            - Claude 持久记忆
 skills/            - 自定义 Skills
   ├── agent1-情报员/SKILL.md + test-prompts.json
   ├── agent2-分析师/SKILL.md + test-prompts.json
   ├── agent3-风控官/SKILL.md + test-prompts.json
-  └── agent4-复盘师/SKILL.md + test-prompts.json
+  ├── agent4-复盘师/SKILL.md + test-prompts.json
+  ├── agent5-选股机器人/SKILL.md
+  ├── agent6-操盘手/SKILL.md
+  └── agent7-投资领导/SKILL.md
 ```
 
 ## 数据源
@@ -118,6 +154,9 @@ skills/            - 自定义 Skills
 | 08:30 工作日 | Agent2 技术分析 | `30 8 * * 1-5` | claw MCP + Python脚本 → Telegram+微信+QQ推送 |
 | 21:00 工作日 | Agent4 复盘分析 | `0 21 * * 1-5` | claw MCP + Python脚本 → Telegram+微信+QQ推送 |
 | 按需 | Agent3 风控检查 | - | 手动 `/风控官` → Telegram+微信+QQ推送 |
+| 按需 | Agent5 选股机器人 | - | 手动 `/选股` → Telegram+微信+QQ推送 |
+| 按需 | Agent6 操盘手 | - | 手动 `/操盘` → Telegram+微信+QQ推送 |
+| 按需 | Agent7 投资领导 | - | 手动 `/决策` → Telegram+微信+QQ推送 |
 
 > MCP server: `.claude/mcp-servers/claw/server.js` (stdio JSON-RPC)
 > 工具: `mcp__claw__cron` (创建) / `cron_list` (查询) / `cron_delete` (删除)
@@ -162,8 +201,8 @@ skills/            - 自定义 Skills
 **配置方法**：
 
 1. 在企业微信中 **新建一个群**（或使用现有群）
-2. 群设置 → 群机器人 → **添加机器人**（可添加最多4个）
-3. 每个机器人设置不同的名称和头像（情报员/分析师/风控官/复盘师）
+2. 群设置 → 群机器人 → **添加机器人**（可添加最多7个）
+3. 每个机器人设置不同的名称和头像（情报员/分析师/选股机器人/风控官/操盘手/复盘师/投资领导）
 4. 分别复制 Webhook URL，填入 `.claude/settings.local.json`：
 
 ```json
@@ -172,6 +211,9 @@ skills/            - 自定义 Skills
 "WECHAT_WEBHOOK_2": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 分析师
 "WECHAT_WEBHOOK_3": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 风控官
 "WECHAT_WEBHOOK_4": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 复盘师
+"WECHAT_WEBHOOK_5": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 选股机器人
+"WECHAT_WEBHOOK_6": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 操盘手
+"WECHAT_WEBHOOK_7": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 投资领导
 
 // 或只配一个通用机器人（所有Agent共用）
 "WECHAT_WEBHOOK_URL": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
@@ -266,6 +308,9 @@ Telegram 和 QQ Bot 支持**后台常驻监听**，启动后自动检测手机�
 | 🕵️ 情报员 | 07:00 报告生成后 | 大盘概况 + 关键资讯 + 热点板块 |
 | 📊 分析师 | 08:30 报告生成后 | 大盘评分 + 强势板块 + 操作建议 |
 | 🛡️ 风控官 | 按需/盘中 | 风险等级 + 止损/仓位预警 |
+| 🔍 选股机器人 | 按需 | 候选股票池 + 多因子评分 |
+| 🎯 操盘手 | 按需 | 买入/卖出/持有清单 |
+| 🏆 投资领导 | 按需 | 最终投资决策 + 团队调度 |
 | 🔄 复盘师 | 21:00 报告生成后 | 综合准确率 + 偏差总结 + 知识库更新 |
 
 > 所有四个通道（Telegram / 微信 / QQ-PushPlus / QQ机器人）都是可选的，配置哪个就用哪个，未配置的通道自动跳过。
@@ -282,6 +327,9 @@ Telegram 和 QQ Bot 支持**后台常驻监听**，启动后自动检测手机�
 | `/分析师` | agent2-分析师 | 技术分析+板块排名 | Telegram, QQ Bot |
 | `/风控官` | agent3-风控官 | 风控检查+止损监控 | Telegram, QQ Bot |
 | `/复盘师` | agent4-复盘师 | 复盘+偏差分析+知识库更新 | Telegram, QQ Bot |
+| `/选股` 或 `/选股机器人` | agent5-选股机器人 | 多因子选股+评分排名 | Telegram, QQ Bot |
+| `/操盘` 或 `/操盘手` | agent6-操盘手 | 交易计划+仓位分配 | Telegram, QQ Bot |
+| `/决策` 或 `/投资领导` | agent7-投资领导 | 综合决策+团队调度 | Telegram, QQ Bot |
 
 ### 交互流程
 
@@ -415,6 +463,18 @@ python -X utf8 scripts/agent3-风控/risk_check.py [--env-score N]
 # Agent4 - 复盘
 source venv/Scripts/activate
 python -X utf8 scripts/agent4-复盘/review.py [YYYYMMDD]
+
+# Agent5 - 选股
+source venv/Scripts/activate
+python -X utf8 scripts/agent5-选股/stock_picker.py [--top-n 5]
+
+# Agent6 - 交易计划
+source venv/Scripts/activate
+python -X utf8 scripts/agent6-操盘/trader.py
+
+# Agent7 - 综合决策
+source venv/Scripts/activate
+python -X utf8 scripts/agent7-决策/leader.py
 ```
 
 ## 优化历史（Darwin）

@@ -98,11 +98,17 @@ const COMMANDS = {
   "/分析师": { script: "scripts/agent2-技术分析/analyze.py", agent: "分析师", emoji: "📈", ack: "📈 正在执行技术分析..." },
   "/风控官": { script: "scripts/agent3-风控/risk_check.py", agent: "风控官", emoji: "🛡️", ack: "🛡️ 正在执行风控检查..." },
   "/复盘师": { script: "scripts/agent4-复盘/review.py", agent: "复盘师", emoji: "🔄", ack: "🔄 正在执行复盘分析..." },
+  "/选股": { script: "scripts/agent5-选股/stock_picker.py", agent: "选股机器人", emoji: "🔍", ack: "🔍 正在执行多因子选股..." },
+  "/选股机器人": { script: "scripts/agent5-选股/stock_picker.py", agent: "选股机器人", emoji: "🔍", ack: "🔍 正在执行多因子选股..." },
+  "/操盘": { script: "scripts/agent6-操盘/trader.py", agent: "操盘手", emoji: "🎯", ack: "🎯 正在制定交易计划..." },
+  "/操盘手": { script: "scripts/agent6-操盘/trader.py", agent: "操盘手", emoji: "🎯", ack: "🎯 正在制定交易计划..." },
+  "/决策": { script: "scripts/agent7-决策/leader.py", agent: "投资领导", emoji: "🏆", ack: "🏆 正在综合决策..." },
+  "/投资领导": { script: "scripts/agent7-决策/leader.py", agent: "投资领导", emoji: "🏆", ack: "🏆 正在综合决策..." },
   "/help": { agent: "帮助", emoji: "❓", help: true },
   "/start": { agent: "帮助", emoji: "👋", help: true },
 };
 
-const AGENT_NAMES = { 1: "情报员", 2: "分析师", 3: "风控官", 4: "复盘师" };
+const AGENT_NAMES = { 1: "情报员", 2: "分析师", 3: "风控官", 4: "复盘师", 5: "选股机器人", 6: "操盘手", 7: "投资领导" };
 
 /** 通过 QQ API 发送消息 */
 async function qqSendMessage(openid, content, isGroup = false) {

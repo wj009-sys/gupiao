@@ -124,6 +124,42 @@ const COMMANDS = {
     emoji: "🔄",
     ack: "🔄 正在执行复盘分析...",
   },
+  "/选股": {
+    script: "scripts/agent5-选股/stock_picker.py",
+    agent: "选股机器人",
+    emoji: "🔍",
+    ack: "🔍 正在执行多因子选股...",
+  },
+  "/选股机器人": {
+    script: "scripts/agent5-选股/stock_picker.py",
+    agent: "选股机器人",
+    emoji: "🔍",
+    ack: "🔍 正在执行多因子选股...",
+  },
+  "/操盘": {
+    script: "scripts/agent6-操盘/trader.py",
+    agent: "操盘手",
+    emoji: "🎯",
+    ack: "🎯 正在制定交易计划...",
+  },
+  "/操盘手": {
+    script: "scripts/agent6-操盘/trader.py",
+    agent: "操盘手",
+    emoji: "🎯",
+    ack: "🎯 正在制定交易计划...",
+  },
+  "/决策": {
+    script: "scripts/agent7-决策/leader.py",
+    agent: "投资领导",
+    emoji: "🏆",
+    ack: "🏆 正在综合决策...",
+  },
+  "/投资领导": {
+    script: "scripts/agent7-决策/leader.py",
+    agent: "投资领导",
+    emoji: "🏆",
+    ack: "🏆 正在综合决策...",
+  },
   "/help": {
     agent: "帮助",
     emoji: "❓",
@@ -331,7 +367,10 @@ async function handleCommand(cmdKey, chatId, rawText) {
       "可用命令：\n" +
       "📊 `/情报员` — 情报采集\n" +
       "📈 `/分析师` — 技术分析\n" +
+      "🔍 `/选股` — 多因子选股\n" +
       "🛡️ `/风控官` — 风控检查\n" +
+      "🎯 `/操盘` — 交易计划\n" +
+      "🏆 `/决策` — 综合决策\n" +
       "🔄 `/复盘师` — 复盘分析\n\n" +
       "命令在 Claude Code 中运行，结果会自动推送到这里。";
     try { await tgSendMessage(helpText, chatId); } catch {}
