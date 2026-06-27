@@ -323,6 +323,7 @@ python -X utf8 scripts/agent7-决策/leader.py
 | 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文1.0** — 全团队D3/D4/D9首轮覆盖 | 平均+12.3→77.4 | 7 commits |
 | 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文1.0续** — 五星优化+标准化+test-prompts | 平均+19.7→97.1 (五星) | 17 commits |
 | 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文2.0** — 脚本Bug修复+全员D3/D4/D9再升级 | +22D3 +13D4 +16D9 | 脚本Bug修复+全团队升级 |
+| 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文3.0** — 全量Python脚本D3/D4/D9代码级嵌入+知识库升级 | +655行D3/D4/D9代码级实现 | 13 files, 7ab7249 |
 
 优化内容（第1轮）：22条D3 fallback + 4个D4 CHECKPOINT + 21条D9反例 (原有4 Agent)
 新增：Agent5-7全套D3/D4/D9 + 全团队D4升级 + 统一标准化格式 + 全团队test-prompts
@@ -334,3 +335,11 @@ python -X utf8 scripts/agent7-决策/leader.py
 - D3新增：领跌板块排序防错、移动止损真实回撤、涨跌停超限截断、板块预测模糊匹配、行业集中度超限降权
 - D4新增：多工具协同、数据质量时效标注、成长因子独立性验证、移动止损回撤计算、涨跌停范围检查、仓位上限来源追溯
 - D9新增：成长因子用动量冒充、情绪因子硬编码50、移动止损用当日涨跌幅、板块预测留空不改、价格超出涨跌停范围
+
+优化内容（第3轮-Darwin 3.0）：全量Python脚本D3/D4/D9代码级嵌入 + 知识库标准化
+- **脚本层D3嵌入**：所有10个Python脚本添加结构化D3异常处理表（module docstring），覆盖每个数据源/步骤的触发条件→一线修复→仍失败兜底
+- **代码级错误处理强化**：tushare_client.py所有API函数try/except兜底、technical_analysis.py逐指标安全计算+NaN防御+边界保护、trader.py JSON解析+总资产字段多级fallback
+- **D4 CHECKPOINT代码级**：读文件前检查存在、计算前检查数据长度、输出前检查完整性（文件存在检查、列名验证、行情覆盖率、总资产校验等）
+- **D9反例注释**：每个脚本标注常见错误做法、为什么不要做、应该怎么做
+- **知识库升级**：选股策略.md/交易执行规则.md/择时策略.md各新增D3表+D4检查点+D9反例
+- **Bug修复**：review.py死代码空循环删除、trader.py总资产字段None兼容、load_json JSONDecodeError保护、technical_analysis.py列名缺失/NaN防御
