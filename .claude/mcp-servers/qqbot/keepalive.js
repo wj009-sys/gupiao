@@ -22,6 +22,11 @@ const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 
+// cc-bridge：Claude Code AI 对话引擎
+const { ClaudeCodeSession } = require(path.join(
+  __dirname, "..", "..", "..", "cc-bridge", "index.js"
+));
+
 // ============ 加载配置 ============
 
 function loadSettings() {
@@ -281,6 +286,59 @@ function parseCommand(text) {
   return Object.keys(COMMANDS).find((k) => cmd === k || cmd === k.toLowerCase()) || null;
 }
 
+// ============ cc-bridge AI 对话引擎 ============
+
+let ccSession = null;
+let ccProcessing = false;
+
+function initCCSession() {
+  if (ccSession) return;
+  ccSession = new ClaudeCodeSession({
+    projectRoot: PROJECT_ROOT,
+    timeout: 180000,
+    skipPermissions: true,
+    bare: true,
+    appendSystemPrompt: [
+      "你正在和用户通过聊天平台（QQ）对话，所有回复都会推送到用户手机。",
+      "请用中文回复，保持简洁（建议不超过200字）。",
+      "关于股票投研项目：",
+      "- 用户可能问 A 股相关问题，结合你的金融知识给出分析",
+      "- 当需要最新数据时，利用你的知识回答，不要使用 Bash 等工具",
+      "- 回答中不要提及你是 Claude Code",
+    ].join("\n"),
+  });
+  console.error("[qqbot-keepalive] 🧠 cc-bridge session created");
+}
+
+/** 通过 cc-bridge 用 Claude Code AI 处理 QQ 消息 */
+async function handleAIDialog(text, openid, isGroup, fromName) {
+  console.error(`[qqbot-keepalive] 🧠 AI dialog from ${fromName}: ${text.slice(0, 80)}`);
+  await qqSendMessage(openid, "🧠 正在思考，请稍候...", isGroup);
+
+  initCCSession();
+  if (!ccSession) {
+    await qqSendMessage(openid, "❌ AI 引擎未就绪", isGroup);
+    return;
+  }
+
+  try {
+    await ccSession.start();
+    const result = await ccSession.send(text);
+    if (result && result.text) {
+      const reply = result.text.length > 4000 ? result.text.slice(0, 3997) + "..." : result.text;
+      await qqSendMessage(openid, reply, isGroup);
+      console.error(`[qqbot-keepalive] ✅ AI reply (${result.text.length} chars, $${(result.cost || 0).toFixed(4)})`);
+    }
+  } catch (err) {
+    console.error(`[qqbot-keepalive] ❌ AI dialog error: ${err.message}`);
+    if (err.message.includes("session") || err.message.includes("resume")) {
+      try { ccSession.stop(); } catch {}
+      ccSession = null;
+    }
+    await qqSendMessage(openid, `❌ 处理出错: ${err.message.slice(0, 100)}`, isGroup);
+  }
+}
+
 // ============ WebSocket ============
 
 function startHeartbeat(interval) {
@@ -342,12 +400,22 @@ async function connect() {
                 const openid = d.author?.user_openid;
                 const content = d.content || "";
                 const cmd = parseCommand(content);
-                if (cmd && openid) handleQQCommand(cmd, openid, false, content);
+                if (cmd && openid) {
+                  handleQQCommand(cmd, openid, false, content);
+                } else if (openid && content && !ccProcessing) {
+                  ccProcessing = true;
+                  handleAIDialog(content, openid, false, d.author?.member_openid || "User").finally(() => { ccProcessing = false; });
+                }
               } else if (t === "AT_MESSAGE_CREATE") {
                 const openid = d.group_openid;
                 const content = (d.content || "").replace(/<@!\d+>/g, "").trim();
                 const cmd = parseCommand(content);
-                if (cmd && openid) handleQQCommand(cmd, openid, true, content);
+                if (cmd && openid) {
+                  handleQQCommand(cmd, openid, true, content);
+                } else if (openid && content && !ccProcessing) {
+                  ccProcessing = true;
+                  handleAIDialog(content, openid, true, d.author?.member_openid || "User").finally(() => { ccProcessing = false; });
+                }
               }
               break;
             case 7:
@@ -514,6 +582,14 @@ async function main() {
 
   // 启动 HTTP 供 MCP 调用
   startHttpServer();
+
+  // 初始化 cc-bridge（后台预启动）
+  initCCSession();
+  ccSession.start().then(() => {
+    console.error(`[qqbot-keepalive] 🧠 cc-bridge ready (session: ${ccSession.getStatus().session_id || "new"})`);
+  }).catch((err) => {
+    console.error(`[qqbot-keepalive] ⚠️ cc-bridge init: ${err.message}`);
+  });
 
   // 连接 WebSocket
   console.error(`[qqbot-keepalive] 🔌 Connecting to QQ Gateway...`);

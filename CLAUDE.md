@@ -321,72 +321,71 @@ Telegram 和 QQ Bot 支持**后台常驻监听**，启动后自动检测手机�
 
 ---
 
-## 🔄 Telegram ↔ Claude Code 双向交互
+## 🔄 Telegram / QQ Bot ↔ Claude Code 双向交互（cc-bridge 架构）
 
-项目实现了手机端和 Claude Code AI 之间的双向对话能力。
+项目通过 `cc-bridge` 模块实现手机端和 Claude Code AI 之间的实时双向对话。
 
-### 架构概览
-
-```
-手机发消息 ──→ keepalive.js ──→ .telegram_queue/pending.json ──→ Claude Code AI ──→ 回复到手机
-                                   (消息队列)      ↑                    │
-                                                   └── cron 定时检查 ───┘
-                                                   或 /收件箱 手动触发
-```
-
-### 两条路径
-
-| 路径 | 工作方式 | 响应速度 | 适用场景 |
-|------|---------|---------|---------|
-| **预设命令** | keepalive 直接执行 Python 脚本 | 即时 (~2秒) | `/情报员` `/分析师` `/风控官` `/复盘师` |
-| **AI 对话** | keepalive 写入队列 → Claude Code 处理 | 定时 (~30分钟) | 自由提问、综合查询、需要 AI 推理的复杂问题 |
-
-### 消息队列机制
-
-当 keepalive 收到**非预设命令**的消息时（如"帮我看看XX股票"），不会直接执行脚本，而是：
-
-1. **写入队列**：消息存储在 `.telegram_queue/pending.json`
-2. **回复确认**：手机收到 "📨 消息已收到，我正在处理..."
-3. **Claude Code 处理**：定时任务检测到新消息后，Claude Code 用 AI 理解并处理
-4. **回复发出**：通过 `telegram_reply` 工具回复到手机
-
-### MCP 工具
-
-`server.js` 新增两个 MCP 工具供 Claude Code 使用：
-
-| 工具名 | 功能 | 调用时机 |
-|-------|------|---------|
-| `telegram_check_inbox` | 读取所有待处理的用户消息 | 定时任务 / 手动 |
-| `telegram_reply` | 回复消息并标记已处理 | 处理完每条消息后 |
-
-### 定时收件箱检查
-
-系统已注册 claw cron 定时任务，**工作日 9:07~15:37 每30分钟**自动检查收件箱：
-
-```json
-7,37 9-15 * * 1-5
-```
-
-当 Claude Code 处于空闲状态时，定时任务会自动触发 → 检查收件箱 → AI 处理 → 回复。
-
-你也可在 Claude Code 中手动输入任意查询语句（如"帮我看看 Telegram 有什么消息"）来触发收件箱检查。
-
-### 完整数据流示例
+### 架构（借鉴 cc-connect）
 
 ```
-手机发 "帮我看看持仓里哪只票风险最大"
-  ↓ keepalive 轮询检测到（非命令消息）
-  ├── 写入 .telegram_queue/pending.json
-  └── 回复 "📨 消息已收到，正在处理..."
-  ↓ claw cron 定时触发（或手动查询）
-Claude Code AI:
-  ├── 调用 telegram_check_inbox → 获取消息
-  ├── 分析问题：需要查询持仓 + 风控规则
-  ├── 调用 agent3-风控 Python 脚本
-  ├── 综合 AI 推理 → 给出回答
-  └── 调用 telegram_reply → 回复到手机
+手机发消息 ──→ keepalive.js ──→ cc-bridge ──→ Claude Code CLI (子进程)
+  (Telegram/QQ)       │            │          │  --print --resume <sid>
+                      │            │          │  stdin: "用户问题"
+                      │            │          │  stdout: stream-json
+                      │            │          ▼
+                      │            │     AI 处理 + 上下文延续
+                      │            │          │
+                      │            ▼          │
+                      └────←─── 回复到手机 ←──┘
+                         实时推送
+```
+
+### 核心模块：`cc-bridge/`
+
+| 文件 | 角色 |
+|------|------|
+| `cc-bridge/index.js` | `ClaudeCodeSession` 类：管理 Claude Code 子进程生命周期 |
+| `.cc-bridge/session_id` | 持久化会话 ID，重启后上下文不丢失 |
+
+### 工作原理
+
+1. **子进程模式**：每次 `send()` 启动一个 `claude --print` 进程
+2. **上下文延续**：通过 `--session-id` + `--resume` 保持多轮对话上下文
+3. **结构化输出**：`--output-format stream-json` 输出 NDJSON，无需解析终端
+4. **自动重启**：进程崩溃后自动恢复
+
+### 两种响应路径
+
+| 路径 | 实现 | 响应速度 | 示例 |
+|------|------|---------|------|
+| **预设命令** | keepalive 直接 spawn Python | ~2秒 | `/情报员` `/分析师` |
+| **AI 对话** | keepalive → cc-bridge → Claude Code | ~5-15秒 | "帮我看看XX股票" |
+
+### 数据流示例
+
+```
+手机发 "帮我看看XX股票的基本面"
+  ↓ keepalive 检测到（非命令消息）
+  ├── 发送 "🧠 正在思考，请稍候..."
+  └── 调用 ccSession.send("帮我看看XX股票的基本面")
+        ↓
+      cc-bridge:
+        ├── spawn claude --print --resume <sid> "帮我看看XX股票的基本面"
+        ├── 解析 stdout 中的 stream-json 事件
+        ├── 提取 text 回复内容
+        └── 返回 { text: "...", cost: 0.04 }
+        ↓
+  └── 发送回复到手机
 手机收到 AI 回复
 ```
+
+### 技术细节
+
+- **CLI 参数**：`--print --output-format stream-json --verbose --resume <sid> --bare`
+- **会话续传**：首次用 `--append-system-prompt`，后续用 `--resume`
+- **超时控制**：180 秒，超时自动重试
+- **成本追踪**：每次回复返回 token 消耗和费用（美元）
+- **platforms**：Telegram（keepalive.js）和 QQ Bot（qqbot/keepalive.js）共享同一 cc-bridge 实例
 
 ## Security
 

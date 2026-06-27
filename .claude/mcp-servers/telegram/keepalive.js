@@ -22,6 +22,11 @@ const net = require("net");
 const tls = require("tls");
 const { URL } = require("url");
 
+// cc-bridge：Claude Code AI 对话引擎
+const { ClaudeCodeSession } = require(path.join(
+  __dirname, "..", "..", "..", "cc-bridge", "index.js"
+));
+
 // ============ 加载配置 ============
 
 function loadSettings() {
@@ -67,34 +72,29 @@ const PROJECT_ROOT = (() => {
 
 console.error(`[tg-keepalive] Project root: ${PROJECT_ROOT}`);
 
-// ============ 消息队列 ============
+// ============ cc-bridge AI 对话引擎 ============
 
-const QUEUE_DIR = path.join(PROJECT_ROOT, ".telegram_queue");
-const PENDING_FILE = path.join(QUEUE_DIR, "pending.json");
+let ccSession = null;
+let ccProcessing = false;
 
-/** 存储消息到待处理队列 */
-function storeMessage(msg) {
-  try {
-    if (!fs.existsSync(QUEUE_DIR)) fs.mkdirSync(QUEUE_DIR, { recursive: true });
-    let queue = [];
-    try { queue = JSON.parse(fs.readFileSync(PENDING_FILE, "utf8")); } catch {}
-    // 去重: 同 chat_id + 同文本 + 最近30秒的不重复添加
-    const now = Date.now();
-    queue = queue.filter((m) => m.status !== "done");
-    const isDup = queue.some(
-      (m) => m.chat_id === msg.chat_id && m.text === msg.text && now - m.timestamp < 30000
-    );
-    if (isDup) return false;
-    queue.push(msg);
-    // 最多保留100条
-    if (queue.length > 100) queue = queue.slice(-100);
-    fs.writeFileSync(PENDING_FILE, JSON.stringify(queue, null, 2), "utf8");
-    console.error(`[tg-keepalive] 📥 Queued message from ${msg.from_name}: ${msg.text.slice(0, 60)}`);
-    return true;
-  } catch (err) {
-    console.error(`[tg-keepalive] ⚠️ storeMessage error: ${err.message}`);
-    return false;
-  }
+/** 初始化 cc-bridge 会话 */
+function initCCSession() {
+  if (ccSession) return;
+  ccSession = new ClaudeCodeSession({
+    projectRoot: PROJECT_ROOT,
+    timeout: 180000,
+    skipPermissions: true,
+    bare: true,
+    appendSystemPrompt: [
+      "你正在和用户通过聊天平台（Telegram）对话，所有回复都会推送到用户手机。",
+      "请用中文回复，保持简洁（建议不超过200字）。",
+      "关于股票投研项目：",
+      "- 用户可能问 A 股相关问题，结合你的金融知识给出分析",
+      "- 当需要最新数据时，利用你的知识回答，不要使用 Bash 等工具",
+      "- 回答中不要提及你是 Claude Code",
+    ].join("\n"),
+  });
+  console.error("[tg-keepalive] 🧠 cc-bridge session created");
 }
 
 // ============ 命令路由 ============
@@ -261,27 +261,19 @@ async function pollOnce() {
       if (matchedKey) {
         await handleCommand(matchedKey, chatId || CHAT_ID, text);
       } else if (chatId && text) {
-        // 非命令消息 → 写入队列，等待 Claude Code 处理
-        const srcMsg = msg; // 保留原始 Telegram 消息对象引用
-        const queueEntry = {
-          id: `${Date.now()}-${chatId}`,
-          text: text,
-          chat_id: chatId,
-          from_name: srcMsg.from?.first_name || srcMsg.from?.username || "User",
-          timestamp: Date.now(),
-          status: "pending",
-        };
-        const stored = storeMessage(queueEntry);
-        if (stored) {
-          try {
-            await tgSendMessage(
-              "📨 *消息已收到！*\n\n我正在处理你的消息，请稍候片刻...\n\n" +
-              "> *提示：* 实时回复需要 Claude Code 正在运行。\n" +
-              "> 如果长时间未收到回复，请稍后重试。",
-              chatId
-            );
-          } catch {}
+        // 非命令消息 → 通过 cc-bridge 走 Claude Code AI 处理
+        if (ccProcessing) {
+          try { await tgSendMessage("⏳ 上一个对话还在处理中，请稍候...", chatId); } catch {}
+          continue;
         }
+        ccProcessing = true;
+        try {
+          await handleAIDialog(text, chatId, msg.from?.first_name || "User");
+        } catch (err) {
+          console.error(`[tg-keepalive] ❌ AI dialog error: ${err.message}`);
+          try { await tgSendMessage("❌ 处理出错，请稍后重试。", chatId); } catch {}
+        }
+        ccProcessing = false;
       }
     }
     try { fs.writeFileSync(offsetFile, String(offset), "utf8"); } catch {}
@@ -410,6 +402,54 @@ function runPythonScript(scriptPath, chatId) {
   });
 }
 
+// ============ AI 对话处理 ============
+
+/**
+ * 通过 cc-bridge 用 Claude Code AI 处理用户消息
+ */
+async function handleAIDialog(text, chatId, fromName) {
+  console.error(`[tg-keepalive] 🧠 AI dialog from ${fromName}: ${text.slice(0, 80)}`);
+
+  // 发送确认
+  try {
+    await tgSendMessage("🧠 正在思考，请稍候...", chatId);
+  } catch {}
+
+  // 确保 cc-bridge 已初始化
+  initCCSession();
+  if (!ccSession) {
+    try { await tgSendMessage("❌ AI 引擎未就绪", chatId); } catch {}
+    return;
+  }
+
+  try {
+    // 启动 cc-bridge（首次启动会加载/创建 session）
+    await ccSession.start();
+
+    // 发送消息给 Claude Code，等待回复
+    const result = await ccSession.send(text);
+
+    // 发送完整回复
+    if (result && result.text) {
+      // 截断过长消息（Telegram 限制 4096 字符）
+      const replyText = result.text.length > 4000
+        ? result.text.slice(0, 3997) + "..."
+        : result.text;
+      try { await tgSendMessage(replyText, chatId); } catch {}
+
+      console.error(`[tg-keepalive] ✅ AI reply (${result.text.length} chars, $${(result.cost || 0).toFixed(4)})`);
+    }
+  } catch (err) {
+    console.error(`[tg-keepalive] ❌ AI dialog error: ${err.message}`);
+    // 如果是 session 问题，重置
+    if (err.message.includes("session") || err.message.includes("resume")) {
+      try { ccSession.stop(); } catch {}
+      ccSession = null;
+    }
+    throw err;
+  }
+}
+
 // ============ HTTP API（供 MCP 查询状态） ============
 
 function startHttpServer(port = 19786) {
@@ -421,6 +461,7 @@ function startHttpServer(port = 19786) {
     if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
 
     if (req.url === "/status" && req.method === "GET") {
+      const ccStatus = ccSession ? ccSession.getStatus() : { running: false };
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
         status: "running",
@@ -429,6 +470,11 @@ function startHttpServer(port = 19786) {
         proxy: SOCKS_PROXY ? "configured" : "none",
         uptime: Math.floor((Date.now() - startTime) / 1000),
         last_command: lastCommandTime ? new Date(lastCommandTime).toISOString() : null,
+        cc_bridge: {
+          ready: !!ccSession,
+          session: ccStatus.session_id || null,
+          processing: ccProcessing,
+        },
       }));
       return;
     }
@@ -477,8 +523,16 @@ async function main() {
 
   startHttpServer();
 
+  // 初始化 cc-bridge（后台预启动）
+  initCCSession();
+  ccSession.start().then(() => {
+    console.error(`[tg-keepalive] 🧠 cc-bridge ready (session: ${ccSession.getStatus().session_id || "new"})`);
+  }).catch((err) => {
+    console.error(`[tg-keepalive] ⚠️ cc-bridge init: ${err.message}`);
+  });
+
   console.error(`[tg-keepalive] 📡 开始监听命令...`);
-  console.error(`[tg-keepalive] 在 Telegram 中给机器人发 /情报员、/分析师 等命令`);
+  console.error(`[tg-keepalive] 在 Telegram 中给机器人发 /情报员、/分析师 等命令，或直接发消息进行 AI 对话`);
 
   // 无限轮询
   let failCount = 0;

@@ -18,5 +18,5 @@ data/raw/
 # Secrets (contain tokens/credentials)
 .claude/settings.local.json
 
-# Telegram message queue (runtime data)
-.telegram_queue/
+# cc-bridge session data (auto-generated)
+.cc-bridge/
