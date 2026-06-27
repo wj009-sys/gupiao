@@ -63,7 +63,7 @@ python -X utf8 scripts/agent4-复盘/review.py [YYYYMMDD]
 ```
 
 脚本会输出结构化复盘数据（JSON），并自动保存到：
-- `data/raw/复盘数据_YYYYMMDD.json`
+- `data/raw/复盘报告_YYYYMMDD.json`
 - `knowledge/复盘记录/复盘_YYYYMMDD.json`
 
 ### 第三步：人工复核板块准确性

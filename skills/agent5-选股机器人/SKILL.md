@@ -116,6 +116,47 @@ python -X utf8 scripts/agent5-选股/stock_picker.py --top-n 10
 
 ---
 
+### 第五步（新增）：推送通知到手机
+
+报告生成后，用各通道推送摘要：
+
+> **Telegram推送：**
+> 1. 调用 `telegram_send_message`，消息内容：
+> ```
+> 🔍 选股建议 — YYYY-MM-DD
+> 
+> 🏆 强烈推荐：XX(评分xx)、XX(评分xx)
+> ✅ 推荐：XX(评分xx)
+> 👀 观察池：N只
+> ❌ 今曰否决：N只
+> ⚠️ 行业集中度：XX%
+> ```
+>
+> 2. 调用 `telegram_send_file` 附上完整报告（`reports/日报/选股/选股建议_YYYY-MM-DD.md`）
+>
+> **微信推送（可选）：**
+> 3. 调用 `wechat_agent_notify`，用机器人5（选股机器人）发送：
+> ```
+> agent_id: 5
+> content: "选股建议 YYYY-MM-DD
+> 强烈推荐：XX(xx分)、XX(xx分)
+> 推荐：XX(xx分)
+> 观察池：N只 | 否决：N只"
+> ```
+>
+> **QQ推送（可选）：**
+> 4. 调用 `qq_agent_notify`：
+> ```
+> agent_id: 5
+> title: "选股建议 YYYY-MM-DD"
+> content: "🏆 强烈推荐：XX(xx分)、XX(xx分)
+> 👀 观察池：N只 | ❌ 否决：N只"
+> ```
+>
+> 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
+
+---
+
 ## 🚨 D3 异常处理表
 
 | 触发条件 | 一线修复 | 仍失败兜底 |

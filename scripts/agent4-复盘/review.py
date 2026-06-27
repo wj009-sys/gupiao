@@ -569,11 +569,12 @@ if __name__ == "__main__":
     print(json.dumps(review, ensure_ascii=False, indent=2, default=str))
     print("=== END ===")
 
-    # 保存到 reports
+    # 保存到 data/raw（统一格式 YYYYMMDD）
     日期显示 = review["date"]
-    output_dir = p(f"reports/日报/复盘")
+    raw_date = 日期显示.replace("-", "")
+    output_dir = p("data/raw")
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f"复盘报告_{日期显示}.json")
+    output_path = os.path.join(output_dir, f"复盘报告_{raw_date}.json")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(review, f, ensure_ascii=False, indent=2, default=str)
     print(f"\n复盘数据已保存: {output_path}")

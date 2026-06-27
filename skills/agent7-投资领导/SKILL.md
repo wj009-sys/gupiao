@@ -316,6 +316,52 @@ python -X utf8 scripts/agent2-技术分析/analyze.py YYYYMMDD
 
 ---
 
+---
+
+### 第七步（新增）：推送最终决策到手机
+
+最终决策报告生成后，用各通道推送摘要：
+
+> **Telegram推送：**
+> 1. 调用 `telegram_send_message`，消息内容：
+> ```
+> 🏆 投资决策 — YYYY-MM-DD
+> 
+> 📊 市场判断：XXX
+> 🎯 最终决策：XXX
+> 🟢 买入：N只
+> 🔴 卖出：N只
+> ⚠️ 打回重做：N个Agent ⏳
+> 🔄 冲突仲裁：N项
+> ```
+>
+> 2. 调用 `telegram_send_file` 附上完整报告（`reports/日报/决策/投资决策_YYYY-MM-DD.md`）
+>
+> **微信推送（可选）：**
+> 3. 调用 `wechat_agent_notify`，用机器人7（投资领导）发送：
+> ```
+> agent_id: 7
+> content: "投资决策 YYYY-MM-DD
+> 市场判断：XXX
+> 最终决策：XXX
+> 买入N只 | 卖出N只 | 持有N只
+> 打回重做：N个Agent"
+> ```
+>
+> **QQ推送（可选）：**
+> 4. 调用 `qq_agent_notify`：
+> ```
+> agent_id: 7
+> title: "投资决策 YYYY-MM-DD"
+> content: "📊 市场判断：XXX
+> 🎯 最终决策：XXX
+> 🟢 买入N只 | 🔴 卖出N只 | 🔄 仲裁N项"
+> ```
+>
+> 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
+
+---
+
 ## 参考文件
 
 - `data/止损规则.json` — 止损规则配置
