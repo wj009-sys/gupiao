@@ -140,6 +140,55 @@ const COMMANDS = {
 
 // ============ SOCKS5 代理支持 ============
 
+/** 通过 SOCKS5 代理建立到目标的原始 TCP 连接 */
+function socks5ConnectRaw(host, port) {
+  return new Promise((resolve, reject) => {
+    if (!SOCKS_PROXY) {
+      const socket = net.connect(port, host, () => resolve(socket));
+      socket.on("error", reject);
+      return;
+    }
+    let proxyHost, proxyPort;
+    if (SOCKS_PROXY.startsWith("socks5://")) {
+      const u = new URL(SOCKS_PROXY);
+      proxyHost = u.hostname;
+      proxyPort = parseInt(u.port, 10) || 10808;
+    } else {
+      proxyHost = "127.0.0.1";
+      proxyPort = parseInt(SOCKS_PROXY, 10) || 10808;
+    }
+    const socket = net.connect(proxyPort, proxyHost);
+    let buf = Buffer.alloc(0), step = 0, expectLen = 0, atyp = 0;
+    socket.on("data", (chunk) => {
+      buf = Buffer.concat([buf, chunk]);
+      if (step === 0 && buf.length >= 2) {
+        if (buf[0] !== 0x05 || buf[1] !== 0x00) { socket.destroy(); reject(new Error(`SOCKS5 auth fail: ${buf[1]}`)); return; }
+        buf = buf.slice(2); step = 1;
+        const domainBuf = Buffer.from(host, "utf8");
+        const portBuf = Buffer.alloc(2); portBuf.writeUInt16BE(port);
+        socket.write(Buffer.concat([Buffer.from([0x05, 0x01, 0x00, 0x03, domainBuf.length]), domainBuf, portBuf]));
+      }
+      if (step === 1 && buf.length >= 4) {
+        if (buf[0] !== 0x05 || buf[1] !== 0x00) { socket.destroy(); reject(new Error(`SOCKS5 conn fail: ${buf[1]}`)); return; }
+        atyp = buf[3]; buf = buf.slice(4); step = 2;
+        if (atyp === 1) expectLen = 6;
+        else if (atyp === 3) expectLen = -1;
+        else if (atyp === 4) expectLen = 18;
+        else { socket.destroy(); reject(new Error(`SOCKS5 unknown ATYP: ${atyp}`)); return; }
+      }
+      if (step === 2) {
+        if (atyp === 3 && buf.length >= 1) { expectLen = buf[0] + 2; buf = buf.slice(1); }
+        if (expectLen > 0 && buf.length >= expectLen) {
+          buf = buf.slice(expectLen);
+          resolve(socket);
+        }
+      }
+    });
+    socket.on("error", reject);
+    socket.write(Buffer.from([0x05, 0x01, 0x00]));
+  });
+}
+
 function tgRequest(method, body) {
   return new Promise((resolve, reject) => {
     const path = `/bot${BOT_TOKEN}/${method}`;
