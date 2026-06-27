@@ -21,3 +21,10 @@ data/raw/
 # cc-bridge session data (auto-generated)
 .cc-bridge/
 .claude/mcp-servers/telegram/.telegram_offset
+
+# NapCatQQ (QQ机器人框架)
+napcat/
+.cc-connect/
+
+# cc-connect 配置文件（含Token）
+cc-connect.toml

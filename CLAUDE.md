@@ -474,6 +474,86 @@ Telegram 和 QQ Bot 支持**后台常驻监听**，启动后自动检测手机�
 - **成本追踪**：每次回复返回 token 消耗和费用（美元）
 - **platforms**：Telegram（keepalive.js）和 QQ Bot（qqbot/keepalive.js）共享同一 cc-bridge 实例
 
+---
+
+## 🚀 cc-connect 统一消息桥接（替代 cc-bridge + Telegram/QQ 监听）
+
+项目使用 [cc-connect](https://github.com/chenhg5/cc-connect) 作为统一消息桥接守护进程，通过单进程同时对接**微信个人号**、**QQ** 和 **Telegram**，替代原有的多个独立监听服务。
+
+### 安装
+
+```bash
+npm install -g cc-connect
+```
+
+已安装位置：`C:\Users\65004\AppData\Roaming\npm\node_modules\cc-connect\bin\cc-connect.exe`
+
+### 架构
+
+```
+手机微信/QQ/Telegram
+    ↓
+[微信 ilink 长轮询]  [QQ NapCat WebSocket]  [Telegram Long Polling]
+    ↓                     ↓                      ↓
+              cc-connect 守护进程
+                ↓                     ↓
+           Claude Code CLI        Python 脚本
+          (AI对话/自由提问)      (预设命令 /情报员等)
+```
+
+### 配置
+
+配置文件：`cc-connect.toml`（项目根目录，**已 .gitignore，含Token**）
+
+```toml
+[[projects.platforms]]
+type = "weixin"      # 微信个人号（ilink）
+type = "qq"          # QQ（NapCat OneBot v11）
+type = "telegram"    # Telegram（已配好 Token）
+```
+
+### 支持的通道
+
+| 通道 | 配置方式 | 是否需要公网IP | 双向通信 |
+|------|---------|--------------|---------|
+| 💬 **微信个人号** | `cc-connect weixin setup` 扫码登录 | ❌ 不需要 | ✅ |
+| 💬 **QQ** | NapCatQQ + WebSocket 3001 端口 | ❌ 不需要 | ✅ |
+| 📱 **Telegram** | Bot Token（已配置） | ❌ 不需要 | ✅ |
+
+### 微信个人号设置
+
+```bash
+# 双击「微信扫码绑定.bat」或运行：
+cc-connect weixin setup --config cc-connect.toml --project stock-research
+# 用手机微信扫描终端/浏览器显示的二维码即可绑定
+```
+
+### QQ 设置（NapCatQQ）
+
+1. 双击 `start-napcat.bat` 启动 NapCatQQ
+2. 用手机 QQ 扫描登录二维码
+3. 访问 http://localhost:6099/webui 配置 WebSocket（已预配端口 3001）
+4. 再双击 `start-cc-connect.bat` 启动消息桥接
+
+### 启动方式
+
+| 功能 | 双击的 .bat 文件 |
+|------|----------------|
+| 🚀 NapCatQQ 机器人 | `start-napcat.bat` |
+| 🚀 cc-connect 桥接 | `start-cc-connect.bat` |
+| 📱 微信扫码绑定 | `微信扫码绑定.bat` |
+
+**启动顺序：**
+1. 先开 `start-napcat.bat`（QQ 登录）
+2. 再开 `start-cc-connect.bat`（消息桥接）
+3. 微信直接用手机扫码即可绑定
+
+### 手机端命令
+
+与现有的 `/情报员`、`/分析师`、`/风控官` 等命令完全兼容，新增 cc-connect 通道后无需改变使用习惯。
+
+---
+
 ## Security
 
 - **Token 管理**：Tushare Token 存储在 `.claude/settings.local.json`（已在 `.gitignore` 中排除）
