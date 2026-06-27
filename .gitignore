@@ -26,5 +26,9 @@ data/raw/
 napcat/
 .cc-connect/
 
-# cc-connect 配置文件（含Token）
+# cc-connect 配置文件（含Token + 锁文件）
 cc-connect.toml
+.cc-connect.toml.lock
+
+# 微信扫码二维码（临时生成，不需存档）
+wechat_qr_*.png
