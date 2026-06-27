@@ -149,11 +149,7 @@ scripts/           - Python 分析脚本
   └── utils/       - 工具函数（Tushare客户端、技术指标库）
 .claude/           - Claude 配置
   ├── mcp-servers/
-  │   ├── claw/        - 定时调度 MCP 服务器 (cron)
-  │   ├── telegram/    - 通知推送 MCP 服务器 (Telegram)
-  │   ├── wechat/      - 企业微信通知推送
-  │   ├── qq/          - QQ通知推送 (PushPlus + SMTP)
-  │   └── qqbot/       - QQ机器人官方API (WebSocket)
+  │   └── claw/        - 定时调度 MCP 服务器 (cron)
   ├── settings.local.json - 本地凭据与Token（gitignored）
   └── scheduled_tasks.json - 定时任务存储
 knowledge/         - 知识库（Agent4 维护更新）
@@ -189,213 +185,16 @@ skills/            - 自定义 Skills
 
 | 时间 | 任务 | cron | 触发方式 |
 |------|------|------|---------|
-| 07:00 工作日 | Agent1 情报采集 | `0 7 * * 1-5` | claw MCP + Python脚本 → Telegram+微信+QQ推送 |
-| 08:30 工作日 | Agent2 技术分析 | `30 8 * * 1-5` | claw MCP + Python脚本 → Telegram+微信+QQ推送 |
-| 21:00 工作日 | Agent4 复盘分析 | `0 21 * * 1-5` | claw MCP + Python脚本 → Telegram+微信+QQ推送 |
-| 按需 | Agent3 风控检查 | - | 手动 `/风控官` → Telegram+微信+QQ推送 |
-| 按需 | Agent5 选股机器人 | - | 手动 `/选股` → Telegram+微信+QQ推送 |
-| 按需 | Agent6 操盘手 | - | 手动 `/操盘` → Telegram+微信+QQ推送 |
-| 按需 | Agent7 投资领导 | - | 手动 `/决策` → Telegram+微信+QQ推送 |
+| 07:00 工作日 | Agent1 情报采集 | `0 7 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
+| 08:30 工作日 | Agent2 技术分析 | `30 8 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
+| 21:00 工作日 | Agent4 复盘分析 | `0 21 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
+| 按需 | Agent3 风控检查 | - | 手动 `/风控官` |
+| 按需 | Agent5 选股机器人 | - | 手动 `/选股` |
+| 按需 | Agent6 操盘手 | - | 手动 `/操盘` |
+| 按需 | Agent7 投资领导 | - | 手动 `/决策` |
 
 > MCP server: `.claude/mcp-servers/claw/server.js` (stdio JSON-RPC)
 > 工具: `mcp__claw__cron` (创建) / `cron_list` (查询) / `cron_delete` (删除)
-
-## 📱 通知推送（Telegram + 微信 + QQ）
-
-每个 Agent 在生成报告后，自动推送摘要到手机。支持三个通道：Telegram（国际通用）、微信（国内首选）和 QQ（备用方案）。
-
-### Telegram 通道
-
-**MCP 服务器**：`.claude/mcp-servers/telegram/server.js`（自动发现）
-
-**提供工具**：
-- `telegram_send_message` — 发送文本摘要（Markdown 格式）
-- `telegram_send_file` — 发送完整报告文件（.md 文档）
-
-**配置**（在 `.claude/settings.local.json` 的 `env` 中填写）：
-```json
-"TELEGRAM_BOT_TOKEN": "你的Bot Token（从 @BotFather 获取）",
-"TELEGRAM_CHAT_ID": "你的Chat ID（从 @userinfobot 获取）"
-```
-
-### 微信通道
-
-**MCP 服务器**：`.claude/mcp-servers/wechat/server.js`（自动发现）
-
-**提供工具**：
-- `wechat_send_text` — 发送纯文本（可指定 `agent_id` 选择机器人）
-- `wechat_send_markdown` — 发送 Markdown（可指定 `agent_id`）
-- `wechat_agent_notify` — 按 Agent 编号发送（自动带角色名称前缀）
-
-**支持4个独立机器人！** 每个 Agent 使用自己专属的机器人推送：
-
-| 机器人 | 字段 | Agent | 机器人名称建议 |
-|-------|------|-------|--------------|
-| 🤖 1号 | `WECHAT_WEBHOOK_1` | 🕵️ 情报员 | "情报员" |
-| 🤖 2号 | `WECHAT_WEBHOOK_2` | 📊 分析师 | "分析师" |
-| 🤖 3号 | `WECHAT_WEBHOOK_3` | 🛡️ 风控官 | "风控官" |
-| 🤖 4号 | `WECHAT_WEBHOOK_4` | 🔄 复盘师 | "复盘师" |
-| 通用 | `WECHAT_WEBHOOK_URL` | 兼容旧配置 | — |
-
-**配置方法**：
-
-1. 在企业微信中 **新建一个群**（或使用现有群）
-2. 群设置 → 群机器人 → **添加机器人**（可添加最多7个）
-3. 每个机器人设置不同的名称和头像（情报员/分析师/选股机器人/风控官/操盘手/复盘师/投资领导）
-4. 分别复制 Webhook URL，填入 `.claude/settings.local.json`：
-
-```json
-// 每个 Agent 各一个机器人（推荐）
-"WECHAT_WEBHOOK_1": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 情报员
-"WECHAT_WEBHOOK_2": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 分析师
-"WECHAT_WEBHOOK_3": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 风控官
-"WECHAT_WEBHOOK_4": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 复盘师
-"WECHAT_WEBHOOK_5": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 选股机器人
-"WECHAT_WEBHOOK_6": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 操盘手
-"WECHAT_WEBHOOK_7": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",  // 投资领导
-
-// 或只配一个通用机器人（所有Agent共用）
-"WECHAT_WEBHOOK_URL": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
-```
-
-### QQ 通道（PushPlus）
-
-**MCP 服务器**：`.claude/mcp-servers/qq/server.js`（自动发现）
-
-**提供工具**：
-- `qq_send_text` — 发送纯文本通知到 QQ（PushPlus 推送到绑定 QQ）
-- `qq_send_report` — 发送完整报告（Markdown 格式渲染）
-- `qq_agent_notify` — 按 Agent 编号发送（自动带角色名称前缀）
-
-**配置方法（PushPlus，推荐）：**
-1. 打开 [PushPlus 官网](https://pushplus.hxtrip.com) 微信扫码登录
-2. 在 **个人中心** 获取你的推送 Token
-3. 在 **推送配置** → **QQ好友** 或 **QQ群** 中绑定接收通知的目标
-4. 在 `.claude/settings.local.json` 的 `env` 中填写：
-
-```json
-"PUSHPLUS_TOKEN": "你的PushPlus Token（从 pushplus.hxtrip.com 获取）"
-```
-
-**备用方案（QQ邮箱 SMTP）：**
-如果不想用 PushPlus，也可以直接用 QQ邮箱 SMTP 触发手机推送：
-
-```json
-"QQ_MAIL_USER": "你的QQ号@qq.com",
-"QQ_MAIL_PASS": "你的SMTP授权码（QQ邮箱 → 设置 → 账户 → 生成授权码）"
-```
-
-> QQ邮箱方式收到的是普通邮件通知，PushPlus 方式可以在 QQ 好友/群中直接显示消息。
-
-### QQ 机器人通道（官方 API）
-
-**MCP 服务器**：`.claude/mcp-servers/qqbot/server.js`（自动发现）
-
-**提供工具**：
-- `qqbot_send_text` — 发送文本消息到 QQ（单聊/群聊）
-- `qqbot_send_markdown` — 发送 Markdown 格式消息
-- `qqbot_agent_notify` — 按 Agent 编号发送（自动带角色名称前缀）
-- `qqbot_listen` — 事件监听模式（获取用户 OpenID）
-
-**特点：**
-- 使用 [QQ 开放平台](https://q.qq.com) 官方 API v2
-- 基于 WebSocket 持久连接，机器人需要保持在线
-- ⚠️ **主动消息每月仅 4 条/用户**，适合交互式查询不适合每日自动推送
-- 推荐用于 `/风控官` 等按需查询场景
-
-**配置方法：**
-1. 访问 [QQ 开放平台](https://q.qq.com) 创建机器人，获取 AppID 和 AppSecret
-2. 在 `.claude/settings.local.json` 的 `env` 中填写：
-
-```json
-"QQBOT_APP_ID": "你的机器人AppID",
-"QQBOT_APP_SECRET": "你的机器人AppSecret",
-"QQBOT_TARGET_OPENID": "目标用户的OpenID（可选，配好前两个后调用 qqbot_listen 获取）"
-```
-
-**获取用户 OpenID：**
-```bash
-# MCP 工具方式（在 Claude Code 中执行）：
-# 调用 qqbot_listen(duration=120)
-# 然后用手机 QQ 加机器人好友并发送一条消息
-# 系统会自动检测到用户的 OpenID
-```
-
-### 🔄 常驻监听模式（自动响应手机命令）
-
-Telegram 和 QQ Bot 支持**后台常驻监听**，启动后自动检测手机发来的命令并执行对应 Agent，无需手动操作。
-
-**双通道常驻服务：**
-
-| 服务 | 启动方式 | 监听端口 | 文件 |
-|------|---------|---------|------|
-| 📱 Telegram 监听 | `start-telegram.bat` 或 `node .claude/mcp-servers/telegram/keepalive.js` | 19786 | `.claude/mcp-servers/telegram/keepalive.js` |
-| 💬 QQ Bot 监听 | `start-qqbot.bat` 或 `node .claude/mcp-servers/qqbot/keepalive.js` | 19785 | `.claude/mcp-servers/qqbot/keepalive.js` |
-
-**使用方法：**
-1. 双击 `start-telegram.bat` 或 `start-qqbot.bat` 启动（保持窗口打开）
-2. 在手机 Telegram/QQ 中给机器人发命令：`/情报员`、`/分析师`、`/风控官`、`/复盘师`
-3. 机器人自动运行对应的 Python 脚本并回复结果
-4. 按 `Ctrl+C` 停止监听
-
-> 💡 **建议**：每日自动推送用 PushPlus（无限制），QQ 机器人用于您主动询问时的交互式回复（被动回复无限制）。常驻监听模式启动后，手机发命令即可触发 Agent，无需打开 Claude Code。
-
-### 推送时机
-
-| Agent | 触发时间 | 推送内容 |
-|-------|---------|---------|
-| 🕵️ 情报员 | 07:00 报告生成后 | 大盘概况 + 关键资讯 + 热点板块 |
-| 📊 分析师 | 08:30 报告生成后 | 大盘评分 + 强势板块 + 操作建议 |
-| 🛡️ 风控官 | 按需/盘中 | 风险等级 + 止损/仓位预警 |
-| 🔍 选股机器人 | 按需 | 候选股票池 + 多因子评分 |
-| 🎯 操盘手 | 按需 | 买入/卖出/持有清单 |
-| 🏆 投资领导 | 按需 | 最终投资决策 + 团队调度 |
-| 🔄 复盘师 | 21:00 报告生成后 | 综合准确率 + 偏差总结 + 知识库更新 |
-
-> 所有四个通道（Telegram / 微信 / QQ-PushPlus / QQ机器人）都是可选的，配置哪个就用哪个，未配置的通道自动跳过。
-
-## 交互式命令（手机端触发）
-
-你可以在 **Telegram** 或 **QQ Bot** 中给机器人发送命令，Claude Code 检测到后自动执行对应的 Agent。
-
-### 支持的手机命令
-
-| 手机命令 | 触发Agent | 说明 | 支持通道 |
-|---------|----------|------|---------|
-| `/情报员` | agent1-情报员 | 情报采集+报告生成 | Telegram, QQ Bot |
-| `/分析师` | agent2-分析师 | 技术分析+板块排名 | Telegram, QQ Bot |
-| `/风控官` | agent3-风控官 | 风控检查+止损监控 | Telegram, QQ Bot |
-| `/复盘师` | agent4-复盘师 | 复盘+偏差分析+知识库更新 | Telegram, QQ Bot |
-| `/选股` 或 `/选股机器人` | agent5-选股机器人 | 多因子选股+评分排名 | Telegram, QQ Bot |
-| `/操盘` 或 `/操盘手` | agent6-操盘手 | 交易计划+仓位分配 | Telegram, QQ Bot |
-| `/决策` 或 `/投资领导` | agent7-投资领导 | 综合决策+团队调度 | Telegram, QQ Bot |
-
-### 交互流程
-
-**方式一：常驻监听（推荐）**
-```
-启动 bat → 手机发命令 → 机器人自动执行 → 回复到手机
-```
-双击 `start-telegram.bat` 或 `start-qqbot.bat` 保持后台运行，手机直接发命令即可。
-
-**方式二：手动监听**
-```
-你发消息 → 你运行 listen 工具 → Claude 解析命令 → 执行 Agent → 回复到手机
-```
-
-### 使用方法
-
-**Telegram：**
-1. 双击 `start-telegram.bat` 启动常驻监听（或在 Claude Code 中调用 `telegram_listen(duration=60)`）
-2. 在 Telegram 中给 `@Qby0001bot` 发送命令（如 `/情报员`）
-3. 机器人自动运行脚本并发回结果
-
-**QQ Bot：**
-1. 双击 `start-qqbot.bat` 启动常驻监听（或在 Claude Code 中调用 `qqbot_listen(duration=60)`）
-2. 在 QQ 中给机器人发送命令（如 `/情报员`）
-3. 机器人自动运行脚本并发回结果
-
-> 微信企业微信机器人和 QQ PushPlus 仅支持单向推送，不支持接收消息互动。
 
 ### 本地命令
 
@@ -408,97 +207,21 @@ Telegram 和 QQ Bot 支持**后台常驻监听**，启动后自动检测手机�
 
 ---
 
-## 🔄 Telegram / QQ Bot ↔ Claude Code 双向交互（cc-bridge 架构）
+## 🚀 cc-connect 微信个人号消息桥接
 
-项目通过 `cc-bridge` 模块实现手机端和 Claude Code AI 之间的实时双向对话。
-
-### 架构（借鉴 cc-connect）
-
-```
-手机发消息 ──→ keepalive.js ──→ cc-bridge ──→ Claude Code CLI (子进程)
-  (Telegram/QQ)       │            │          │  --print --resume <sid>
-                      │            │          │  stdin: "用户问题"
-                      │            │          │  stdout: stream-json
-                      │            │          ▼
-                      │            │     AI 处理 + 上下文延续
-                      │            │          │
-                      │            ▼          │
-                      └────←─── 回复到手机 ←──┘
-                         实时推送
-```
-
-### 核心模块：`cc-bridge/`
-
-| 文件 | 角色 |
-|------|------|
-| `cc-bridge/index.js` | `ClaudeCodeSession` 类：管理 Claude Code 子进程生命周期 |
-| `.cc-bridge/session_id` | 持久化会话 ID，重启后上下文不丢失 |
-
-### 工作原理
-
-1. **子进程模式**：每次 `send()` 启动一个 `claude --print` 进程
-2. **上下文延续**：通过 `--session-id` + `--resume` 保持多轮对话上下文
-3. **结构化输出**：`--output-format stream-json` 输出 NDJSON，无需解析终端
-4. **自动重启**：进程崩溃后自动恢复
-
-### 两种响应路径
-
-| 路径 | 实现 | 响应速度 | 示例 |
-|------|------|---------|------|
-| **预设命令** | keepalive 直接 spawn Python | ~2秒 | `/情报员` `/分析师` |
-| **AI 对话** | keepalive → cc-bridge → Claude Code | ~5-15秒 | "帮我看看XX股票" |
-
-### 数据流示例
-
-```
-手机发 "帮我看看XX股票的基本面"
-  ↓ keepalive 检测到（非命令消息）
-  ├── 发送 "🧠 正在思考，请稍候..."
-  └── 调用 ccSession.send("帮我看看XX股票的基本面")
-        ↓
-      cc-bridge:
-        ├── spawn claude --print --resume <sid> "帮我看看XX股票的基本面"
-        ├── 解析 stdout 中的 stream-json 事件
-        ├── 提取 text 回复内容
-        └── 返回 { text: "...", cost: 0.04 }
-        ↓
-  └── 发送回复到手机
-手机收到 AI 回复
-```
-
-### 技术细节
-
-- **CLI 参数**：`--print --output-format stream-json --verbose --resume <sid> --bare`
-- **会话续传**：首次用 `--append-system-prompt`，后续用 `--resume`
-- **超时控制**：180 秒，超时自动重试
-- **成本追踪**：每次回复返回 token 消耗和费用（美元）
-- **platforms**：Telegram（keepalive.js）和 QQ Bot（qqbot/keepalive.js）共享同一 cc-bridge 实例
-
----
-
-## 🚀 cc-connect 统一消息桥接（替代 cc-bridge + Telegram/QQ 监听）
-
-项目使用 [cc-connect](https://github.com/chenhg5/cc-connect) 作为统一消息桥接守护进程，通过单进程同时对接**微信个人号**、**QQ** 和 **Telegram**，替代原有的多个独立监听服务。
-
-### 安装
-
-```bash
-npm install -g cc-connect
-```
-
-已安装位置：`C:\Users\65004\AppData\Roaming\npm\node_modules\cc-connect\bin\cc-connect.exe`
+项目使用 [cc-connect](https://github.com/chenhg5/cc-connect) 对接微信个人号（ilink），实现手机微信 → Claude Code 的双向对话。
 
 ### 架构
 
 ```
-手机微信/QQ/Telegram
+手机微信
     ↓
-[微信 ilink 长轮询]  [QQ NapCat WebSocket]  [Telegram Long Polling]
-    ↓                     ↓                      ↓
-              cc-connect 守护进程
-                ↓                     ↓
-           Claude Code CLI        Python 脚本
-          (AI对话/自由提问)      (预设命令 /情报员等)
+[微信 ilink 长轮询]
+    ↓
+      cc-connect 守护进程
+        ↓              ↓
+   Claude Code      Python 脚本
+  (AI对话/自由提问)  (预设命令)
 ```
 
 ### 配置
@@ -508,49 +231,22 @@ npm install -g cc-connect
 ```toml
 [[projects.platforms]]
 type = "weixin"      # 微信个人号（ilink）
-type = "qq"          # QQ（NapCat OneBot v11）
-type = "telegram"    # Telegram（已配好 Token）
 ```
 
-### 支持的通道
-
-| 通道 | 配置方式 | 是否需要公网IP | 双向通信 |
-|------|---------|--------------|---------|
-| 💬 **微信个人号** | `cc-connect weixin setup` 扫码登录 | ❌ 不需要 | ✅ |
-| 💬 **QQ** | NapCatQQ + WebSocket 3001 端口 | ❌ 不需要 | ✅ |
-| 📱 **Telegram** | Bot Token（已配置） | ❌ 不需要 | ✅ |
-
-### 微信个人号设置
+### 微信设置
 
 ```bash
-# 双击「微信扫码绑定.bat」或运行：
 cc-connect weixin setup --config cc-connect.toml --project stock-research
-# 用手机微信扫描终端/浏览器显示的二维码即可绑定
+# 用手机微信扫描二维码即可绑定
 ```
 
-### QQ 设置（NapCatQQ）
+### 启动
 
-1. 双击 `start-napcat.bat` 启动 NapCatQQ
-2. 用手机 QQ 扫描登录二维码
-3. 访问 http://localhost:6099/webui 配置 WebSocket（已预配端口 3001）
-4. 再双击 `start-cc-connect.bat` 启动消息桥接
+cc-connect 已在后台运行中。如需手动启动：
 
-### 启动方式
-
-| 功能 | 双击的 .bat 文件 |
-|------|----------------|
-| 🚀 NapCatQQ 机器人 | `start-napcat.bat` |
-| 🚀 cc-connect 桥接 | `start-cc-connect.bat` |
-| 📱 微信扫码绑定 | `微信扫码绑定.bat` |
-
-**启动顺序：**
-1. 先开 `start-napcat.bat`（QQ 登录）
-2. 再开 `start-cc-connect.bat`（消息桥接）
-3. 微信直接用手机扫码即可绑定
-
-### 手机端命令
-
-与现有的 `/情报员`、`/分析师`、`/风控官` 等命令完全兼容，新增 cc-connect 通道后无需改变使用习惯。
+```bash
+cc-connect start --config cc-connect.toml
+```
 
 ---
 
@@ -560,9 +256,6 @@ cc-connect weixin setup --config cc-connect.toml --project stock-research
 - **环境变量**：所有 Token 通过 settings 的 `env` 字段注入，不在脚本中硬编码
 - **Git 清理**：已执行 `git filter-branch` 清除历史中的所有 token 痕迹
 - **批处理文件**：`run-agent*.bat` 不包含任何凭证，依赖自动加载的环境变量
-- **Telegram 通知**：Bot Token 和 Chat ID 同样存储在 `.claude/settings.local.json`（已在 `.gitignore` 中排除）
-- **QQ 通知（PushPlus）**：PushPlus Token 和 QQ邮箱授权码同样存储在 `.claude/settings.local.json`（已在 `.gitignore` 中排除）
-- **QQ 机器人**：QQ Bot AppSecret 存储在 `.claude/settings.local.json`（已在 `.gitignore` 中排除）
 
 ## Agent 数据脚本
 
