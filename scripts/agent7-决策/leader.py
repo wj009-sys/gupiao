@@ -222,28 +222,192 @@ def arbitrate_trade_conflicts(risk_data: dict, trade_data: dict) -> list:
 
 
 def analyze_agent_quality(reports: dict, agent_status: dict) -> dict:
-    """分析各Agent产出质量（基于关键词检查）"""
+    """分析各Agent产出质量（每Agent专用审核标准）"""
     quality = {}
     for name, info in agent_status.items():
         if not info["executed"]:
-            quality[name] = {"status": "NOT_EXECUTED", "issues": []}
+            quality[name] = {"status": "NOT_EXECUTED", "issues": [], "verdict": "NOT_EXECUTED"}
             continue
 
         text = reports.get(name, "")
         issues = []
+        warnings = []
 
-        # 通用的质量检查
         if len(text) < 100:
-            issues.append("报告内容过短（<100字）")
-        if "风险" not in text and "注意" not in text and name not in ["情报员"]:
-            issues.append("缺少风险提示")
+            issues.append("报告内容过短（<100字），无法支撑决策")
+
+        # === 专属审核标准 ===
+        if name == "情报员":
+            if "大盘" not in text and "上证" not in text:
+                issues.append("缺少大盘行情概况")
+            if "板块" not in text and "行业" not in text:
+                warnings.append("缺少板块/行业热点信息")
+            if "资金" not in text and "北向" not in text:
+                warnings.append("缺少资金流向数据")
+            if "政策" not in text and "新闻" not in text and "要闻" not in text:
+                warnings.append("缺少政策/要闻信息")
+
+        elif name == "分析师":
+            if "MACD" not in text and "KDJ" not in text and "RSI" not in text:
+                issues.append("缺少技术指标分析（MACD/KDJ/RSI至少一个）")
+            if "板块" not in text and "行业排名" not in text:
+                warnings.append("缺少板块强度排名")
+            if "MA20" not in text and "均线" not in text:
+                warnings.append("缺少均线分析（MA20位置判断）")
+            if "结论" not in text and "建议" not in text and "判断" not in text:
+                issues.append("缺少明确的趋势判断结论（牛/熊/震荡）")
+
+        elif name == "选股机器人":
+            if "评分" not in text and "分" not in text:
+                issues.append("缺少候选票评分数据")
+            if "推荐" not in text and "候选" not in text and "关注" not in text:
+                issues.append("没有输出候选股票列表")
+            codes_found = len(re.findall(r'\d{6}\.(SZ|SH)', text))
+            if codes_found == 0:
+                issues.append("没有给出具体股票代码")
+            if "持仓" in text and "冲突" not in text:
+                warnings.append("建议检查是否有持仓冲突")
+
+        elif name == "风控官":
+            if "止损" not in text:
+                issues.append("缺少止损检查项目")
+            if "仓位" not in text and "持仓" not in text:
+                issues.append("缺少仓位合规检查")
+            if "等级" not in text and "级别" not in text:
+                issues.append("缺少风控等级结论（LOW/MEDIUM/HIGH）")
+            if "操作" not in text and "指令" not in text:
+                warnings.append("缺少具体操作指令")
+
+        elif name == "操盘手":
+            if "买入" not in text:
+                warnings.append("没有买入建议")
+            if "卖出" not in text:
+                warnings.append("没有卖出建议")
+            if "止损" not in text:
+                issues.append("买入清单缺少止损位")
+            if "仓位" not in text and "上限" not in text:
+                issues.append("缺少仓位汇总和合规检查")
+
+        # 综合评级
+        if issues:
+            status = "REJECTED"
+            verdict = "❌ 不合格 — 必须打回重做"
+        elif warnings:
+            status = "NEEDS_REVIEW"
+            verdict = "⚠️ 需补充 — 建议打回补充后重审"
+        else:
+            status = "PASS"
+            verdict = "✅ 通过"
 
         quality[name] = {
-            "status": "PASS" if not issues else "NEEDS_REVIEW",
+            "status": status,
             "issues": issues,
+            "warnings": warnings,
+            "verdict": verdict,
+            "content_length": len(text),
         }
 
     return quality
+
+
+def generate_rework_orders(quality: dict, today_str: str) -> list:
+    """对不合格的Agent输出生成打回重做指令"""
+    orders = []
+    for name, q in quality.items():
+        if q["status"] not in ("REJECTED", "NEEDS_REVIEW"):
+            continue
+
+        order = {
+            "agent": name,
+            "order_type": "REWORK" if q["status"] == "REJECTED" else "SUPPLEMENT",
+            "reasons": q["issues"] + q.get("warnings", []),
+            "requirements": [],
+        }
+
+        # 按Agent类型生成具体的改进要求
+        if name == "情报员":
+            if any("大盘" in i for i in q["issues"]):
+                order["requirements"].append("补充大盘行情概况（上证/深证/创业板涨跌幅）")
+            if any("板块" in i for i in q.get("warnings", [])):
+                order["requirements"].append("补充今日热点板块/行业信息")
+            if any("资金" in i for i in q.get("warnings", [])):
+                order["requirements"].append("补充北向资金/主力资金流向数据")
+            if any("政策" in i for i in q.get("warnings", [])):
+                order["requirements"].append("补充今日重要政策/新闻要闻")
+
+        elif name == "分析师":
+            if any("指标" in i for i in q["issues"]):
+                order["requirements"].append("至少计算MACD、KDJ、RSI中一个技术指标")
+            if any("结论" in i for i in q["issues"]):
+                order["requirements"].append("给出明确的趋势判断结论（牛市/震荡/熊市）")
+            if any("板块" in i for i in q.get("warnings", [])):
+                order["requirements"].append("补充板块强度排名数据")
+            if any("均线" in i for i in q.get("warnings", [])):
+                order["requirements"].append("补充上证MA20/MA60均线位置分析")
+
+        elif name == "选股机器人":
+            if any("评分" in i for i in q["issues"]):
+                order["requirements"].append("输出多因子评分数据（估值/成长/动量/情绪/技术面）")
+            if any("候选" in i or "列表" in i for i in q["issues"]):
+                order["requirements"].append("输出候选股票列表（含代码、名称、评分、推荐理由）")
+            if any("代码" in i for i in q["issues"]):
+                order["requirements"].append("每只候选票必须给出具体股票代码（XXXXXX.SZ/SH）")
+            if any("冲突" in i for i in q.get("warnings", [])):
+                order["requirements"].append("检查并标注与现有持仓的行业冲突")
+
+        elif name == "风控官":
+            if any("止损" in i for i in q["issues"]):
+                order["requirements"].append("逐笔检查所有持仓的止损线是否触发")
+            if any("仓位" in i for i in q["issues"]):
+                order["requirements"].append("检查总仓位和单票仓位是否超限")
+            if any("等级" in i for i in q["issues"]):
+                order["requirements"].append("给出明确的风控等级（LOW/MEDIUM/HIGH）及依据")
+            if any("操作" in i for i in q.get("warnings", [])):
+                order["requirements"].append("每条预警必须附带具体操作指令（卖什么/卖多少/什么价格）")
+
+        elif name == "操盘手":
+            if any("止损" in i for i in q["issues"]):
+                order["requirements"].append("每笔买入必须设置止损位（-5%~-7%）")
+            if any("仓位" in i for i in q["issues"]):
+                order["requirements"].append("输出执行后仓位汇总，确认不超过风控上限")
+
+        orders.append(order)
+
+    return orders
+
+
+def track_rework_status(rework_orders: list, report_dir: str, today_str: str) -> list:
+    """检查被要求重做的Agent是否已经重新提交（再读一次报告验证）"""
+    updated = []
+    for order in rework_orders:
+        name = order["agent"]
+        agent_map = {
+            "情报员": ("情报", "情报摘要"),
+            "分析师": ("分析", "分析报告"),
+            "选股机器人": ("选股", "选股建议"),
+            "风控官": ("风控", "风控报告"),
+            "操盘手": ("操盘", "交易计划"),
+            "复盘师": ("复盘", "复盘报告"),
+        }
+        if name not in agent_map:
+            continue
+
+        d, p = agent_map[name]
+        path = os.path.join(report_dir, d, f"{p}_{today_str}.md")
+        # 检查重做标记——如果文件修改时间在打回指令之后，认为已重做
+        # （简化实现：检查文件内容末尾是否有 "#REWORKED" 标记）
+        text = load_report(path)
+        reworked = "#REWORKED" in text if text else False
+
+        updated.append({
+            "agent": name,
+            "original_issues": order["reasons"],
+            "requirements": order["requirements"],
+            "reworked": reworked,
+            "status": "已重做 ✅" if reworked else "待重做 ⏳",
+        })
+
+    return updated
 
 
 def make_decision(reports: dict, agent_status: dict) -> dict:
@@ -263,6 +427,8 @@ def make_decision(reports: dict, agent_status: dict) -> dict:
         "readiness": {},
         "conflicts": [],
         "agent_quality": {},
+        "rework_orders": [],
+        "rework_status": [],
         "market_assessment": "未知",
         "final_plan": {
             "should_trade": False,
@@ -331,12 +497,42 @@ def make_decision(reports: dict, agent_status: dict) -> dict:
         print(f"  {ok} 风控官与操盘手无意见分歧")
         result["arbitrations"] = []
 
-    # 6. 质量分析
+    # 6. 质量分析（结构化审核+打回重做）
     quality = analyze_agent_quality(report_contents, agent_status)
     result["agent_quality"] = quality
     for name, q in quality.items():
-        if q["status"] == "NEEDS_REVIEW":
-            print(f"  {warn} {name} 质量待审核: {'; '.join(q['issues'])}")
+        if q["status"] == "REJECTED":
+            print(f"  {fail} {name} 不合格 — 必须打回重做!")
+            for issue in q["issues"]:
+                print(f"       • {issue}")
+        elif q["status"] == "NEEDS_REVIEW":
+            print(f"  {warn} {name} 需补充 — 建议打回")
+            for issue in q.get("warnings", []):
+                print(f"       • {issue}")
+        elif q["status"] == "PASS":
+            print(f"  {ok} {name} 质量通过")
+
+    # 生成打回重做指令
+    rework_orders = generate_rework_orders(quality, today_str)
+    result["rework_orders"] = rework_orders
+    if rework_orders:
+        print(f"  {warn} ════════════════════════════════════")
+        print(f"  {warn}  📋 打回重做指令（共 {len(rework_orders)} 条）")
+        for order in rework_orders:
+            tag = "🔴 打回" if order["order_type"] == "REWORK" else "🟡 补充"
+            print(f"  {warn}   {tag} {order['agent']}:")
+            for r in order["requirements"]:
+                print(f"  {warn}       → {r}")
+        print(f"  {warn}  ════════════════════════════════════")
+
+    # 跟踪已打回的Agent是否已重做
+    if rework_orders:
+        rework_status = track_rework_status(rework_orders, report_dir, today_str)
+        result["rework_status"] = rework_status
+        for rs in rework_status:
+            print(f"  {ok}   {rs['agent']}: {rs['status']}")
+    else:
+        result["rework_status"] = []
 
     # 7. 市场判断
     risk_text = report_contents.get("风控官", "")
@@ -355,13 +551,26 @@ def make_decision(reports: dict, agent_status: dict) -> dict:
 
     print(f"  {ok} 市场判断: {result['market_assessment']}")
 
-    # 8. 最终决策（含风控vs操盘仲裁）
+    # 8. 最终决策（含质量审核+风控vs操盘仲裁）
     has_critical_conflict = any(c["severity"] == "HIGH" for c in conflicts)
     has_arbitration = any(
         a["ruling"] in ("风控一票否决", "暂缓买入，纳入观察", "听从风控，减仓优先")
         for a in arbitrations
     )
     high_risk = "极高" in result["market_assessment"] or "极端" in result["market_assessment"]
+
+    # 质量审核：是否存在必须打回重做的Agent
+    rejected_agents = [name for name, q in quality.items() if q["status"] == "REJECTED"]
+    needs_review_agents = [name for name, q in quality.items() if q["status"] == "NEEDS_REVIEW"]
+
+    if rejected_agents:
+        result["final_plan"]["should_trade"] = False
+        result["final_plan"]["action"] = "暂缓交易 — 以下Agent输出不合格，等待重做"
+        result["veto_notes"].append(
+            f"以下Agent输出不合格，已打回重做: {', '.join(rejected_agents)}。"
+            "等待重做完成后再执行最终决策。"
+        )
+        print(f"  {warn} 最终决策: 暂缓交易（{len(rejected_agents)}个Agent输出不合格）")
 
     if high_risk:
         result["final_plan"]["should_trade"] = False
