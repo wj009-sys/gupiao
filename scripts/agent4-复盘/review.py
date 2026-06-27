@@ -2,11 +2,13 @@
 Agent4 复盘师 - 复盘核心脚本
 
 功能：
-1. 读取当天的情报报告 + 分析报告 + 风控报告
+1. 读取当天情报 + 分析 + 风控 + 选股建议 + 交易计划 报告
 2. 获取当天实际行情数据
 3. 对比预测 vs 实际，计算准确率
-4. 分析偏差原因
-5. 更新知识库（复盘记录 + 策略建议）
+4. 复盘选股机器人推荐准确率和因子表现
+5. 复盘操盘手交易计划的执行效果
+6. 分析偏差原因
+7. 更新知识库（复盘记录 + 策略建议 + 选股因子调整）
 
 用法：
     source venv/Scripts/activate
@@ -278,7 +280,109 @@ def calculate_accuracy_trend(history: list) -> dict:
     }
 
 
-def update_knowledge(review_data: dict, trade_date: str):
+def extract_stock_picks(pick_text: str) -> dict:
+    """从选股建议报告中提取推荐的候选股票"""
+    picks = {"stocks": [], "total": 0}
+    if not pick_text:
+        return picks
+
+    # 匹配股票代码 + 评分模式
+    stock_patterns = [
+        r'\*\*(\w+)\((\d{6}\.(?:SZ|SH))\)\*\*.*?[：:]\s*(\d+)分',
+        r'(\w+)\((\d{6}\.(?:SZ|SH))\).*?(\d+)分',
+    ]
+    for pattern in stock_patterns:
+        for m in re.finditer(pattern, pick_text, re.DOTALL):
+            picks["stocks"].append({
+                "name": m.group(1).strip(),
+                "code": m.group(2),
+                "score": int(m.group(3)),
+            })
+            picks["total"] += 1
+
+    # 提取否决案例
+    veto_lines = [l for l in pick_text.split('\n') if '否决' in l and '~~' in l]
+    picks["vetoed"] = []
+    for vl in veto_lines:
+        code_match = re.search(r'(\d{6}\.(SZ|SH))', vl)
+        reason_match = re.search(r'否决.*?([^。]+)', vl)
+        if code_match:
+            picks["vetoed"].append({
+                "code": code_match.group(0),
+                "reason": reason_match.group(1) if reason_match else "未说明",
+            })
+
+    return picks
+
+
+def extract_trade_plan(trade_text: str) -> dict:
+    """从交易计划报告中提取买入/卖出/持有清单"""
+    plan = {"buy": [], "sell": [], "hold": []}
+    if not trade_text:
+        return plan
+
+    # 提取买入清单
+    in_buy = False
+    for line in trade_text.split('\n'):
+        stripped = line.strip()
+        if '买入清单' in stripped or '### 买入' in stripped:
+            in_buy = True
+            continue
+        if '卖出清单' in stripped or '### 卖出' in stripped:
+            in_buy = False
+        if in_buy and stripped.startswith('|') and '---' not in stripped:
+            parts = [p.strip() for p in stripped.split('|') if p.strip()]
+            if len(parts) >= 2:
+                code_match = re.search(r'(\d{6}\.(SZ|SH))', stripped)
+                price_match = re.search(r'(\d+\.?\d*)\s*-\s*(\d+\.?\d*)', stripped)
+                if code_match:
+                    plan["buy"].append({
+                        "code": code_match.group(0),
+                        "price_range": f"{price_match.group(1)}-{price_match.group(2)}" if price_match else "",
+                    })
+
+    # 提取卖出清单
+    in_sell = False
+    for line in trade_text.split('\n'):
+        stripped = line.strip()
+        if '卖出清单' in stripped or '### 卖出' in stripped:
+            in_sell = True
+            continue
+        if '持有清单' in stripped or '### 持有' in stripped or '### 仓位' in stripped:
+            in_sell = False
+        if in_sell and stripped.startswith('|') and '---' not in stripped:
+            code_match = re.search(r'(\d{6}\.(SZ|SH))', stripped)
+            if code_match:
+                plan["sell"].append({"code": code_match.group(0)})
+
+    return plan
+
+
+def fetch_real_prices(stocks: list, trade_date: str) -> list:
+    """获取候选股票的实际行情来验证选股评分"""
+    verified = []
+    for s in stocks[:10]:  # 最多验证10只
+        try:
+            code = s.get("code", "")
+            if not code:
+                continue
+            df = pro.daily(ts_code=code, start_date=trade_date, end_date=trade_date)
+            if df is not None and not df.empty:
+                close = float(df.iloc[0]["close"])
+                pct_chg = float(df.iloc[0].get("pct_chg", 0))
+                s["actual_close"] = close
+                s["actual_pct"] = round(pct_chg, 2)
+                # 简单判断：上涨=推荐正确，下跌=推荐需审视
+                s["verdict"] = "correct" if pct_chg > 0 else ("wrong" if pct_chg < -2 else "neutral")
+                verified.append(s)
+            else:
+                s["actual_close"] = None
+                s["verdict"] = "no_data"
+                verified.append(s)
+        except:
+            s["verdict"] = "error"
+            verified.append(s)
+    return verified
     """更新知识库"""
     复盘记录_dir = p("knowledge/复盘记录")
     os.makedirs(复盘记录_dir, exist_ok=True)
@@ -317,20 +421,25 @@ def generate_review_report(trade_date: str = None) -> dict:
     review = {
         "date": 日期显示,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "inputs": {"情报": False, "分析": False, "风控": False},
+        "inputs": {"情报": False, "分析": False, "风控": False, "选股": False, "操盘": False},
         "predictions": {},
+        "stock_picks": {"stocks": [], "verified": [], "total": 0},
+        "trade_plan": {"buy": [], "sell": [], "hold": []},
         "actual": {},
         "comparison": {},
-        "accuracy": {"大盘方向": {}, "板块预测": {}, "综合准确率": 0},
+        "accuracy": {"大盘方向": {}, "板块预测": {}, "选股准确率": {}, "综合准确率": 0},
         "偏差分析": [],
         "策略建议": [],
+        "因子建议": [],
         "errors": [],
     }
 
-    # 1. 读取输入报告
+    # 1. 读取输入报告（全部7个Agent）
     情报 = read_report(f"reports/日报/情报/情报摘要_{日期显示}.md")
     分析 = read_report(f"reports/日报/分析/分析报告_{日期显示}.md")
     风控 = read_report(f"reports/日报/风控/风控报告_{日期显示}.md")
+    选股 = read_report(f"reports/日报/选股/选股建议_{日期显示}.md")
+    操盘 = read_report(f"reports/日报/操盘/交易计划_{日期显示}.md")
 
     if 情报:
         review["inputs"]["情报"] = True
@@ -341,6 +450,12 @@ def generate_review_report(trade_date: str = None) -> dict:
     if 风控:
         review["inputs"]["风控"] = True
         print(f"  {_ok} 风控报告已读取")
+    if 选股:
+        review["inputs"]["选股"] = True
+        print(f"  {_ok} 选股建议已读取")
+    if 操盘:
+        review["inputs"]["操盘"] = True
+        print(f"  {_ok} 交易计划已读取")
 
     # 2. 提取预测
     predictions = extract_predictions(分析)
@@ -359,6 +474,39 @@ def generate_review_report(trade_date: str = None) -> dict:
     # 4. 对比分析
     comparison = compare_predictions(predictions, actual, trade_date)
     review["comparison"] = comparison
+
+    # 4b. 选股机器人复盘
+    if 选股:
+        stock_picks = extract_stock_picks(选股)
+        review["stock_picks"]["stocks"] = stock_picks.get("stocks", [])
+        review["stock_picks"]["total"] = stock_picks.get("total", 0)
+        review["stock_picks"]["vetoed"] = stock_picks.get("vetoed", [])
+        # 验证候选股票实际表现
+        if stock_picks["stocks"]:
+            verified = fetch_real_prices(stock_picks["stocks"], trade_date)
+            review["stock_picks"]["verified"] = verified
+            correct_count = sum(1 for v in verified if v.get("verdict") == "correct")
+            wrong_count = sum(1 for v in verified if v.get("verdict") == "wrong")
+            total_verified = len(verified)
+            review["accuracy"]["选股准确率"] = {
+                "correct": correct_count,
+                "wrong": wrong_count,
+                "total": total_verified,
+                "rate": round(correct_count / total_verified * 100, 1) if total_verified > 0 else 0,
+            }
+            print(f"  {_ok} 选股验证: {correct_count}/{total_verified} 只上涨")
+            # 因子表现统计
+            if wrong_count > correct_count and total_verified >= 3:
+                review["因子建议"].append("推荐票多数下跌，建议检查选股因子权重是否需调整")
+
+    # 4c. 操盘手复盘
+    if 操盘:
+        trade_plan = extract_trade_plan(操盘)
+        review["trade_plan"]["buy"] = trade_plan.get("buy", [])
+        review["trade_plan"]["sell"] = trade_plan.get("sell", [])
+        review["trade_plan"]["hold"] = trade_plan.get("hold", [])
+        if trade_plan["buy"] or trade_plan["sell"]:
+            print(f"  {_ok} 交易计划已提取: {len(trade_plan['buy'])}买入 {len(trade_plan['sell'])}卖出")
 
     # 5. 计算准确率
     # 大盘方向：如果有涨跌预测（结构市=偏震荡，准确率中等）
