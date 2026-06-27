@@ -240,15 +240,24 @@ skills/            - 自定义 Skills
 # 系统会自动检测到用户的 OpenID
 ```
 
-**后台保活服务**（可选，用于长期保持机器人在线）：
-```bash
-# 启动保活服务（保持 WebSocket 持久连接）
-node .claude/mcp-servers/qqbot/keepalive.js
+### 🔄 常驻监听模式（自动响应手机命令）
 
-# 或在 Windows 中直接双击 start-qqbot.bat
-```
+Telegram 和 QQ Bot 支持**后台常驻监听**，启动后自动检测手机发来的命令并执行对应 Agent，无需手动操作。
 
-> 💡 **建议**：每日自动推送用 PushPlus（无限制），QQ 机器人用于您主动询问时的交互式回复（被动回复无限制）。
+**双通道常驻服务：**
+
+| 服务 | 启动方式 | 监听端口 | 文件 |
+|------|---------|---------|------|
+| 📱 Telegram 监听 | `start-telegram.bat` 或 `node .claude/mcp-servers/telegram/keepalive.js` | 19786 | `.claude/mcp-servers/telegram/keepalive.js` |
+| 💬 QQ Bot 监听 | `start-qqbot.bat` 或 `node .claude/mcp-servers/qqbot/keepalive.js` | 19785 | `.claude/mcp-servers/qqbot/keepalive.js` |
+
+**使用方法：**
+1. 双击 `start-telegram.bat` 或 `start-qqbot.bat` 启动（保持窗口打开）
+2. 在手机 Telegram/QQ 中给机器人发命令：`/情报员`、`/分析师`、`/风控官`、`/复盘师`
+3. 机器人自动运行对应的 Python 脚本并回复结果
+4. 按 `Ctrl+C` 停止监听
+
+> 💡 **建议**：每日自动推送用 PushPlus（无限制），QQ 机器人用于您主动询问时的交互式回复（被动回复无限制）。常驻监听模式启动后，手机发命令即可触发 Agent，无需打开 Claude Code。
 
 ### 推送时机
 
@@ -276,21 +285,28 @@ node .claude/mcp-servers/qqbot/keepalive.js
 
 ### 交互流程
 
+**方式一：常驻监听（推荐）**
 ```
-你发消息 → 机器人收到 → 你运行 listen 工具 → Claude 解析命令 → 执行 Agent → 回复到手机
+启动 bat → 手机发命令 → 机器人自动执行 → 回复到手机
+```
+双击 `start-telegram.bat` 或 `start-qqbot.bat` 保持后台运行，手机直接发命令即可。
+
+**方式二：手动监听**
+```
+你发消息 → 你运行 listen 工具 → Claude 解析命令 → 执行 Agent → 回复到手机
 ```
 
 ### 使用方法
 
 **Telegram：**
-1. 在 Telegram 中给 `@Qby0001bot` 发送命令（如 `/情报员`）
-2. 在 Claude Code 中调用 `telegram_listen(duration=60)` 
-3. 系统会检测到命令并自动执行
+1. 双击 `start-telegram.bat` 启动常驻监听（或在 Claude Code 中调用 `telegram_listen(duration=60)`）
+2. 在 Telegram 中给 `@Qby0001bot` 发送命令（如 `/情报员`）
+3. 机器人自动运行脚本并发回结果
 
 **QQ Bot：**
-1. 在 QQ 中给机器人发送命令（如 `/情报员`）
-2. 在 Claude Code 中调用 `qqbot_listen(duration=60)`
-3. 系统会检测到事件并自动执行
+1. 双击 `start-qqbot.bat` 启动常驻监听（或在 Claude Code 中调用 `qqbot_listen(duration=60)`）
+2. 在 QQ 中给机器人发送命令（如 `/情报员`）
+3. 机器人自动运行脚本并发回结果
 
 > 微信企业微信机器人和 QQ PushPlus 仅支持单向推送，不支持接收消息互动。
 

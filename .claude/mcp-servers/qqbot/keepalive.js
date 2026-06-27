@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 /**
- * QQ Bot 后台保活服务
+ * QQ Bot 后台保活服务 — 常驻监听手机命令并自动执行
  *
  * 独立运行，保持 QQ Bot WebSocket 持久在线。
- * 可在 Windows 后台长期运行，供 MCP 服务器调用发送消息。
+ * 自动响应 /情报员 /分析师 等命令，运行对应 Python 脚本并回传结果。
  *
  * 使用方式：
  *   node .claude/mcp-servers/qqbot/keepalive.js
  *
  * 环境变量（从 settings.local.json 加载）：
  *   QQBOT_APP_ID, QQBOT_APP_SECRET
+ *   PYTHON_PATH — Python 解释器路径
  *
  * 命令行参数：
  *   --settings <path>  指定 settings.local.json 路径（默认自动查找）
@@ -19,6 +20,7 @@ const https = require("https");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const { spawn } = require("child_process");
 
 // ============ 加载配置 ============
 
@@ -62,10 +64,71 @@ let state = {
   heartbeatInterval: null,
   reconnectAttempts: 0,
   maxReconnectAttempts: 50,
-  // 消息发送队列
   pendingSends: [],
   httpServer: null,
+  lastCommandTime: 0,
 };
+
+// ============ 项目配置 ============
+
+const PYTHON = process.env.PYTHON_PATH
+  ? path.join(process.env.PYTHON_PATH, "python.exe")
+  : "python";
+
+const PROJECT_ROOT = (() => {
+  for (const p of [__dirname, process.cwd()].flatMap((d) => [
+    d,
+    path.resolve(d, ".."),
+    path.resolve(d, "..", ".."),
+  ])) {
+    if (fs.existsSync(path.join(p, "CLAUDE.md"))) return p;
+  }
+  return process.cwd();
+})();
+
+// ============ 命令路由 ============
+
+const COMMANDS = {
+  "/情报员": { script: "scripts/agent1-情报采集/fetch_all.py", agent: "情报员", emoji: "📊", ack: "📊 正在执行情报采集..." },
+  "/分析师": { script: "scripts/agent2-技术分析/analyze.py", agent: "分析师", emoji: "📈", ack: "📈 正在执行技术分析..." },
+  "/风控官": { script: "scripts/agent3-风控/risk_check.py", agent: "风控官", emoji: "🛡️", ack: "🛡️ 正在执行风控检查..." },
+  "/复盘师": { script: "scripts/agent4-复盘/review.py", agent: "复盘师", emoji: "🔄", ack: "🔄 正在执行复盘分析..." },
+  "/help": { agent: "帮助", emoji: "❓", help: true },
+  "/start": { agent: "帮助", emoji: "👋", help: true },
+};
+
+const AGENT_NAMES = { 1: "情报员", 2: "分析师", 3: "风控官", 4: "复盘师" };
+
+/** 通过 QQ API 发送消息 */
+async function qqSendMessage(openid, content, isGroup = false) {
+  try {
+    const endpoint = isGroup
+      ? `/v2/groups/${openid}/messages`
+      : `/v2/users/${openid}/messages`;
+    const bodyData = { content: JSON.stringify([{ type: 1, content }]), msg_type: 0 };
+    if (!isGroup) bodyData.openid = openid;
+
+    await ensureAccessToken();
+    await httpRequest({
+      hostname: "api.sgroup.qq.com",
+      path: endpoint,
+      method: "POST",
+      headers: {
+        Authorization: `QQBot ${state.accessToken}`,
+        "Content-Type": "application/json",
+        "X-Union-Appid": APP_ID,
+      },
+    }, bodyData);
+  } catch (err) {
+    console.error(`[qqbot-keepalive] ⚠️ Send failed: ${err.message}`);
+  }
+}
+
+async function ensureAccessToken() {
+  if (!state.accessToken || Date.now() >= state.tokenExpiresAt - 300000) {
+    await getAccessToken();
+  }
+}
 
 // ============ HTTP API ============
 
@@ -131,6 +194,93 @@ async function getGateway() {
   throw new Error(`Gateway failed: ${JSON.stringify(result)}`);
 }
 
+// ============ 命令执行 ============
+
+/** 运行 Python 脚本并返回结果 */
+function runPythonScript(scriptRelPath) {
+  return new Promise((resolve) => {
+    const scriptPath = path.join(PROJECT_ROOT, scriptRelPath);
+    if (!fs.existsSync(scriptPath)) {
+      return resolve({ success: false, error: `脚本不存在: ${scriptRelPath}` });
+    }
+
+    const isWin = process.platform === "win32";
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+
+    const proc = spawn(PYTHON, ["-X", "utf8", scriptPath, dateStr], {
+      cwd: PROJECT_ROOT,
+      shell: isWin,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env },
+    });
+
+    let stdout = "", stderr = "";
+    proc.stdout.on("data", (d) => { stdout += d.toString(); });
+    proc.stderr.on("data", (d) => { stderr += d.toString(); });
+
+    const timeout = setTimeout(() => { proc.kill(); resolve({ success: false, error: "执行超时（120秒）" }); }, 120000);
+
+    proc.on("close", (code) => {
+      clearTimeout(timeout);
+      const allOutput = stdout + stderr;
+      const reportMatch = allOutput.match(/reports?[\/\\][^\s"'`]+\.(md|json)/i);
+      const lines = stdout.split("\n").filter((l) => l.trim() && !l.includes("Error") && !l.includes("Traceback"));
+      const summary = lines.slice(-3).join("\n") || null;
+      if (code === 0) resolve({ success: true, summary, reportFile: reportMatch ? reportMatch[0] : null });
+      else {
+        const error = stderr.split("\n").filter((l) => l.trim()).slice(-3).join("\n") || `退出码: ${code}`;
+        resolve({ success: false, error });
+      }
+    });
+    proc.on("error", (err) => { clearTimeout(timeout); resolve({ success: false, error: `启动失败: ${err.message}` }); });
+  });
+}
+
+/** 处理 QQ Bot 收到的命令 */
+async function handleQQCommand(cmdKey, openid, isGroup, rawText) {
+  const cmd = COMMANDS[cmdKey];
+  if (!cmd) return;
+
+  console.error(`[qqbot-keepalive] 🎯 Command: ${rawText} from ${openid}`);
+
+  if (cmd.help) {
+    const helpText =
+      "👋 股票投研机器人\n\n可用命令：\n📊 /情报员\n📈 /分析师\n🛡️ /风控官\n🔄 /复盘师\n\n命令在后台运行，结果会自动推送。";
+    await qqSendMessage(openid, helpText, isGroup);
+    return;
+  }
+
+  // 发送确认
+  await qqSendMessage(openid, cmd.ack, isGroup);
+
+  // 防重复
+  const now = Date.now();
+  if (now - state.lastCommandTime < 10000) {
+    await qqSendMessage(openid, "⏳ 上一个任务正在执行中，请稍候...", isGroup);
+    return;
+  }
+  state.lastCommandTime = now;
+
+  const result = await runPythonScript(cmd.script);
+  if (result.success) {
+    const reply = `✅ ${cmd.emoji} ${cmd.agent} 执行完成\n\n${result.summary || "报告已生成"}`;
+    await qqSendMessage(openid, reply, isGroup);
+    if (result.reportFile) {
+      await qqSendMessage(openid, `📄 ${result.reportFile}`, isGroup);
+    }
+  } else {
+    await qqSendMessage(openid, `❌ ${cmd.agent} 执行失败\n\n${result.error}`, isGroup);
+  }
+}
+
+/** 解析消息中的命令 */
+function parseCommand(text) {
+  if (!text) return null;
+  let cmd = text.trim().split(/\s+/)[0];
+  return Object.keys(COMMANDS).find((k) => cmd === k || cmd === k.toLowerCase()) || null;
+}
+
 // ============ WebSocket ============
 
 function startHeartbeat(interval) {
@@ -188,6 +338,16 @@ async function connect() {
               } else if (t === "RESUMED") {
                 state.ready = true;
                 console.error(`[qqbot-keepalive] ✅ Session resumed`);
+              } else if (t === "C2C_MESSAGE_CREATE") {
+                const openid = d.author?.user_openid;
+                const content = d.content || "";
+                const cmd = parseCommand(content);
+                if (cmd && openid) handleQQCommand(cmd, openid, false, content);
+              } else if (t === "AT_MESSAGE_CREATE") {
+                const openid = d.group_openid;
+                const content = (d.content || "").replace(/<@!\d+>/g, "").trim();
+                const cmd = parseCommand(content);
+                if (cmd && openid) handleQQCommand(cmd, openid, true, content);
               }
               break;
             case 7:
