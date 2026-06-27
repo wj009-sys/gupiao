@@ -1,3 +1,31 @@
 {
-  "tasks": []
+  "tasks": [
+    {
+      "id": "claw_1730000000_pre_market",
+      "name": "早盘选股",
+      "cron": "0 9 * * 1-5",
+      "prompt": "运行选股机器人早盘模式：source venv/Scripts/activate && python -X utf8 scripts/agent5-选股/stock_picker.py --mode pre_market --top-n 5",
+      "recurring": true,
+      "createdAt": "2026-06-27T18:00:00.000Z",
+      "source": "claw-mcp"
+    },
+    {
+      "id": "claw_1730000001_noon",
+      "name": "午盘选股",
+      "cron": "0 12 * * 1-5",
+      "prompt": "运行选股机器人午盘模式：source venv/Scripts/activate && python -X utf8 scripts/agent5-选股/stock_picker.py --mode noon --top-n 5",
+      "recurring": true,
+      "createdAt": "2026-06-27T18:00:00.000Z",
+      "source": "claw-mcp"
+    },
+    {
+      "id": "claw_1730000002_evening",
+      "name": "晚间选股",
+      "cron": "0 21 * * 1-5",
+      "prompt": "运行选股机器人晚间模式：source venv/Scripts/activate && python -X utf8 scripts/agent5-选股/stock_picker.py --mode evening --top-n 5",
+      "recurring": true,
+      "createdAt": "2026-06-27T18:00:00.000Z",
+      "source": "claw-mcp"
+    }
+  ]
 }
