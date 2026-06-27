@@ -103,6 +103,21 @@ def calculate_position_size(
     }
 
 
+def get_limit_prices(ts_code: str, current_price: float) -> dict:
+    """获取当日涨跌停价格范围"""
+    if current_price <= 0:
+        return {"涨停": None, "跌停": None}
+    # A股主板±10%，创业板/科创板±20%
+    is_cy = ts_code.startswith("30")  # 创业板 300xxx
+    is_kc = ts_code.startswith("688")  # 科创板 688xxx
+    limit_pct = 0.20 if (is_cy or is_kc) else 0.10
+    return {
+        "涨停": round(current_price * (1 + limit_pct), 2),
+        "跌停": round(current_price * (1 - limit_pct), 2),
+        "limit_pct": limit_pct,
+    }
+
+
 def fetch_technical_levels(ts_code: str) -> dict:
     """获取技术支撑/压力位"""
     try:
@@ -189,10 +204,21 @@ def generate_trade_plan() -> dict:
         max_position = 65
         max_single = 15
 
-    # 尝试从风控文本中读取仓位限制
-    max_match = re.search(r'上限\D*(\d+)%', risk_text)
-    if max_match:
-        max_position = min(int(max_match.group(1)), max_position)
+    # 尝试从风控文本中读取总仓位上限和单票上限
+    # 先找总仓位上限（"总仓位上限80%"或"总仓位≤80%"等模式）
+    total_match = re.search(r'(?:总仓位|仓位|总).*?上限\D*(\d+)%', risk_text)
+    single_match = re.search(r'(?:单票|个股|单只).*?上限\D*(\d+)%', risk_text)
+    # 兜底：通用的"上限N%"模式
+    fallback_match = re.search(r'上限\D*(\d+)%', risk_text) if not total_match and not single_match else None
+
+    if total_match:
+        max_position = min(int(total_match.group(1)), max_position)
+    elif fallback_match:
+        max_position = min(int(fallback_match.group(1)), max_position)
+
+    if single_match:
+        max_single = min(int(single_match.group(1)), max_single)
+
     result["market_env"] = {"max_position": max_position, "max_single": max_single}
     print(f"  {ok} 仓位上限: {max_position}%（单票≤{max_single}%）")
 
@@ -225,10 +251,25 @@ def generate_trade_plan() -> dict:
             price_data = get_stock_real_price(pick["code"])
             levels = fetch_technical_levels(pick["code"])
 
+            current_price = price_data["price"] if price_data else 0
+
+            # 涨跌停范围检查
+            limit_info = get_limit_prices(pick["code"], current_price) if current_price > 0 else {}
+            price_ok = True
+            price_warning = ""
+            if limit_info:
+                # 检查建议买入价格是否在涨跌停范围内
+                if levels and levels.get("support") and levels["support"] < limit_info.get("跌停", 0):
+                    price_warning = f"支撑位{levels['support']}低于跌停价{limit_info['跌停']}"
+                    price_ok = False
+                if levels and levels.get("resistance") and levels["resistance"] > limit_info.get("涨停", 0):
+                    price_warning = f"压力位{levels['resistance']}超过涨停价{limit_info['涨停']}"
+                    price_ok = False
+
             buy_item = {
                 "code": pick["code"],
                 "name": pick["name"],
-                "current_price": price_data["price"] if price_data else 0,
+                "current_price": current_price,
                 "pct_chg": price_data["pct_chg"] if price_data else 0,
                 "suggested_position_pct": min(
                     round(position_info["suggested_per_stock"] / total_asset * 100, 1),
@@ -236,13 +277,19 @@ def generate_trade_plan() -> dict:
                 ),
                 "support": levels["support"],
                 "resistance": levels["resistance"],
-                "stop_loss": round(price_data["price"] * 0.93, 2) if price_data else 0,
+                "stop_loss": round(current_price * 0.93, 2) if current_price > 0 else 0,
+                "limit_up": limit_info.get("涨停") if limit_info else None,
+                "limit_down": limit_info.get("跌停") if limit_info else None,
+                "price_ok": price_ok,
+                "price_warning": price_warning,
                 "reason": "选股机器人推荐（详见选股建议报告）",
             }
             result["buy_plan"].append(buy_item)
-            print(f"  {ok} 建议买入: {pick['name']}({pick['code']}) "
+            status = "✅" if price_ok else "⚠️"
+            print(f"  {ok} {status} 建议买入: {pick['name']}({pick['code']}) "
                   f"仓位{buy_item['suggested_position_pct']}% "
-                  f"止损{buy_item['stop_loss']}")
+                  f"止损{buy_item['stop_loss']} "
+                  f"涨跌停:{limit_info.get('跌停','?')}/{limit_info.get('涨停','?')}")
 
     # 6. 现有持仓处理
     for h in holdings:

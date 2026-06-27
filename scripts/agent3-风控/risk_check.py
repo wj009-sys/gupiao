@@ -138,12 +138,13 @@ def determine_market_environment(env_score: int, index_data: dict = None) -> dic
     return {"level": "range", "name": "震荡市", "max_position": 80, "max_single": 20}
 
 
-def check_stop_loss(holding: dict, current_price: float, pct_chg: float) -> list:
+def check_stop_loss(holding: dict, current_price: float, pct_chg: float, ts_code: str = None) -> list:
     """对单个持仓检查是否触发止损"""
     alerts = []
     cost = holding.get("成本价") or 0
     name = holding.get("名称", "未知")
     code = holding.get("代码", "")
+    ts_code = ts_code or code
     current_price = current_price or 0
 
     if cost == 0 or current_price == 0:
@@ -152,6 +153,22 @@ def check_stop_loss(holding: dict, current_price: float, pct_chg: float) -> list
     # 当前盈亏比例
     pnl_pct = (current_price - cost) / cost * 100
     holding["当前盈亏%"] = round(pnl_pct, 2)
+
+    # 获取持仓期间最高价（从买入日或最近60日取高值）
+    highest_price = current_price
+    try:
+        buy_date = holding.get("买入日期", "")
+        df = pro.daily(ts_code=ts_code)
+        if df is not None and not df.empty:
+            # 取最近60日最高价
+            high_prices = df["high"].iloc[:60].values if "high" in df.columns else df["close"].iloc[:60].values
+            if len(high_prices) > 0:
+                highest_price = max(high_prices)
+    except:
+        pass
+
+    # 从高点回撤比例
+    drawdown_pct = (current_price - highest_price) / highest_price * 100 if highest_price > 0 else 0
 
     # 1. 固定比例止损（-7%）
     rules = load_stop_loss_rules()
@@ -173,19 +190,17 @@ def check_stop_loss(holding: dict, current_price: float, pct_chg: float) -> list
                 })
 
         elif rule_type == "移动止损":
-            # 需要知道最高价=取 hold 期间的最高价
-            # 简化：用最新行情的最高价
             retreat = params.get("回撤比例", -5)
-            pct_chg_from_high = pct_chg  # 简化
-            # 如果盈利状态下回撤超过阈值
-            if pnl_pct > 0 and pct_chg <= retreat:
+            # 如果盈利状态下从最高点回撤超过阈值
+            if pnl_pct > 0 and drawdown_pct <= retreat:
                 alerts.append({
                     "level": "WARNING",
                     "type": "移动止损",
                     "asset": f"{name}({code})",
-                    "message": f"从高点回撤 {abs(pct_chg):.1f}%，触发移动止损线",
+                    "message": f"从高点回撤 {abs(drawdown_pct):.1f}%（最高{highest_price:.2f}→现{current_price:.2f}），触发移动止损线",
                     "pnl_pct": round(pnl_pct, 2),
                     "threshold": retreat,
+                    "drawdown": round(drawdown_pct, 2),
                     "action": "止盈/减仓",
                 })
 
@@ -662,8 +677,8 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None, trad
                 pct_chg = price_data["pct_chg"]
                 holding["当前价"] = current_price
 
-                # 止损检查
-                stop_loss_alerts = check_stop_loss(holding, current_price, pct_chg)
+                # 止损检查（传入ts_code用于获取历史最高价）
+                stop_loss_alerts = check_stop_loss(holding, current_price, pct_chg, ts_code=code)
                 report["alerts"].extend(stop_loss_alerts)
                 for a in stop_loss_alerts:
                     print(f"  [{a['level']}] {a['type']} {a['asset']}: {a['message']}")

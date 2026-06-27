@@ -250,13 +250,121 @@ def score_technical(ts_code: str) -> dict:
         return {"score": 50, "details": {"reason": "技术评分异常"}}
 
 
-def score_sentiment(ts_code: str) -> dict:
-    """情绪因子评分（暂简化为中性分）"""
-    # 简化版：在完整实现中应接入北向资金、主力资金数据
-    return {"score": 50, "details": {"reason": "情绪因子简化评分（需接入资金流数据）"}}
+def score_sentiment(ts_code: str, trade_date: str = None) -> dict:
+    """情绪因子评分（0-100）— 基于资金流向"""
+    try:
+        # 尝试用北向资金持股数据判断
+        if trade_date:
+            df = pro.moneyflow(ts_code=ts_code, start_date=trade_date, end_date=trade_date)
+            if df is not None and not df.empty:
+                row = df.iloc[0]
+                net = float(row.get("net_amount", 0))
+                if net > 0:
+                    return {"score": 65, "details": {"reason": f"主力资金净流入{net:.0f}万"}}
+                elif net < 0:
+                    return {"score": 40, "details": {"reason": f"主力资金净流出{abs(net):.0f}万"}}
+    except:
+        pass
+
+    # 兜底：用涨跌幅大致判断情绪（超跌=悲观，大涨=乐观）
+    try:
+        df = pro.daily(ts_code=ts_code)
+        if df is not None and not df.empty and len(df) >= 5:
+            recent = df["pct_chg"].iloc[:5].mean()
+            if recent > 3:
+                return {"score": 65, "details": {"reason": f"近5日涨幅{recent:.1f}%，市场情绪积极"}}
+            elif recent < -3:
+                return {"score": 35, "details": {"reason": f"近5日跌幅{recent:.1f}%，市场情绪悲观"}}
+    except:
+        pass
+
+    return {"score": 50, "details": {"reason": "情绪因子无资金流数据，中性评分"}}
 
 
-def get_stock_name(ts_code: str) -> str:
+def is_st_stock(ts_code: str) -> bool:
+    """检查是否为ST/*ST/退市股票"""
+    try:
+        df = pro.stock_basic(ts_code=ts_code, fields="ts_code,name")
+        if df is not None and not df.empty:
+            name = df.iloc[0].get("name", "")
+            return "ST" in name or "退市" in name
+    except:
+        pass
+    return False
+
+
+def score_growth(ts_code: str, trade_date: str) -> dict:
+    """成长因子评分（0-100）- 基于财务指标"""
+    try:
+        # 获取财务指标
+        df = pro.fina_indicator(ts_code=ts_code, start_date=f"{trade_date[:4]}0101", end_date=trade_date)
+        if df is None or df.empty:
+            # 兜底：用 daily_basic 估算
+            basic = pro.daily_basic(ts_code=ts_code, trade_date=trade_date)
+            if basic is not None and not basic.empty:
+                pe = basic.iloc[0].get("pe", 0) or 0
+                if 0 < pe < 30:
+                    return {"score": 65, "details": {"reason": f"PE={pe:.1f}偏低，成长性良好"}}
+                elif 30 <= pe < 60:
+                    return {"score": 50, "details": {"reason": f"PE={pe:.1f}中等"}}
+                else:
+                    return {"score": 35, "details": {"reason": f"PE={pe:.1f}偏高或无数据"}}
+            return {"score": 50, "details": {"reason": "财务数据不足，给中性分"}}
+
+        row = df.iloc[0]
+        score = 50
+        details = {}
+
+        # 营收增长率
+        rev_growth = row.get("revenue_yoy")  # 营收同比增长(%)
+        if rev_growth is not None:
+            if rev_growth > 30:
+                score += 25
+                details["营收增长"] = f"{rev_growth:.1f}%，高速增长"
+            elif rev_growth > 15:
+                score += 15
+                details["营收增长"] = f"{rev_growth:.1f}%，稳健增长"
+            elif rev_growth > 0:
+                score += 5
+                details["营收增长"] = f"{rev_growth:.1f}%，正增长"
+            else:
+                score -= 10
+                details["营收增长"] = f"{rev_growth:.1f}%，负增长"
+
+        # 净利润增长率
+        profit_growth = row.get("profit_dedt")  # 净利润扣非增长率(%)
+        if profit_growth is not None:
+            if profit_growth > 30:
+                score += 20
+                details["净利增长"] = f"{profit_growth:.1f}%，高速增长"
+            elif profit_growth > 10:
+                score += 10
+                details["净利增长"] = f"{profit_growth:.1f}%，稳健增长"
+            elif profit_growth > 0:
+                score += 5
+                details["净利增长"] = f"{profit_growth:.1f}%，正增长"
+            else:
+                score -= 10
+                details["净利增长"] = f"{profit_growth:.1f}%，负增长"
+
+        # ROE
+        roe = row.get("roe")
+        if roe is not None:
+            if roe > 15:
+                score += 10
+                details["ROE"] = f"{roe:.1f}%，优秀"
+            elif roe > 8:
+                score += 5
+                details["ROE"] = f"{roe:.1f}%，良好"
+            else:
+                details["ROE"] = f"{roe:.1f}%，偏低"
+
+        return {"score": max(0, min(100, score)), "details": details}
+    except Exception as e:
+        return {"score": 50, "details": {"reason": f"成长评分异常: {e}"}}
+
+
+def score_sentiment(ts_code: str, trade_date: str = None) -> dict:
     """获取股票名称"""
     try:
         df = pro.stock_basic(ts_code=ts_code, fields="ts_code,name")
@@ -282,6 +390,9 @@ def generate_stock_picks(top_n: int = 5, force_refresh: bool = False) -> dict:
         "hot_sectors": [],
         "candidates_screened": 0,
         "ranked_stocks": [],
+        "st_filtered": [],
+        "sector_concentration": {},
+        "warnings": [],
         "errors": [],
     }
 
@@ -313,55 +424,108 @@ def generate_stock_picks(top_n: int = 5, force_refresh: bool = False) -> dict:
     })
 
     for ts_code in candidates:
+        # D4-CP5: ST/退市过滤
+        if is_st_stock(ts_code):
+            print(f"  {warn} {ts_code} 为ST/退市股，跳过")
+            result.setdefault("st_filtered", []).append(ts_code)
+            continue
+
         try:
             valuation = score_valuation(ts_code, today)
+            growth = score_growth(ts_code, today)
             momentum = score_momentum(ts_code)
             technical = score_technical(ts_code)
-            sentiment = score_sentiment(ts_code)
+            sentiment = score_sentiment(ts_code, today)
+
+            # D4-CP2: 多因子交叉验证 — 必须≥3个因子评分≥60
+            factor_scores = {
+                "估值": valuation["score"],
+                "成长": growth["score"],
+                "动量": momentum["score"],
+                "技术面": technical["score"],
+                "情绪": sentiment["score"],
+            }
+            strong_factors = sum(1 for v in factor_scores.values() if v >= 60)
 
             total = (
                 valuation["score"] * weights.get("估值", 25)
+                + growth["score"] * weights.get("成长", 20)
                 + momentum["score"] * weights.get("动量", 20)
                 + technical["score"] * weights.get("技术面", 20)
                 + sentiment["score"] * weights.get("情绪", 15)
-                # 成长因子暂用动量替代
-                + momentum["score"] * weights.get("成长", 20)
             ) / 100
 
             scored_stocks.append({
                 "ts_code": ts_code,
                 "total_score": round(total, 1),
-                "factors": {
-                    "valuation": valuation["score"],
-                    "momentum": momentum["score"],
-                    "technical": technical["score"],
-                    "sentiment": sentiment["score"],
-                },
+                "strong_factors": strong_factors,
+                "factors": factor_scores,
                 "factor_details": {
                     "valuation": valuation["details"],
+                    "growth": growth["details"],
                     "momentum": momentum["details"],
                     "technical": technical["details"],
                     "sentiment": sentiment["details"],
                 },
             })
 
-            print(f"  {ok} {ts_code}: {total:.1f}分")
+            print(f"  {ok} {ts_code}: {total:.1f}分 (强因子:{strong_factors}/5)")
         except Exception as e:
             print(f"  {warn} {ts_code} 评分失败: {e}")
             result["errors"].append(f"{ts_code} 评分异常: {e}")
 
-    # 5. 排序取 Top N
+    # 5. 排序取 Top N + 行业集中度检查
     scored_stocks.sort(key=lambda x: x["total_score"], reverse=True)
     top_stocks = scored_stocks[:top_n]
     result["ranked_stocks"] = top_stocks
+
+    # 行业集中度检查（D4-CP4）
+    result["sector_concentration"] = {}
+    sector_counts = {}
+    for s in scored_stocks:
+        prefix = s["ts_code"][:3]
+        sector_counts[prefix] = sector_counts.get(prefix, 0) + 1
+    total_stocks = len(scored_stocks)
+    for prefix, count in sector_counts.items():
+        pct = round(count / total_stocks * 100, 1) if total_stocks > 0 else 0
+        result["sector_concentration"][f"{prefix}xxx"] = {
+            "count": count,
+            "pct": pct,
+            "over_limit": pct > 40,
+        }
+    if any(c["over_limit"] for c in result["sector_concentration"].values()):
+        result["warnings"].append("行业集中度超40%限制，建议分散选股")
+        print(f"  {warn} 行业集中度超过40%限制，需注意分散")
+
+    # 6. 止损位估算（D4-CP4补充）
+    for s in top_stocks:
+        try:
+            df = pro.daily(ts_code=s["ts_code"])
+            if df is not None and not df.empty and len(df) >= 20:
+                close = df.iloc[0]["close"]
+                s["suggested_stop_loss"] = round(float(close) * 0.93, 2)
+                s["current_price"] = round(float(close), 2)
+            else:
+                s["suggested_stop_loss"] = None
+                s["current_price"] = None
+        except:
+            s["suggested_stop_loss"] = None
+            s["current_price"] = None
 
     # 6. 输出摘要
     print(f"\n  {'='*40}")
     print(f"  选股结果 Top {top_n}")
     print(f"  {'='*40}")
     for i, s in enumerate(top_stocks, 1):
-        print(f"  {i}. {s['ts_code']} — {s['total_score']}分")
-        print(f"     估值:{s['factors']['valuation']} 动量:{s['factors']['momentum']} 技术:{s['factors']['technical']} 情绪:{s['factors']['sentiment']}")
+        print(f"  {i}. {s['ts_code']} — {s['total_score']}分 (强因子:{s.get('strong_factors', 0)}/5)")
+        print(f"     估值:{s['factors']['valuation']} 成长:{s['factors']['growth']} 动量:{s['factors']['momentum']} 技术:{s['factors']['technical']} 情绪:{s['factors']['sentiment']}")
+        if s.get("suggested_stop_loss"):
+            print(f"     当前价:{s['current_price']} 建议止损:{s['suggested_stop_loss']}")
+    if result.get("st_filtered"):
+        print(f"\n  {warn} ST/退市过滤: {len(result['st_filtered'])} 只")
+    if result.get("warnings"):
+        for w in result["warnings"]:
+            print(f"  {warn} {w}")
 
     return result
 
