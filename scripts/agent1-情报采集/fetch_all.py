@@ -57,7 +57,7 @@ def get_last_trade_day() -> str:
             df = pro.daily(trade_date=date)
             if not df.empty:
                 return date
-        except:
+        except Exception:
             continue
     return today
 
@@ -124,7 +124,7 @@ def fetch_ths_hot(trade_date: str) -> pd.DataFrame:
         if not df.empty:
             df = df.sort_values("pct_chg", ascending=False)
             return df[["ts_code", "name", "pct_chg"]]
-    except:
+    except Exception:
         pass
     return pd.DataFrame()
 
@@ -148,7 +148,7 @@ def fetch_stock_daily(stock_code: str, start_date: str, end_date: str) -> pd.Dat
     try:
         df = pro.daily(ts_code=stock_code, start_date=start_date, end_date=end_date)
         return df
-    except:
+    except Exception:
         return pd.DataFrame()
 
 
@@ -240,7 +240,7 @@ if __name__ == "__main__":
     data = generate_data_json(date_arg)
 
     # 输出 JSON 到 stdout，供 Claude 读取
-    print("\n=== DATA_JSON ===")
+    print("\n=== RESULT_JSON ===")
     print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
     print("=== END ===")
 

@@ -237,7 +237,6 @@ def generate_signal_summary(df: pd.DataFrame) -> dict:
 
 if __name__ == "__main__":
     # 演示：生成示例数据
-    import numpy as np
     dates = pd.date_range("2026-01-01", periods=100, freq="D")
     data = {
         "open": np.random.randn(100).cumsum() + 100,

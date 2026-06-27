@@ -125,7 +125,7 @@ def analyze_sectors(end_date: str, top_n: int = 30) -> pd.DataFrame:
                     actual_date = d
                     print(f"  [WARN] 板块数据日期{end_date}无数据，使用{actual_date}")
                     break
-    except:
+    except Exception:
         return pd.DataFrame()
 
     if df.empty:
@@ -175,7 +175,7 @@ def analyze_watchlist_stocks(stock_codes: list, end_date: str) -> list:
     return results
 
 
-def get_sector_rotation(sector_df: pd.DataFrame, lookback_days: int = 5) -> list:
+def get_sector_rotation(sector_df: pd.DataFrame) -> list:
     """分析板块轮动（对比前几日的排名变化）"""
     if sector_df.empty:
         return []
@@ -311,7 +311,7 @@ if __name__ == "__main__":
     date_arg = sys.argv[1] if len(sys.argv) > 1 else None
     data = generate_analysis(date_arg)
 
-    print("\n=== ANALYSIS_JSON ===")
+    print("\n=== RESULT_JSON ===")
     # 使用 default=str 处理 numpy 类型
     print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
     print("=== END ===")

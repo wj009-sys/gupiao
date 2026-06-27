@@ -163,7 +163,7 @@ def fetch_actual_data(trade_date: str) -> dict:
                     "close": float(df.iloc[0]["close"]),
                     "pct_chg": float(df.iloc[0]["pct_chg"]),
                 }
-        except:
+        except Exception:
             pass
 
     # 涨跌家数
@@ -182,7 +182,7 @@ def fetch_actual_data(trade_date: str) -> dict:
                 actual["summary"] = "市场震荡"
             else:
                 actual["summary"] = "市场偏强"
-    except:
+    except Exception:
         pass
 
     # 板块实际表现（用于验证板块预测）
@@ -195,10 +195,49 @@ def fetch_actual_data(trade_date: str) -> dict:
                 pct = row.get("pct_chg", 0)
                 if name:
                     actual["sector_performance"][name] = round(float(pct), 2)
-    except:
+    except Exception:
         pass
 
     return actual
+
+
+def load_stock_picker_factors(trade_date: str) -> dict:
+    """从选股原始数据JSON中加载各因子独立评分"""
+    factor_map = {}
+    raw_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    # 匹配当天所有模式的选股原始数据
+    pattern = os.path.join(raw_dir, f"选股原始数据_{trade_date}_*.json")
+    files = sorted(glob.glob(pattern), reverse=True)
+    for fp in files:
+        try:
+            with open(fp, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            stocks = data.get("stock_picks", {}).get("stocks", [])
+            if not stocks:
+                stocks = data.get("top_stocks", [])
+            for s in stocks:
+                code = s.get("ts_code", s.get("code", ""))
+                factors = s.get("factors", {})
+                if code and factors:
+                    # 映射中英文因子名
+                    name_map = {
+                        "估值": ["估值", "valuation", "value"],
+                        "成长": ["成长", "growth"],
+                        "动量": ["动量", "momentum", "momo"],
+                        "技术面": ["技术面", "技术", "technical"],
+                        "情绪": ["情绪", "sentiment"],
+                    }
+                    result = {}
+                    for cn_name, aliases in name_map.items():
+                        for alias in aliases:
+                            if alias in factors:
+                                result[cn_name] = factors[alias]
+                                break
+                    if result:
+                        factor_map[code] = result
+        except Exception:
+            continue
+    return factor_map
 
 
 def compare_predictions(predictions: dict, actual: dict, trade_date: str) -> dict:
@@ -312,7 +351,7 @@ def load_history(trade_date: str) -> list:
         try:
             with open(f, "r", encoding="utf-8") as fp:
                 history.append(json.load(fp))
-        except:
+        except Exception:
             pass
     return history
 
@@ -451,7 +490,7 @@ def fetch_real_prices(stocks: list, trade_date: str) -> list:
                 s["actual_close"] = None
                 s["verdict"] = "no_data"
                 verified.append(s)
-        except:
+        except Exception:
             s["verdict"] = "error"
             verified.append(s)
     return verified
@@ -570,9 +609,11 @@ def generate_review_report(trade_date: str = None) -> dict:
                 "rate": round(correct_count / total_verified * 100, 1) if total_verified > 0 else 0,
             }
             print(f"  {_ok} 选股验证: {correct_count}/{total_verified} 只上涨")
-            # 因子表现排行（从verified中提取各因子相关系数）
+            # 因子表现排行（从原始数据中提取各因子独立评分）
+            factor_data = load_stock_picker_factors(trade_date)
             factor_performance = {
                 "估值": {"correct": 0, "wrong": 0, "total": 0, "avg_score": 0},
+                "成长": {"correct": 0, "wrong": 0, "total": 0, "avg_score": 0},
                 "动量": {"correct": 0, "wrong": 0, "total": 0, "avg_score": 0},
                 "技术面": {"correct": 0, "wrong": 0, "total": 0, "avg_score": 0},
                 "情绪": {"correct": 0, "wrong": 0, "total": 0, "avg_score": 0},
@@ -582,19 +623,23 @@ def generate_review_report(trade_date: str = None) -> dict:
                 code = s.get("code", "")
                 v = verified_codes.get(code)
                 if v and v.get("verdict") in ("correct", "wrong"):
-                    for fname in factor_performance:
-                        # 从原始评分数据中找该票的各因子分
-                    # 简化的因子表现：用涨跌反向推断因子有效性
                     is_correct = v.get("verdict") == "correct"
-                    # 高分票上涨=因子有效；高分票下跌=因子失效
-                    score = s.get("score", 50)
+                    # 使用原始数据中的各因子独立评分
+                    factor_scores = factor_data.get(code, {})
+                    has_factors = len(factor_scores) >= 4
                     for fname in factor_performance:
                         factor_performance[fname]["total"] += 1
-                        if (is_correct and score >= 80) or (not is_correct and score < 60):
+                        if has_factors:
+                            fscore = factor_scores.get(fname, 50)
+                        else:
+                            # 无因子分时，用总分推断
+                            total_score = s.get("score", 50)
+                            fscore = total_score
+                        if (is_correct and fscore >= 80) or (not is_correct and fscore < 60):
                             factor_performance[fname]["correct"] += 1
                         else:
                             factor_performance[fname]["wrong"] += 1
-                        factor_performance[fname]["avg_score"] += score
+                        factor_performance[fname]["avg_score"] += fscore
 
             # 计算准确率
             for fname, data in factor_performance.items():
@@ -690,7 +735,7 @@ if __name__ == "__main__":
     date_arg = sys.argv[1] if len(sys.argv) > 1 else None
     review = generate_review_report(date_arg)
 
-    print("\n=== REVIEW_REPORT ===")
+    print("\n=== RESULT_JSON ===")
     print(json.dumps(review, ensure_ascii=False, indent=2, default=str))
     print("=== END ===")
 

@@ -449,8 +449,8 @@ def track_rework_status(rework_orders: list, report_dir: str, today_str: str) ->
     return updated
 
 
-def make_decision(reports: dict, agent_status: dict) -> dict:
-    """主函数：综合决策"""
+def make_decision() -> dict:
+    """主函数：综合决策（参数均为内部自动加载，无需外部传入）"""
     print("[投资领导] 开始综合决策...")
     ok = "[OK]"
     warn = "[WARN]"
@@ -683,9 +683,9 @@ def make_decision(reports: dict, agent_status: dict) -> dict:
 
 
 if __name__ == "__main__":
-    report = make_decision({}, {})
+    report = make_decision()
 
-    print("\n=== DECISION ===")
+    print("\n=== RESULT_JSON ===")
     print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
     print("=== END ===")
 

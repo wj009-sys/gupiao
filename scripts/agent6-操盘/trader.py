@@ -47,7 +47,6 @@ D4 CHECKPOINT:
 import os
 import sys
 import json
-import glob
 import re
 from datetime import datetime
 
@@ -104,8 +103,10 @@ def extract_top_picks(intelligence_text: str) -> list:
 def get_stock_real_price(ts_code: str) -> dict:
     """获取个股实时/最新行情"""
     try:
-        df = get_daily(ts_code, "20260101", datetime.now().strftime("%Y%m%d"))
+        df = get_daily(ts_code, f"{datetime.now().year}0101", datetime.now().strftime("%Y%m%d"))
         if df is not None and not df.empty:
+            # Tushare数据按trade_date升序，需降序取最新
+            df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
             last = df.iloc[0]
             return {
                 "price": float(last["close"]),
@@ -115,7 +116,7 @@ def get_stock_real_price(ts_code: str) -> dict:
                 "volume": float(last.get("vol", 0)),
                 "trade_date": last.get("trade_date", ""),
             }
-    except:
+    except Exception:
         pass
     return None
 
@@ -158,14 +159,15 @@ def get_limit_prices(ts_code: str, current_price: float) -> dict:
 def fetch_technical_levels(ts_code: str) -> dict:
     """获取技术支撑/压力位"""
     try:
-        df = get_daily(ts_code, "20260101", datetime.now().strftime("%Y%m%d"))
+        df = get_daily(ts_code, f"{datetime.now().year}0101", datetime.now().strftime("%Y%m%d"))
         if df is None or df.empty or len(df) < 20:
             return {"support": None, "resistance": None}
 
+        df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
         closes = df["close"].values[:60]
         if len(closes) >= 10:
             return {"support": round(min(closes[:10]), 2), "resistance": round(max(closes[:10]), 2)}
-    except:
+    except Exception:
         pass
     return {"support": None, "resistance": None}
 
@@ -179,7 +181,6 @@ def generate_trade_plan() -> dict:
 
     root = os.path.join(os.path.dirname(__file__), "..", "..")
     today_str = datetime.now().strftime("%Y-%m-%d")
-    date_tag = datetime.now().strftime("%Y%m%d")
 
     result = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -196,9 +197,6 @@ def generate_trade_plan() -> dict:
 
     # 1. 读取配置和上游报告
     portfolio = load_json(os.path.join(root, "data", "portfolio.json"))
-    position_rules = load_json(os.path.join(root, "data", "仓位管理规则.json"))
-    stoploss_rules = load_json(os.path.join(root, "data", "止损规则.json"))
-    strategy_rules = load_json(os.path.join(root, "data", "策略规则.json"))
 
     # 读取上游报告（尽可能宽容）
     report_dir = os.path.join(root, "reports", "日报")
@@ -409,7 +407,7 @@ def generate_trade_plan() -> dict:
 if __name__ == "__main__":
     report = generate_trade_plan()
 
-    print("\n=== TRADE_PLAN ===")
+    print("\n=== RESULT_JSON ===")
     print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
     print("=== END ===")
 

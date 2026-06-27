@@ -119,6 +119,8 @@ def fetch_stock_price(ts_code: str) -> dict:
     try:
         df = pro.daily(ts_code=ts_code)
         if df is not None and not df.empty:
+            # Tushare数据按trade_date升序，需降序取最新
+            df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
             last = df.iloc[0]
             return {
                 "price": float(last["close"]),
@@ -187,8 +189,9 @@ def check_stop_loss(holding: dict, current_price: float, pct_chg: float, ts_code
         buy_date = holding.get("买入日期", "")
         df = pro.daily(ts_code=ts_code)
         if df is not None and not df.empty:
-            # 取最近60日最高价
-            high_prices = df["high"].iloc[:60].values if "high" in df.columns else df["close"].iloc[:60].values
+            # 取最近60日最高价（Tushare升序，降序后取前60行）
+            df_sorted = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
+            high_prices = df_sorted["high"].iloc[:60].values if "high" in df.columns else df_sorted["close"].iloc[:60].values
             if len(high_prices) > 0:
                 highest_price = max(high_prices)
     except:
@@ -821,7 +824,7 @@ if __name__ == "__main__":
 
     report = generate_risk_report(args.portfolio, args.env_score, args.trade_plan)
 
-    print("\n=== RISK_REPORT ===")
+    print("\n=== RESULT_JSON ===")
     print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
     print("=== END ===")
 

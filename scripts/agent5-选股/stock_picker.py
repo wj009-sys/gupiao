@@ -84,7 +84,7 @@ def get_stock_name(ts_code: str) -> str:
             name = df.iloc[0].get("name")
             if name:
                 return name
-    except:
+    except Exception:
         pass
     return ts_code
 
@@ -96,7 +96,7 @@ def is_st_stock(ts_code: str) -> bool:
         if df is not None and not df.empty:
             name = df.iloc[0].get("name", "")
             return "ST" in name or "退市" in name
-    except:
+    except Exception:
         pass
     return False
 
@@ -107,7 +107,7 @@ def is_suspended(ts_code: str, trade_date: str) -> bool:
         df = pro.suspend_d(ts_code=ts_code, suspend_date=trade_date)
         if df is not None and not df.empty:
             return True
-    except:
+    except Exception:
         pass
     return False
 
@@ -134,7 +134,7 @@ def get_sector_stocks(sector_name: str, max_count: int = 20) -> list:
         df = pro.ths_member(ts_code="", name=sector_name)
         if df is not None and not df.empty:
             return df["ts_code"].tolist()[:max_count]
-    except:
+    except Exception:
         pass
     return []
 
@@ -217,7 +217,7 @@ def score_valuation(ts_code: str, trade_date: str) -> dict:
             score -= 5
             details["pb"] = f"PB={pb}，异常"
         return {"score": max(0, min(100, score)), "details": details}
-    except:
+    except Exception:
         return {"score": 50, "details": {"reason": "估值评分异常"}}
 
 
@@ -244,7 +244,7 @@ def score_momentum(ts_code: str) -> dict:
 
         return {"score": max(0, min(100, score)),
                 "details": {"ret_20": f"{ret_20:.1f}%", "ret_60": f"{ret_60:.1f}%" if ret_60 else "N/A"}}
-    except:
+    except Exception:
         return {"score": 50, "details": {"reason": "动量评分异常"}}
 
 
@@ -281,7 +281,7 @@ def score_technical(ts_code: str) -> dict:
                 vol_score = 15
                 detail += "，放量"
         return {"score": max(0, min(100, score + vol_score)), "details": {"summary": detail}}
-    except:
+    except Exception:
         return {"score": 50, "details": {"reason": "技术评分异常"}}
 
 
@@ -297,7 +297,7 @@ def score_sentiment(ts_code: str, trade_date: str = None) -> dict:
                     return {"score": 65, "details": {"reason": f"主力资金净流入{net:.0f}万"}}
                 elif net < 0:
                     return {"score": 40, "details": {"reason": f"主力资金净流出{abs(net):.0f}万"}}
-    except:
+    except Exception:
         pass
     # 兜底：用涨跌幅判断情绪
     try:
@@ -308,7 +308,7 @@ def score_sentiment(ts_code: str, trade_date: str = None) -> dict:
                 return {"score": 65, "details": {"reason": f"近5日涨幅{recent:.1f}%，情绪积极"}}
             elif recent < -3:
                 return {"score": 35, "details": {"reason": f"近5日跌幅{recent:.1f}%，情绪悲观"}}
-    except:
+    except Exception:
         pass
     return {"score": 50, "details": {"reason": "无资金流数据，中性评分"}}
 
@@ -546,7 +546,7 @@ def intraday_picks(top_n: int, config: dict, today: str) -> dict:
             top_sectors = ths_df.head(10)
             result["hot_sectors"] = top_sectors["name"].tolist() if "name" in top_sectors.columns else []
             print(f"  {ok} 今日热点板块: {', '.join(result['hot_sectors'][:5])}")
-    except:
+    except Exception:
         print(f"  {warn} 无法获取今日板块数据")
 
     # 2. 北向资金实时（盘中可获取）
@@ -561,7 +561,7 @@ def intraday_picks(top_n: int, config: dict, today: str) -> dict:
             net_val = result["capital_flow_summary"]["北向资金"]["net"]
             direction = "净流入" if net_val > 0 else "净流出"
             print(f"  {ok} 北向资金: {direction} {abs(net_val):.0f}万")
-    except:
+    except Exception:
         print(f"  {warn} 北向资金数据暂不可用")
 
     # 3. 候选池：持仓+自选（盘中模式关注已有持仓的盘中机会）
@@ -686,7 +686,7 @@ def noon_picks(top_n: int, config: dict, today: str) -> dict:
             result["morning_summary"]["领涨板块"] = top5["name"].tolist()[:5] if "name" in top5.columns else []
             result["morning_summary"]["领跌板块"] = bottom5["name"].tolist()[:5] if "name" in bottom5.columns else []
             print(f"  {ok} 上午领涨板块: {', '.join(result['morning_summary'].get('领涨板块', [])[:3])}")
-    except:
+    except Exception:
         print(f"  {warn} 板块数据暂不可用")
 
     # 资金流向
@@ -695,7 +695,7 @@ def noon_picks(top_n: int, config: dict, today: str) -> dict:
         if hsgt is not None and not hsgt.empty:
             last = hsgt.iloc[-1]
             result["morning_summary"]["北向资金"] = round(float(last.get("net_hsgt", 0)), 0)
-    except:
+    except Exception:
         pass
 
     # 候选池：领涨板块成分股+自选+持仓
@@ -904,13 +904,15 @@ def evening_picks(top_n: int, config: dict, today: str) -> dict:
         try:
             df = pro.daily(ts_code=s["ts_code"])
             if df is not None and not df.empty and len(df) >= 20:
+                # Tushare数据按trade_date升序，需降序取最新
+                df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
                 close = df.iloc[0]["close"]
                 s["suggested_stop_loss"] = round(float(close) * 0.93, 2)
                 s["current_price"] = round(float(close), 2)
             else:
                 s["suggested_stop_loss"] = None
                 s["current_price"] = None
-        except:
+        except Exception:
             s["suggested_stop_loss"] = None
             s["current_price"] = None
 
@@ -933,7 +935,7 @@ def evening_picks(top_n: int, config: dict, today: str) -> dict:
 #  主入口
 # ============================================================
 
-def generate_stock_picks(top_n: int = 5, force_refresh: bool = False, mode: str = "evening") -> dict:
+def generate_stock_picks(top_n: int = 5, mode: str = "evening") -> dict:
     """主函数：按模式分发选股"""
     root = os.path.join(os.path.dirname(__file__), "..", "..")
     config = load_config(root)
@@ -969,9 +971,9 @@ if __name__ == "__main__":
     print(f"  选股机器人 — 模式: {args.mode}")
     print(f"{'='*50}\n")
 
-    report = generate_stock_picks(args.top_n, args.force_refresh, args.mode)
+    report = generate_stock_picks(args.top_n, args.mode)
 
-    print("\n=== STOCK_PICKS ===")
+    print("\n=== RESULT_JSON ===")
     print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
     print("=== END ===")
 
