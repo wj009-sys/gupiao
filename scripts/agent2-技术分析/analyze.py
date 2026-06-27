@@ -11,6 +11,27 @@ Agent2 分析师 - 技术分析与板块排名核心脚本
 用法：
     source venv/Scripts/activate
     python -X utf8 scripts/agent2-技术分析/analyze.py [YYYYMMDD]
+
+D9反例（工作反例）：
+1. 不要给出"可能"或"看似"等模糊信号——每个指标必须有明确的多/空/中性结论
+2. 不要编造数据——缺失的数据返回None或空，不能假设默认值
+3. 不要给出矛盾建议（如"MACD显示多头但建议减仓"）——信号应综合判断
+4. 不要忽视成交量——无量上涨的突破信号要降级
+
+D3异常处理表：
+| 触发条件 | 一线修复 | 仍失败兜底 |
+|---------|---------|-----------|
+| 指数行情数据为空（非交易日）| 往前推1天重试 | 返回{"error":"数据为空"}，调用方跳过 |
+| 板块数据为空（ths_daily无数据）| 往前找5天内的板块数据 | 返回空DataFrame，不输出板块排名章节 |
+| technical_analysis指标计算异常 | 单个指标失败不影响其他指标 | 缺失指标标记为None，信号摘要显示"无数据" |
+| DataFrame列名不匹配（vol vs volume） | 自动重命名列 | 缺失列尝试传入close代替 |
+| 环境评分计算的index不含signals | 跳过该index，不影响整体评分 | 用已有index的评分均值 |
+
+D4 CHECKPOINT:
+- CP1-指数数据排序：analyze_index中必须按trade_date排序(旧→新)，否则指标计算倒置
+- CP2-指标数据长度：少于35根K线时MACD无意义，需标注"数据不足"
+- CP3-板块数据时效：analyze_sectors返回时标注数据日期，不是最新日期应警告
+- CP4-信号一致性：environment_score中MACD/RSI/均线评分不能矛盾
 """
 
 import os
@@ -40,8 +61,9 @@ def analyze_index(ts_code: str, name: str, end_date: str) -> dict:
     if df.empty:
         return {"name": name, "error": "数据为空"}
 
-    # 按 trade_date 排序（旧→新）
+    # D4-CP1: 按 trade_date 排序（旧→新），否则指标计算倒置
     df = df.sort_values("trade_date").reset_index(drop=True)
+
     # 重命名列以匹配 technical_analysis 的接口
     df_ta = df.rename(columns={
         "open": "open", "high": "high", "low": "low",
@@ -51,6 +73,10 @@ def analyze_index(ts_code: str, name: str, end_date: str) -> dict:
     for col in ["open", "high", "low", "close"]:
         if col not in df_ta.columns:
             df_ta[col] = df_ta.get("close", 0)
+
+    # D4-CP2: 指标数据长度检查
+    if len(df_ta) < 35:
+        print(f"  [WARN] {name} 数据长度({len(df_ta)})不足35，MACD指标可能无意义")
 
     df_with_indicators = add_all_indicators(df_ta)
     signals = generate_signal_summary(df_with_indicators)
@@ -86,6 +112,8 @@ def analyze_index(ts_code: str, name: str, end_date: str) -> dict:
 
 def analyze_sectors(end_date: str, top_n: int = 30) -> pd.DataFrame:
     """获取板块涨跌排名并添加技术面评分"""
+    # D4-CP3: 板块数据时效
+    actual_date = end_date
     try:
         df = pro.ths_daily(trade_date=end_date)
         if df.empty:
@@ -94,6 +122,8 @@ def analyze_sectors(end_date: str, top_n: int = 30) -> pd.DataFrame:
                 d = (datetime.strptime(end_date, "%Y%m%d") - timedelta(days=offset)).strftime("%Y%m%d")
                 df = pro.ths_daily(trade_date=d)
                 if not df.empty:
+                    actual_date = d
+                    print(f"  [WARN] 板块数据日期{end_date}无数据，使用{actual_date}")
                     break
     except:
         return pd.DataFrame()
@@ -107,6 +137,7 @@ def analyze_sectors(end_date: str, top_n: int = 30) -> pd.DataFrame:
     result = df.head(top_n).copy()
     result["strength"] = result["pct_chg"]  # 基础强度 = 涨跌幅
     result["anomaly"] = False
+    result["data_date"] = actual_date  # 标注数据实际日期
 
     # 标记异动板块（涨跌幅 > 3% 或 <-3%）
     result.loc[result["pct_chg"] > 3, "anomaly"] = True
@@ -146,8 +177,6 @@ def analyze_watchlist_stocks(stock_codes: list, end_date: str) -> list:
 
 def get_sector_rotation(sector_df: pd.DataFrame, lookback_days: int = 5) -> list:
     """分析板块轮动（对比前几日的排名变化）"""
-    # 板块轮动分析在当前版本中简化处理
-    # 直接返回领涨和领跌板块名单
     if sector_df.empty:
         return []
 
@@ -246,9 +275,9 @@ def generate_analysis(end_date: str = None) -> dict:
     # 4. 大盘环境综合评分
     scores = []
     for idx in result["indices"]:
-        s = 50  # 基准分
-        if "signals" not in idx:
+        if "signals" not in idx or "error" in idx:
             continue
+        s = 50  # 基准分
         sig = idx["signals"]
         # MACD 多头加分
         if "多头" in sig.get("macd", ""):

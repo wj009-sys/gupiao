@@ -16,6 +16,32 @@ Agent6 操盘手 — 交易计划生成器
     reports/日报/选股/选股建议_YYYY-MM-DD.md  — 候选池
     reports/日报/风控/风控报告_YYYY-MM-DD.md  — 风险等级
     reports/日报/分析/分析报告_YYYY-MM-DD.md  — 关键价位
+
+D9反例（工作反例）：
+1. 不要全仓买一只——黑天鹅即爆仓，单票≤20%，分批建仓
+2. 不要频繁交易（每周多次）——手续费侵蚀利润，持股周期≥3天
+3. 不要逆势加仓（越跌越买）——趋势下跌可能深套，止损出来等企稳再进
+4. 不要忽视风控等级——风控HIGH时不建议买入
+5. 不要不设止盈——坐过山车后利润归零，目标+15%~+20%分批止盈
+6. 不要建议开盘追涨——波动大无法控制成本，等15分钟后或尾盘
+
+D3异常处理表：
+| 触发条件 | 一线修复 | 仍失败兜底 |
+|---------|---------|-----------|
+| 无风控报告（风控未运行） | 读取仓位管理规则自行判断 | 保守模式：总仓位≤50%，单票≤10% |
+| 无选股建议（选股未运行） | 用持仓+自选做调仓计划 | 仅管理现有持仓（不买新票）|
+| 行情获取失败（Tushare超时） | 重试1次 | 用持仓的当前价（或成本价）估算 |
+| 仓位文件异常（portfolio.json缺失） | 从上周报告恢复 | 假设空仓，建议不交易 |
+| 卖出数量超过实际持仓 | 自动截断到最大可卖数量 | 输出警告并在计划中标注"超持有限额" |
+| 候选股解析失败（正则模式不匹配） | 用代码列表兜底（code, market元组） | 标记为"代码解析异常，需人工确认" |
+
+D4 CHECKPOINT:
+- CP1-买入合规：每笔买入 ≤ 单票最大仓位 × 总仓位上限
+- CP2-卖出匹配：卖出的股票必须在持仓中，数量 ≤ 持仓量
+- CP3-总仓位检查：交易后总仓位 ≤ 风控规则上限
+- CP4-止损必设：每笔买入建议必须有止损位（-7%=固定止损）
+- CP5-可行性检查：买入价格区间在当日涨跌停范围内
+- CP6-涨跌停范围：建议买入价格超出涨跌停则标记为不可执行
 """
 
 import os
@@ -26,21 +52,32 @@ import re
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from scripts.utils.tushare_client import pro
+from scripts.utils.tushare_client import pro, get_daily
 
 
 def load_json(path: str) -> dict:
     if not os.path.exists(path):
         return {}
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] JSON解析失败: {path} — {e}")
+        return {}
+    except Exception as e:
+        print(f"[ERROR] 读取文件失败: {path} — {e}")
+        return {}
 
 
 def load_report(path: str) -> str:
     if not os.path.exists(path):
         return ""
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        print(f"[ERROR] 读取报告失败: {path} — {e}")
+        return ""
 
 
 def extract_top_picks(intelligence_text: str) -> list:
@@ -67,7 +104,7 @@ def extract_top_picks(intelligence_text: str) -> list:
 def get_stock_real_price(ts_code: str) -> dict:
     """获取个股实时/最新行情"""
     try:
-        df = pro.daily(ts_code=ts_code)
+        df = get_daily(ts_code, "20260101", datetime.now().strftime("%Y%m%d"))
         if df is not None and not df.empty:
             last = df.iloc[0]
             return {
@@ -106,7 +143,7 @@ def calculate_position_size(
 def get_limit_prices(ts_code: str, current_price: float) -> dict:
     """获取当日涨跌停价格范围"""
     if current_price <= 0:
-        return {"涨停": None, "跌停": None}
+        return {"涨停": None, "跌停": None, "limit_pct": None}
     # A股主板±10%，创业板/科创板±20%
     is_cy = ts_code.startswith("30")  # 创业板 300xxx
     is_kc = ts_code.startswith("688")  # 科创板 688xxx
@@ -121,14 +158,12 @@ def get_limit_prices(ts_code: str, current_price: float) -> dict:
 def fetch_technical_levels(ts_code: str) -> dict:
     """获取技术支撑/压力位"""
     try:
-        df = pro.daily(ts_code=ts_code)
+        df = get_daily(ts_code, "20260101", datetime.now().strftime("%Y%m%d"))
         if df is None or df.empty or len(df) < 20:
             return {"support": None, "resistance": None}
 
         closes = df["close"].values[:60]
-        if len(closes) >= 20:
-            ma20 = sum(closes[:20]) / 20
-            ma60 = sum(closes[:60]) / 60 if len(closes) >= 60 else None
+        if len(closes) >= 10:
             return {"support": round(min(closes[:10]), 2), "resistance": round(max(closes[:10]), 2)}
     except:
         pass
@@ -206,10 +241,10 @@ def generate_trade_plan() -> dict:
 
     # 尝试从风控文本中读取总仓位上限和单票上限
     # 先找总仓位上限（"总仓位上限80%"或"总仓位≤80%"等模式）
-    total_match = re.search(r'(?:总仓位|仓位|总).*?上限\D*(\d+)%', risk_text)
-    single_match = re.search(r'(?:单票|个股|单只).*?上限\D*(\d+)%', risk_text)
+    total_match = re.search(r'(?:总仓位|仓位|总).*?上限\D*(\d+)%', risk_text) if risk_text else None
+    single_match = re.search(r'(?:单票|个股|单只).*?上限\D*(\d+)%', risk_text) if risk_text else None
     # 兜底：通用的"上限N%"模式
-    fallback_match = re.search(r'上限\D*(\d+)%', risk_text) if not total_match and not single_match else None
+    fallback_match = re.search(r'上限\D*(\d+)%', risk_text) if risk_text and not total_match and not single_match else None
 
     if total_match:
         max_position = min(int(total_match.group(1)), max_position)
@@ -224,7 +259,13 @@ def generate_trade_plan() -> dict:
 
     # 4. 持仓分析
     holdings = portfolio.get("持仓列表", [])
-    total_asset = portfolio.get("总资产", 1000000)
+    total_asset = (
+        portfolio.get("总资产") or
+        portfolio.get("总资产_含现金") or
+        portfolio.get("持仓总市值") or
+        sum(h.get("市值", 0) for h in holdings) or
+        1000000
+    )
     total_position_value = sum(
         h.get("市值", 0) or h.get("持股数量", 0) * h.get("当前价", 0)
         for h in holdings if h.get("代码") != "000000"
@@ -258,11 +299,10 @@ def generate_trade_plan() -> dict:
             price_ok = True
             price_warning = ""
             if limit_info:
-                # 检查建议买入价格是否在涨跌停范围内
-                if levels and levels.get("support") and levels["support"] < limit_info.get("跌停", 0):
+                if levels and levels.get("support") and limit_info.get("跌停") and levels["support"] < limit_info["跌停"]:
                     price_warning = f"支撑位{levels['support']}低于跌停价{limit_info['跌停']}"
                     price_ok = False
-                if levels and levels.get("resistance") and levels["resistance"] > limit_info.get("涨停", 0):
+                if levels and levels.get("resistance") and limit_info.get("涨停") and levels["resistance"] > limit_info["涨停"]:
                     price_warning = f"压力位{levels['resistance']}超过涨停价{limit_info['涨停']}"
                     price_ok = False
 
@@ -303,9 +343,7 @@ def generate_trade_plan() -> dict:
         pnl_pct = ((current_price - cost) / cost * 100) if cost > 0 else 0
 
         # 检查止损
-        stop_loss_triggered = False
         if pnl_pct <= -7:
-            stop_loss_triggered = True
             result["sell_plan"].append({
                 "code": code,
                 "name": name,

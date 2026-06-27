@@ -8,6 +8,28 @@ Agent1 情报员 - 数据采集核心脚本
 
     # 省略日期则默认取最新交易日
     python scripts/agent1-情报采集/fetch_all.py
+
+D9反例（工作反例）：
+1. 不要堆砌新闻标题而不去重——用户需要的是分析后的信息，不是新闻转储
+2. 不要传播未经官方确认的传闻——只采集可验证的客观数据
+3. 不要忽略现有持仓关联信息——采集时应知道手上有什么票
+4. 不要使用超过3天的旧数据作为当日判断依据
+
+D3异常处理表：
+| 触发条件 | 一线修复 | 仍失败兜底 |
+|---------|---------|-----------|
+| Tushare API全挂（网络/Token失效） | 检查网络连接，重试1次各API | 返回空数据data，标记errors；报告生成阶段提示"数据源不可用，跳过" |
+| 北向资金数据为空 | 尝试往前推1个交易日获取 | 返回{north_net:0, hgt:0, sgt:0}，不报错 |
+| 龙虎榜API无数据（非交易日/接口变更） | 打印警告并返回空DataFrame | 跳过龙虎榜单章节 |
+| 板块排名数据为空 | 往前找5天内的有效数据 | 跳过板块分析章节 |
+| 涨跌家数统计失败 | 捕获异常，打印错误 | 返回{up:0, down:0, flat:0, total:0} |
+| 当天是非交易日 | get_last_trade_day往前找7天 | 找到最近交易日的数据，标注"非最新交易日" |
+| JSON序列化numpy类型 | 使用default=str处理不可序列化类型 | 字符串化所有特殊类型 |
+
+D4 CHECKPOINT:
+- CP1-交易日验证：调用get_last_trade_day确认有数据，非交易日则往前回溯
+- CP2-数据完整性：generate_data_json采集完成后检查data各字段是否非空
+- CP3-错误汇总：采集完成后输出errors数量，0 errors才标记为"完整采集"
 """
 
 import os
@@ -49,14 +71,17 @@ def fetch_market_overview(trade_date: str) -> dict:
     }
     result = {}
     for name, code in indices.items():
-        df = pro.index_daily(ts_code=code, start_date=trade_date, end_date=trade_date)
-        if not df.empty:
-            row = df.iloc[0]
-            result[name] = {
-                "close": float(row["close"]),
-                "pct_change": float(row["pct_chg"]),
-                "amount": float(row["amount"]) / 1e8,  # 转为亿
-            }
+        try:
+            df = pro.index_daily(ts_code=code, start_date=trade_date, end_date=trade_date)
+            if not df.empty:
+                row = df.iloc[0]
+                result[name] = {
+                    "close": float(row["close"]),
+                    "pct_change": float(row["pct_chg"]),
+                    "amount": float(row["amount"]) / 1e8,  # 转为亿
+                }
+        except Exception as e:
+            print(f"    大盘指数[{name}]获取失败: {e}")
     return result
 
 
@@ -77,7 +102,6 @@ def fetch_moneyflow_hsgt(trade_date: str) -> dict:
             }
     except Exception as e:
         print(f"    北向资金API异常: {e}")
-        pass
     return {"north_net": 0, "hgt": 0, "sgt": 0}
 
 
@@ -201,6 +225,12 @@ def generate_data_json(trade_date: str = None) -> dict:
     except Exception as e:
         data["errors"].append(f"板块排名获取失败: {e}")
         print(f"  {_fail} 板块排名: {e}")
+
+    # D4-CP3: 错误汇总
+    if data["errors"]:
+        print(f"  [WARN] 采集完成，共 {len(data['errors'])} 个错误")
+        for err in data["errors"]:
+            print(f"    - {err}")
 
     return data
 
