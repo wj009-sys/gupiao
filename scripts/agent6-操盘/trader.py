@@ -376,6 +376,14 @@ def generate_trade_plan() -> dict:
                 "take_profit": round(current_price * 1.15, 2),
             })
 
+    # 卖出校验：验证卖出清单中的每只股票确实在持仓中
+    for s in result["sell_plan"]:
+        matched = [h for h in holdings if h.get("代码") == s.get("code")]
+        if not matched:
+            result["warnings"].append(f"卖出股票{s.get('code')}不在持仓中，已从卖出清单移除")
+            print(f"  [WARN] 卖出股票{s.get('code')}不在持仓中，已移除")
+            result["sell_plan"].remove(s)
+
     # 7. 仓位汇总
     total_after_buy = current_position_pct + sum(
         b["suggested_position_pct"] for b in result["buy_plan"]

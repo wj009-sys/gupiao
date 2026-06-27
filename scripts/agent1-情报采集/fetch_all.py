@@ -160,8 +160,8 @@ def generate_data_json(trade_date: str = None) -> dict:
         trade_date = get_last_trade_day()
 
     # Windows GBK 兼容输出
-    _ok = "[OK]"
-    _fail = "[FAIL]"
+    ok = "[OK]"
+    fail = "[FAIL]"
 
     print(f"[情报员] 采集日期: {trade_date}")
 
@@ -180,37 +180,37 @@ def generate_data_json(trade_date: str = None) -> dict:
     # 1. 大盘概况
     try:
         data["market_overview"] = fetch_market_overview(trade_date)
-        print(f"  {_ok} 大盘概况: {len(data['market_overview'])} 个指数")
+        print(f"  {ok} 大盘概况: {len(data['market_overview'])} 个指数")
     except Exception as e:
         data["errors"].append(f"大盘概况获取失败: {e}")
-        print(f"  {_fail} 大盘概况: {e}")
+        print(f"  {fail} 大盘概况: {e}")
 
     # 2. 北向资金
     try:
         data["moneyflow_hsgt"] = fetch_moneyflow_hsgt(trade_date)
         net = data["moneyflow_hsgt"].get("north_net", 0)
-        print(f"  {_ok} 北向资金: {net:.2f} 亿")
+        print(f"  {ok} 北向资金: {net:.2f} 亿")
     except Exception as e:
         data["errors"].append(f"北向资金获取失败: {e}")
-        print(f"  {_fail} 北向资金: {e}")
+        print(f"  {fail} 北向资金: {e}")
 
     # 3. 涨跌家数
     try:
         data["up_down_count"] = fetch_up_down_count(trade_date)
-        print(f"  {_ok} 涨跌统计: {data['up_down_count'].get('up', 0)}涨 / {data['up_down_count'].get('down', 0)}跌")
+        print(f"  {ok} 涨跌统计: {data['up_down_count'].get('up', 0)}涨 / {data['up_down_count'].get('down', 0)}跌")
     except Exception as e:
         data["errors"].append(f"涨跌统计获取失败: {e}")
-        print(f"  {_fail} 涨跌统计: {e}")
+        print(f"  {fail} 涨跌统计: {e}")
 
     # 4. 龙虎榜
     try:
         limit_df = fetch_limit_list(trade_date)
         if not limit_df.empty:
             data["limit_list"] = limit_df.head(10).to_dict("records")
-            print(f"  {_ok} 龙虎榜: {len(limit_df)} 只个股")
+            print(f"  {ok} 龙虎榜: {len(limit_df)} 只个股")
     except Exception as e:
         data["errors"].append(f"龙虎榜获取失败: {e}")
-        print(f"  {_fail} 龙虎榜: {e}")
+        print(f"  {fail} 龙虎榜: {e}")
 
     # 5. 板块涨跌排名
     try:
@@ -221,10 +221,10 @@ def generate_data_json(trade_date: str = None) -> dict:
             # 跌幅靠前的
             losers = ths_df[ths_df["pct_chg"] < 0].tail(5)
             data["top_losers"] = losers.to_dict("records") if not losers.empty else []
-            print(f"  {_ok} 板块排名: {len(ths_df)} 个概念板块")
+            print(f"  {ok} 板块排名: {len(ths_df)} 个概念板块")
     except Exception as e:
         data["errors"].append(f"板块排名获取失败: {e}")
-        print(f"  {_fail} 板块排名: {e}")
+        print(f"  {fail} 板块排名: {e}")
 
     # D4-CP3: 错误汇总
     if data["errors"]:

@@ -529,8 +529,8 @@ def generate_review_report(trade_date: str = None) -> dict:
     日期显示 = f"{trade_date[:4]}-{trade_date[4:6]}-{trade_date[6:]}"
 
     print(f"[复盘师] 复盘日期: {日期显示}")
-    _ok = "[OK]"
-    _fail = "[FAIL]"
+    ok = "[OK]"
+    fail = "[FAIL]"
 
     review = {
         "date": 日期显示,
@@ -557,33 +557,33 @@ def generate_review_report(trade_date: str = None) -> dict:
 
     if 情报:
         review["inputs"]["情报"] = True
-        print(f"  {_ok} 情报报告已读取")
+        print(f"  {ok} 情报报告已读取")
     if 分析:
         review["inputs"]["分析"] = True
-        print(f"  {_ok} 分析报告已读取")
+        print(f"  {ok} 分析报告已读取")
     if 风控:
         review["inputs"]["风控"] = True
-        print(f"  {_ok} 风控报告已读取")
+        print(f"  {ok} 风控报告已读取")
     if 选股:
         review["inputs"]["选股"] = True
-        print(f"  {_ok} 选股建议已读取")
+        print(f"  {ok} 选股建议已读取")
     if 操盘:
         review["inputs"]["操盘"] = True
-        print(f"  {_ok} 交易计划已读取")
+        print(f"  {ok} 交易计划已读取")
 
     # 2. 提取预测
     predictions = extract_predictions(分析)
     review["predictions"] = predictions
-    print(f"  {_ok} 已提取预测: 看涨{len(predictions['bullish_sectors'])}个板块, 看跌{len(predictions['bearish_sectors'])}个板块")
+    print(f"  {ok} 已提取预测: 看涨{len(predictions['bullish_sectors'])}个板块, 看跌{len(predictions['bearish_sectors'])}个板块")
 
     # 3. 获取实际数据
     try:
         actual = fetch_actual_data(trade_date)
         review["actual"] = actual
-        print(f"  {_ok} 实际行情已获取: {len(actual['indices'])} 个指数")
+        print(f"  {ok} 实际行情已获取: {len(actual['indices'])} 个指数")
     except Exception as e:
         review["errors"].append(f"实际行情获取失败: {e}")
-        print(f"  {_fail} 实际行情: {e}")
+        print(f"  {fail} 实际行情: {e}")
 
     # 4. 对比分析
     comparison = compare_predictions(predictions, actual, trade_date)
@@ -608,7 +608,7 @@ def generate_review_report(trade_date: str = None) -> dict:
                 "total": total_verified,
                 "rate": round(correct_count / total_verified * 100, 1) if total_verified > 0 else 0,
             }
-            print(f"  {_ok} 选股验证: {correct_count}/{total_verified} 只上涨")
+            print(f"  {ok} 选股验证: {correct_count}/{total_verified} 只上涨")
             # 因子表现排行（从原始数据中提取各因子独立评分）
             factor_data = load_stock_picker_factors(trade_date)
             factor_performance = {
@@ -666,7 +666,7 @@ def generate_review_report(trade_date: str = None) -> dict:
         review["trade_plan"]["sell"] = trade_plan.get("sell", [])
         review["trade_plan"]["hold"] = trade_plan.get("hold", [])
         if trade_plan["buy"] or trade_plan["sell"]:
-            print(f"  {_ok} 交易计划已提取: {len(trade_plan['buy'])}买入 {len(trade_plan['sell'])}卖出")
+            print(f"  {ok} 交易计划已提取: {len(trade_plan['buy'])}买入 {len(trade_plan['sell'])}卖出")
 
     # 5. 计算准确率
     # 大盘方向：如果有涨跌预测（结构市=偏震荡，准确率中等）
@@ -723,10 +723,10 @@ def generate_review_report(trade_date: str = None) -> dict:
     # 8. 更新知识库
     try:
         record_path = update_knowledge(review, trade_date.replace("-", ""))
-        print(f"  {_ok} 复盘记录已保存: {record_path}")
+        print(f"  {ok} 复盘记录已保存: {record_path}")
     except Exception as e:
         review["errors"].append(f"知识库更新失败: {e}")
-        print(f"  {_fail} 知识库更新: {e}")
+        print(f"  {fail} 知识库更新: {e}")
 
     return review
 

@@ -390,6 +390,22 @@ def get_sector_strength_ranking(analysis_text: str) -> list:
     return sectors[:10]
 
 
+def filter_held_stocks(scored: list, portfolio: dict) -> tuple:
+    """过滤已持仓股票，返回(过滤后列表, 持仓冲突列表)"""
+    holdings = portfolio.get("持仓列表", [])
+    held_codes = {h.get("代码", "").split(".")[0] for h in holdings}
+    filtered, conflicts = [], []
+    for s in scored:
+        code = s.get("ts_code", s.get("code", "")).split(".")[0]
+        if code in held_codes:
+            conflicts.append(s)
+        else:
+            filtered.append(s)
+    if conflicts:
+        print(f"  [WARN] 排除 {len(conflicts)} 只已持仓股票")
+    return filtered, conflicts
+
+
 # ============================================================
 #  模式1: 早盘选股 (pre_market)
 # ============================================================
@@ -495,7 +511,9 @@ def pre_market_picks(top_n: int, config: dict, today: str) -> dict:
         except Exception as e:
             print(f"  {warn} {ts_code} 评分失败: {e}")
 
-    # 排序取Top N
+    # 排序取Top N（过滤已持仓股票）
+    scored, held = filter_held_stocks(scored, config.get("portfolio", {}))
+    result["held_excluded"] = held
     scored.sort(key=lambda x: x["total_score"], reverse=True)
     result["ranked_stocks"] = scored[:top_n]
 
@@ -508,6 +526,22 @@ def pre_market_picks(top_n: int, config: dict, today: str) -> dict:
     print(f"\n  {'='*40}")
     print(f"  早盘候选 Top {top_n}")
     print(f"  {'='*40}")
+    # 止损位计算（基于最新收盘价-7%）
+    for s in result["ranked_stocks"]:
+        try:
+            df = pro.daily(ts_code=s["ts_code"])
+            if df is not None and not df.empty and len(df) >= 20:
+                df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
+                close = df.iloc[0]["close"]
+                s["current_price"] = round(float(close), 2)
+                s["suggested_stop_loss"] = round(float(close) * 0.93, 2)
+            else:
+                s["current_price"] = None
+                s["suggested_stop_loss"] = None
+        except Exception:
+            s["current_price"] = None
+            s["suggested_stop_loss"] = None
+
     for i, s in enumerate(result["ranked_stocks"], 1):
         print(f"  {i}. {s['ts_code']} — {s['total_score']}分")
         print(f"     估值:{s['factors']['估值']} 成长:{s['factors']['成长']} 动量:{s['factors']['动量']} 技术:{s['factors']['技术面']} 情绪:{s['factors']['情绪']} 强因子:{s['strong_factors']}/5")
@@ -588,7 +622,7 @@ def intraday_picks(top_n: int, config: dict, today: str) -> dict:
 
     # 4. 盘中评分（侧重情绪/资金流）
     weights = config.get("rules", {}).get("模式权重", {}).get("intraday", {}).get("因子权重", {
-        "估值": 10, "成长": 10, "动量": 25, "情绪": 35, "技术面": 20,
+        "估值": 0, "成长": 10, "动量": 25, "情绪": 45, "技术面": 20,
     })
 
     scored = []
@@ -597,7 +631,9 @@ def intraday_picks(top_n: int, config: dict, today: str) -> dict:
             continue
         try:
             yesterday_ymd = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
-            valuation = score_valuation(ts_code, yesterday_ymd)
+            # 盘中模式跳过高权重因子（估值盘中无意义，D9-8）
+            valuation = (score_valuation(ts_code, yesterday_ymd)
+                         if weights.get("估值", 0) > 0 else {"score": 0, "details": {"reason": "估值=0，盘中不计算"}})
             growth = score_growth(ts_code, yesterday_ymd)
             momentum = score_momentum(ts_code)
             technical = score_technical(ts_code)
@@ -624,6 +660,8 @@ def intraday_picks(top_n: int, config: dict, today: str) -> dict:
         except Exception as e:
             print(f"  {warn} {ts_code} 评分失败: {e}")
 
+    scored, held = filter_held_stocks(scored, config.get("portfolio", {}))
+    result["held_excluded"] = result.get("held_excluded", []) + held
     scored.sort(key=lambda x: x["total_score"], reverse=True)
     result["ranked_stocks"] = scored[:top_n]
 
@@ -648,6 +686,22 @@ def intraday_picks(top_n: int, config: dict, today: str) -> dict:
         print(f"\n  ⚡ 异动信号:")
         for a in result["alerts"]:
             print(f"    {a}")
+
+    # 止损位计算
+    for s in result["ranked_stocks"]:
+        try:
+            df = pro.daily(ts_code=s["ts_code"])
+            if df is not None and not df.empty and len(df) >= 20:
+                df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
+                close = df.iloc[0]["close"]
+                s["current_price"] = round(float(close), 2)
+                s["suggested_stop_loss"] = round(float(close) * 0.93, 2)
+            else:
+                s["current_price"] = None
+                s["suggested_stop_loss"] = None
+        except Exception:
+            s["current_price"] = None
+            s["suggested_stop_loss"] = None
 
     return result
 
@@ -756,6 +810,8 @@ def noon_picks(top_n: int, config: dict, today: str) -> dict:
         except Exception as e:
             print(f"  {warn} {ts_code} 评分失败: {e}")
 
+    scored, held = filter_held_stocks(scored, config.get("portfolio", {}))
+    result["held_excluded"] = result.get("held_excluded", []) + held
     scored.sort(key=lambda x: x["total_score"], reverse=True)
     result["ranked_stocks"] = scored[:top_n]
 
@@ -768,6 +824,22 @@ def noon_picks(top_n: int, config: dict, today: str) -> dict:
     print(f"\n  {'='*40}")
     print(f"  午盘候选 Top {top_n}")
     print(f"  {'='*40}")
+    # 止损位计算
+    for s in result["ranked_stocks"]:
+        try:
+            df = pro.daily(ts_code=s["ts_code"])
+            if df is not None and not df.empty and len(df) >= 20:
+                df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
+                close = df.iloc[0]["close"]
+                s["current_price"] = round(float(close), 2)
+                s["suggested_stop_loss"] = round(float(close) * 0.93, 2)
+            else:
+                s["current_price"] = None
+                s["suggested_stop_loss"] = None
+        except Exception:
+            s["current_price"] = None
+            s["suggested_stop_loss"] = None
+
     for i, s in enumerate(result["ranked_stocks"], 1):
         print(f"  {i}. {s['ts_code']} — {s['total_score']}分")
     print(f"\n  下午方向: {result['afternoon_direction']}")
@@ -882,6 +954,8 @@ def evening_picks(top_n: int, config: dict, today: str) -> dict:
             print(f"  {warn} {ts_code} 评分失败: {e}")
             result["errors"].append(f"{ts_code} 评分异常: {e}")
 
+    scored, held = filter_held_stocks(scored, config.get("portfolio", {}))
+    result["held_excluded"] = result.get("held_excluded", []) + held
     scored.sort(key=lambda x: x["total_score"], reverse=True)
     top_stocks = scored[:top_n]
     result["ranked_stocks"] = top_stocks

@@ -206,7 +206,7 @@ def generate_analysis(end_date: str = None) -> dict:
         end_date = datetime.now().strftime("%Y%m%d")
 
     print(f"[分析师] 分析日期: {end_date}")
-    _ok = "[OK]"
+    ok = "[OK]"
 
     result = {
         "date": end_date,
@@ -233,7 +233,7 @@ def generate_analysis(end_date: str = None) -> dict:
         for code, name in indices:
             idx_data = analyze_index(code, name, end_date)
             result["indices"].append(idx_data)
-        print(f"  {_ok} 大盘技术分析: {len(result['indices'])} 个指数")
+        print(f"  {ok} 大盘技术分析: {len(result['indices'])} 个指数")
     except Exception as e:
         result["errors"].append(f"大盘分析失败: {e}")
 
@@ -256,8 +256,8 @@ def generate_analysis(end_date: str = None) -> dict:
             # 板块轮动（领涨/领跌分类）
             result["sectors"]["rotation"] = get_sector_rotation(sector_df)
 
-            print(f"  {_ok} 板块分析: {len(sector_df)} 个板块")
-            print(f"  {_ok} 异动板块: {len(result['sectors']['anomalies'])} 个")
+            print(f"  {ok} 板块分析: {len(sector_df)} 个板块")
+            print(f"  {ok} 异动板块: {len(result['sectors']['anomalies'])} 个")
     except Exception as e:
         result["errors"].append(f"板块分析失败: {e}")
         print(f"  [FAIL] 板块分析: {e}")

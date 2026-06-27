@@ -652,9 +652,9 @@ def detect_trade_conflicts(
 def generate_risk_report(portfolio_path: str = None, env_score: int = None, trade_plan_path: str = None) -> dict:
     """主函数：生成完整风控报告"""
     print("[风控官] 开始风险评估...")
-    _ok = "[OK]"
-    _warn = "[WARN]"
-    _fail = "[FAIL]"
+    ok = "[OK]"
+    warn = "[WARN]"
+    fail = "[FAIL]"
 
     report = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -677,7 +677,7 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None, trad
     # 2. 如果没有传入环境评分，尝试从分析报告中读取
     if env_score is None:
         env_score = load_env_score_from_analysis()
-        print(f"  {_ok} 从分析报告读取环境评分: {env_score}")
+        print(f"  {ok} 从分析报告读取环境评分: {env_score}")
 
     # 3. 确定市场环境
     market_env = determine_market_environment(env_score)
@@ -687,7 +687,7 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None, trad
         "max_position": market_env["max_position"],
         "max_single": market_env["max_single"],
     }
-    print(f"  {_ok} 市场环境: {market_env['name']} (上限: {market_env['max_position']}%)")
+    print(f"  {ok} 市场环境: {market_env['name']} (上限: {market_env['max_position']}%)")
 
     # 4. 大盘环境检查（含指数均线联动止损）
     try:
@@ -699,7 +699,7 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None, trad
             print(f"  [{a['level']}] {a['type']}: {a['message']}")
     except Exception as e:
         report["errors"].append(f"大盘环境检查失败: {e}")
-        print(f"  {_fail} 大盘环境检查: {e}")
+        print(f"  {fail} 大盘环境检查: {e}")
 
     # 5. 检查每个持仓
     for holding in holdings:
@@ -722,10 +722,10 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None, trad
                 for a in stop_loss_alerts:
                     print(f"  [{a['level']}] {a['type']} {a['asset']}: {a['message']}")
             else:
-                print(f"  {_warn} {name}({code}) 无法获取行情")
+                print(f"  {warn} {name}({code}) 无法获取行情")
         except Exception as e:
             report["errors"].append(f"{name}({code}) 检查失败: {e}")
-            print(f"  {_fail} {name}: {e}")
+            print(f"  {fail} {name}: {e}")
 
     # 6. 仓位检查
     try:
@@ -735,7 +735,7 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None, trad
             print(f"  [{a['level']}] {a['type']}: {a['message']}")
     except Exception as e:
         report["errors"].append(f"仓位检查失败: {e}")
-        print(f"  {_fail} 仓位检查: {e}")
+        print(f"  {fail} 仓位检查: {e}")
 
     # 7. 【新增】审查操盘手交易计划
     trade_plan = load_trade_plan(trade_plan_path)
@@ -744,7 +744,7 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None, trad
     trade_conflicts = []
 
     if trade_plan and (trade_plan.get("buy_plan") or trade_plan.get("sell_plan")):
-        print(f"  {_ok} 发现操盘手交易计划，开始风控审查...")
+        print(f"  {ok} 发现操盘手交易计划，开始风控审查...")
         # 计算当前总仓位百分比
         total_asset = _get_total_asset(portfolio)
         total_market_value = sum(
@@ -767,7 +767,7 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None, trad
         # 8. 【新增】持仓加减仓独立建议
         position_suggestions = suggest_position_adjustment(portfolio, market_env, trade_plan)
         report["position_suggestions"] = position_suggestions
-        print(f"  {_ok} 持仓调整建议完成")
+        print(f"  {ok} 持仓调整建议完成")
         for s in position_suggestions.get("suggestions", []):
             print(f"    {s['action']}: {s['name']}({s['code']}) — {s['reason']}")
 
@@ -775,15 +775,15 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None, trad
         trade_conflicts = detect_trade_conflicts(trade_assessment, trade_plan, position_suggestions)
         report["trade_conflicts"] = trade_conflicts
         if trade_conflicts:
-            print(f"  {_warn} 检测到 {len(trade_conflicts)} 项与操盘手的分歧!")
+            print(f"  {warn} 检测到 {len(trade_conflicts)} 项与操盘手的分歧!")
             for c in trade_conflicts:
                 print(f"    [{c['severity']}] {c['type']}: {c['name']}({c['code']})")
                 print(f"      风控: {c['risk_view']}")
                 print(f"      操盘: {c['trader_view']}")
         else:
-            print(f"  {_ok} 与操盘手无意见分歧")
+            print(f"  {ok} 与操盘手无意见分歧")
     else:
-        print(f"  {_warn} 未发现操盘手交易计划，跳过审查")
+        print(f"  {warn} 未发现操盘手交易计划，跳过审查")
 
     # 10. 综合风险等级（含与操盘手冲突）
     critical_count = sum(1 for a in report["alerts"] if a["level"] == "CRITICAL")
