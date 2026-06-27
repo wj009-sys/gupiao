@@ -58,9 +58,18 @@ python -X utf8 scripts/agent3-风控/risk_check.py
 
 脚本会输出风控报告 JSON 到 stdout 并保存到 `data/raw/风控报告_YYYYMMDD.json`。
 
-或者，如果你知道 Agent2 的环境评分，可以传入：
+**脚本参数：**
+- `--portfolio`：指定持仓JSON路径（默认 `data/portfolio.json`）
+- `--env-score`：大盘环境评分（0-100），不传则从分析原始数据自动读取
+- `--trade-plan`：交易计划原始数据JSON路径（审查操盘手用）
+
+示例：
 ```bash
-python -X utf8 scripts/agent3-风控/risk_check.py --env-score 70
+# 指定持仓文件和环境评分
+python -X utf8 scripts/agent3-风控/risk_check.py --portfolio data/portfolio.json --env-score 70
+
+# 审查操盘手交易计划
+python -X utf8 scripts/agent3-风控/risk_check.py --portfolio data/portfolio.json --trade-plan data/raw/交易原始数据_20260627.json
 ```
 
 ### 第三步：人工复核关键数据

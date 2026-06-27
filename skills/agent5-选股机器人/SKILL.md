@@ -60,7 +60,12 @@ python -X utf8 scripts/agent5-选股/stock_picker.py --mode noon --top-n 5
 
 # 晚间选股（默认）
 python -X utf8 scripts/agent5-选股/stock_picker.py --mode evening --top-n 5
+
+# 强制刷新数据缓存（跳过缓存，重新从API拉取）
+python -X utf8 scripts/agent5-选股/stock_picker.py --mode evening --top-n 5 --force-refresh
 ```
+
+> **脚本参数说明**：`--mode` 选股模式（pre_market/intraday/noon/evening，默认evening）；`--top-n` 候选数量（默认5）；`--force-refresh` 强制刷新数据缓存（可选）
 
 脚本输出到 `data/raw/选股原始数据_YYYYMMDD_{mode}.json`。
 
@@ -300,3 +305,34 @@ python -X utf8 scripts/agent5-选股/stock_picker.py --mode evening --top-n 5
 | 9 | **午盘推荐和早盘一样不做更新** | 上已变，不更新推荐等于白做午盘 | 根据上午板块轮动更新候选池，剔除上午走弱的票 |
 | 10 | **晚间不看复盘偏差** | 不复盘历史错误→重复犯错 | 读取复盘报告的偏差分析，修正今日策略 |
 | 11 | **所有模式输出格式一样** | 盘中/午盘不需要详细估值分析 | 每种模式用对应的输出格式，侧重点不同 |
+
+---
+
+## 参考文件
+
+- `scripts/agent5-选股/stock_picker.py` — 选股引擎（多因子评分、4种模式）
+- `data/选股规则.json` — 选股规则配置（含4种模式的独立权重）
+- `data/portfolio.json` — 持仓数据（持仓冲突检查）
+- `data/watchlist.json` — 自选股列表
+- `knowledge/策略/选股策略.md` — 选股因子说明和权重（复盘师可调整）
+- `reports/日报/情报/` — Agent1情报报告（输入，热点方向）
+- `reports/日报/分析/` — Agent2分析报告（输入，技术面评级）
+- `reports/日报/复盘/` — Agent4复盘报告（输入，evening模式读偏差分析）
+
+## 关联Agent
+
+| Agent | 关系 | 说明 |
+|-------|------|------|
+| 🕵️ Agent1 情报员 | 上游输入 | 情报热点决定选股方向 |
+| 📊 Agent2 分析师 | 上游输入 | 板块排名+技术面评级 |
+| 🔄 Agent4 复盘师 | 上游输入+反馈 | 偏差分析→因子权重调整 |
+| 🛡️ Agent3 风控官 | 约束条件 | 风控等级影响推荐力度 |
+| 🎯 Agent6 操盘手 | 下游消费 | 选股建议是交易计划的输入 |
+| 🏆 Agent7 投资领导 | 质量审核 | 审核选股质量，不合格打回重做 |
+
+## 触发方式
+
+- `/选股` — 选股（默认evening晚间模式）
+- `/盘中选股` — 盘中异动选股（intraday模式）
+- `/早盘选股` — 早盘选股（pre_market模式，需分析师已运行）
+- 建议：早盘09:00 / 午盘12:00 / 晚间21:00各执行一次

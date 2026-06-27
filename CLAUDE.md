@@ -402,6 +402,7 @@ python -X utf8 scripts/agent7-决策/leader.py
 | 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文1.0续** — 五星优化+标准化+test-prompts | 平均+19.7→97.1 (五星) | 17 commits |
 | 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文2.0** — 脚本Bug修复+全员D3/D4/D9再升级 | +22D3 +13D4 +16D9 | 脚本Bug修复+全团队升级 |
 | 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文3.0** — 全量Python脚本D3/D4/D9代码级嵌入+知识库升级 | +655行D3/D4/D9代码级实现 | 13 files, 7ab7249 |
+| 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文4.0** — 全项目审计修复+跨SKILL引用+知识库标准化+QQ MCP+README | 15项修复+7项优化 | 当前commit |
 
 优化内容（第1轮）：22条D3 fallback + 4个D4 CHECKPOINT + 21条D9反例 (原有4 Agent)
 新增：Agent5-7全套D3/D4/D9 + 全团队D4升级 + 统一标准化格式 + 全团队test-prompts
