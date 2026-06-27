@@ -140,81 +140,67 @@ const COMMANDS = {
 
 // ============ SOCKS5 代理支持 ============
 
-function readExact(socket, n) {
-  return new Promise((resolve, reject) => {
-    const buf = []; let len = 0;
-    const onData = (chunk) => { buf.push(chunk); len += chunk.length; if (len >= n) { socket.removeListener("data", onData); resolve(Buffer.concat(buf)); } };
-    socket.on("data", onData);
-    socket.on("error", reject);
-  });
-}
-
-function socks5Connect(host, port) {
-  return new Promise((resolve, reject) => {
-    if (!SOCKS_PROXY) {
-      const socket = net.connect(port, host, () => resolve(socket));
-      socket.on("error", reject);
-      return;
-    }
-    let proxyHost, proxyPort;
-    if (SOCKS_PROXY.startsWith("socks5://")) {
-      const u = new URL(SOCKS_PROXY);
-      proxyHost = u.hostname;
-      proxyPort = parseInt(u.port, 10) || 10808;
-    } else {
-      proxyHost = "127.0.0.1";
-      proxyPort = parseInt(SOCKS_PROXY, 10) || 10808;
-    }
-    const socket = net.connect(proxyPort, proxyHost, async () => {
-      try {
-        socket.write(Buffer.from([0x05, 0x01, 0x00]));
-        const authResp = await readExact(socket, 2);
-        if (authResp[0] !== 0x05 || authResp[1] !== 0x00) throw new Error(`SOCKS5 auth fail`);
-        const domainBuf = Buffer.from(host, "utf8");
-        const portBuf = Buffer.alloc(2); portBuf.writeUInt16BE(port);
-        socket.write(Buffer.concat([Buffer.from([0x05, 0x01, 0x00, 0x03, domainBuf.length]), domainBuf, portBuf]));
-        const header = await readExact(socket, 4);
-        if (header[0] !== 0x05 || header[1] !== 0x00) throw new Error(`SOCKS5 conn fail`);
-        let addrLen = header[3] === 1 ? 4 : header[3] === 3 ? (await readExact(socket, 1))[0] : header[3] === 4 ? 16 : (() => { throw new Error("ATYP"); })();
-        await readExact(socket, addrLen + 2);
-        const tlsSocket = tls.connect({ socket, servername: host, host, port });
-        tlsSocket.on("ready", () => resolve(tlsSocket));
-        tlsSocket.on("error", reject);
-      } catch (e) { socket.destroy(); reject(e); }
-    });
-    socket.on("error", reject);
-  });
-}
-
 function tgRequest(method, body) {
   return new Promise((resolve, reject) => {
+    const path = `/bot${BOT_TOKEN}/${method}`;
+    const data = body ? JSON.stringify(body) : null;
+
     const doRequest = (tlsSocket) => {
-      const data = body ? JSON.stringify(body) : undefined;
-      const opts = {
-        hostname: API_HOST,
-        path: `/bot${BOT_TOKEN}/${method}`,
-        method: body ? "POST" : "GET",
-        headers: data ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) } : {},
-        timeout: 30000,
-      };
-      const req = https.request(tlsSocket ? { ...opts, createConnection: () => tlsSocket, agent: false } : opts, (res) => {
-        let chunks = "";
-        res.on("data", (c) => (chunks += c));
-        res.on("end", () => {
-          try { const p = JSON.parse(chunks); if (p.ok) resolve(p); else reject(new Error(p.description)); }
-          catch { reject(new Error(chunks.slice(0, 200))); }
-        });
+      // 构造 HTTP 请求
+      let reqHeaders = `GET ${path} HTTP/1.1\r\nHost: ${API_HOST}\r\nConnection: close\r\n`;
+      if (data) {
+        reqHeaders = `POST ${path} HTTP/1.1\r\nHost: ${API_HOST}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(data)}\r\nConnection: close\r\n`;
+      }
+      reqHeaders += "\r\n";
+
+      let response = "";
+      let resolved = false;
+
+      tlsSocket.on("data", (chunk) => { response += chunk.toString(); });
+      tlsSocket.on("end", () => {
+        if (resolved) return;
+        resolved = true;
+        // 解析 HTTP 响应（跳过 headers）
+        const bodyMatch = response.match(/\r\n\r\n(.*)/s);
+        const bodyStr = bodyMatch ? bodyMatch[1].trim() : response;
+        try {
+          const parsed = JSON.parse(bodyStr);
+          if (parsed.ok) resolve(parsed);
+          else reject(new Error(parsed.description || JSON.stringify(parsed)));
+        } catch {
+          reject(new Error(`Parse error: ${bodyStr.slice(0, 200)}`));
+        }
       });
-      req.on("error", reject);
-      req.on("timeout", () => { req.destroy(); reject(new Error("Timeout")); });
-      if (data) req.write(data);
-      req.end();
+      tlsSocket.on("error", (err) => { if (!resolved) { resolved = true; reject(err); } });
+
+      // 写入请求
+      const fullRequest = reqHeaders + (data || "");
+      tlsSocket.write(fullRequest);
+
+      // 超时保护
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          tlsSocket.destroy();
+          reject(new Error(`Telegram API timeout: ${method}`));
+        }
+      }, 30000);
     };
 
     if (SOCKS_PROXY) {
-      socks5Connect(API_HOST, 443).then(doRequest).catch(reject);
+      socks5ConnectRaw(API_HOST, 443).then((rawSocket) => {
+        const tlsSocket = tls.connect({ socket: rawSocket, servername: API_HOST, host: API_HOST, port: 443 });
+        tlsSocket.on("secureConnect", () => doRequest(tlsSocket));
+        tlsSocket.on("error", reject);
+      }).catch(reject);
     } else {
-      doRequest();
+      // 直连
+      const socket = net.connect(443, API_HOST, () => {
+        const tlsSocket = tls.connect({ socket, servername: API_HOST, host: API_HOST, port: 443 });
+        tlsSocket.on("ready", () => doRequest(tlsSocket));
+        tlsSocket.on("error", reject);
+      });
+      socket.on("error", reject);
     }
   });
 }

@@ -56,15 +56,14 @@ function readExact(socket, n) {
   });
 }
 
-/** 通过 SOCKS5 代理建立 TLS 连接到目标主机 */
-function socks5Connect(host, port) {
+/** 通过 SOCKS5 代理建立原始 TCP 连接（统一缓冲区，无 readExact 字节丢失问题） */
+function socks5ConnectRaw(host, port) {
   return new Promise((resolve, reject) => {
     if (!SOCKS_PROXY) {
       const socket = net.connect(port, host, () => resolve(socket));
       socket.on("error", reject);
       return;
     }
-
     let proxyHost, proxyPort;
     if (SOCKS_PROXY.startsWith("socks5://")) {
       const u = new URL(SOCKS_PROXY);
@@ -74,101 +73,81 @@ function socks5Connect(host, port) {
       proxyHost = "127.0.0.1";
       proxyPort = parseInt(SOCKS_PROXY, 10) || 10808;
     }
-
-    const socket = net.connect(proxyPort, proxyHost, async () => {
-      try {
-        // 第1步: 认证协商
-        socket.write(Buffer.from([0x05, 0x01, 0x00]));
-        const authResp = await readExact(socket, 2);
-        if (authResp[0] !== 0x05 || authResp[1] !== 0x00) {
-          throw new Error(`SOCKS5 握手失败: ${authResp[1]}`);
-        }
-
-        // 第2步: 连接请求
-        const hostParts = host.split(".");
-        let addr;
-        if (hostParts.length === 4 && hostParts.every((p) => !isNaN(p) && p >= 0 && p <= 255)) {
-          addr = Buffer.concat([Buffer.from([0x01]), Buffer.from(hostParts.map(Number))]);
-        } else {
-          const domainBuf = Buffer.from(host, "utf8");
-          addr = Buffer.concat([Buffer.from([0x03, domainBuf.length]), domainBuf]);
-        }
-        const portBuf = Buffer.alloc(2);
-        portBuf.writeUInt16BE(port);
-        socket.write(Buffer.concat([Buffer.from([0x05, 0x01, 0x00]), addr, portBuf]));
-
-        // 读取响应: VER+REP+RSV+ATYPE = 4字节，然后根据ATYPE读取地址
-        const header = await readExact(socket, 4);
-        if (header[0] !== 0x05 || header[1] !== 0x00) {
-          throw new Error(`SOCKS5 连接拒绝: ${header[1]}`);
-        }
-        let addrLen;
-        switch (header[3]) {
-          case 0x01: addrLen = 4; break;  // IPv4
-          case 0x03: const lenByte = (await readExact(socket, 1))[0]; addrLen = lenByte; break; // 域名
-          case 0x04: addrLen = 16; break; // IPv6
-          default: throw new Error(`SOCKS5 未知地址类型: ${header[3]}`);
-        }
-        await readExact(socket, addrLen + 2); // 地址 + 端口
-
-        // 升级到 TLS
-        const tlsSocket = tls.connect({ socket, servername: host, host, port });
-        tlsSocket.on("ready", () => resolve(tlsSocket));
-        tlsSocket.on("error", reject);
-      } catch (err) {
-        socket.destroy();
-        reject(err);
-      }
-    });
-    socket.on("error", reject);
-  });
-}
-
-/** HTTP 代理 CONNECT 隧道 */
-function httpConnectTunnel(host, port, proxyHost, proxyPort) {
-  return new Promise((resolve, reject) => {
-    const socket = net.connect(proxyPort, proxyHost, () => {
-      socket.write(`CONNECT ${host}:${port} HTTP/1.1\r\nHost: ${host}:${port}\r\n\r\n`);
-    });
-    let buf = "";
+    const socket = net.connect(proxyPort, proxyHost);
+    let buf = Buffer.alloc(0), step = 0, expectLen = 0, atyp = 0;
     socket.on("data", (chunk) => {
-      buf += chunk.toString();
-      if (buf.includes("\r\n\r\n")) {
-        if (buf.startsWith("HTTP/1.1 200") || buf.startsWith("HTTP/1.0 200")) {
-          const tlsSocket = tls.connect({ socket, servername: host, host, port });
-          tlsSocket.on("ready", () => resolve(tlsSocket));
-          tlsSocket.on("error", reject);
-        } else {
-          reject(new Error(`HTTP CONNECT 失败: ${buf.slice(0, 100)}`));
+      buf = Buffer.concat([buf, chunk]);
+      if (step === 0 && buf.length >= 2) {
+        if (buf[0] !== 0x05 || buf[1] !== 0x00) { socket.destroy(); reject(new Error(`SOCKS5 auth fail: ${buf[1]}`)); return; }
+        buf = buf.slice(2); step = 1;
+        const domainBuf = Buffer.from(host, "utf8");
+        const portBuf = Buffer.alloc(2); portBuf.writeUInt16BE(port);
+        socket.write(Buffer.concat([Buffer.from([0x05, 0x01, 0x00, 0x03, domainBuf.length]), domainBuf, portBuf]));
+      }
+      if (step === 1 && buf.length >= 4) {
+        if (buf[0] !== 0x05 || buf[1] !== 0x00) { socket.destroy(); reject(new Error(`SOCKS5 conn fail: ${buf[1]}`)); return; }
+        atyp = buf[3]; buf = buf.slice(4); step = 2;
+        if (atyp === 1) expectLen = 6;
+        else if (atyp === 3) expectLen = -1;
+        else if (atyp === 4) expectLen = 18;
+        else { socket.destroy(); reject(new Error(`SOCKS5 unknown ATYP: ${atyp}`)); return; }
+      }
+      if (step === 2) {
+        if (atyp === 3 && buf.length >= 1) { expectLen = buf[0] + 2; buf = buf.slice(1); }
+        if (expectLen > 0 && buf.length >= expectLen) {
+          buf = buf.slice(expectLen);
+          resolve(socket);
         }
       }
     });
     socket.on("error", reject);
+    socket.write(Buffer.from([0x05, 0x01, 0x00]));
   });
 }
 
-/** 通过代理或直连发送 HTTPS 请求 */
-function requestWithProxy(options, body) {
+/** 通过原始 TLS socket 发送 HTTP 请求（绕过 https.request 对预连接 socket 的兼容问题） */
+function tgHttpRequest(method, path, body) {
   return new Promise((resolve, reject) => {
+    const data = body ? JSON.stringify(body) : null;
+
+    const doRequest = (tlsSocket) => {
+      let reqHeaders = `POST ${path} HTTP/1.1\r\nHost: ${API_HOST}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(data || "")}\r\nConnection: close\r\n\r\n`;
+      if (!data) {
+        reqHeaders = `GET ${path} HTTP/1.1\r\nHost: ${API_HOST}\r\nConnection: close\r\n\r\n`;
+      }
+
+      let response = "";
+      let resolved = false;
+      tlsSocket.on("data", (chunk) => { response += chunk.toString(); });
+      tlsSocket.on("end", () => {
+        if (resolved) return; resolved = true;
+        const bodyMatch = response.match(/\r\n\r\n(.*)/s);
+        resolve(bodyMatch ? bodyMatch[1].trim() : response);
+      });
+      tlsSocket.on("error", (err) => { if (!resolved) { resolved = true; reject(err); } });
+
+      tlsSocket.write(reqHeaders + (data || ""));
+      setTimeout(() => { if (!resolved) { resolved = true; tlsSocket.destroy(); reject(new Error("HTTP timeout")); } }, 30000);
+    };
+
     if (SOCKS_PROXY) {
-      // 通过 SOCKS5/HTTP 代理
-      socks5Connect(API_HOST, 443)
-        .then((tlsSocket) => {
-          const req = https.request({ ...options, createConnection: () => tlsSocket, socket: tlsSocket, agent: false }, resolve);
-          req.on("error", reject);
-          if (body) req.write(body);
-          req.end();
-        })
-        .catch(reject);
+      socks5ConnectRaw(API_HOST, 443).then((rawSocket) => {
+        const tlsSocket = tls.connect({ socket: rawSocket, servername: API_HOST, host: API_HOST, port: 443 });
+        tlsSocket.on("secureConnect", () => doRequest(tlsSocket));
+        tlsSocket.on("error", reject);
+      }).catch(reject);
     } else {
-      // 直连
-      const req = https.request(options, resolve);
-      req.on("error", reject);
-      if (body) req.write(body);
-      req.end();
+      const socket = net.connect(443, API_HOST, () => {
+        const tlsSocket = tls.connect({ socket, servername: API_HOST, host: API_HOST, port: 443 });
+        tlsSocket.on("secureConnect", () => doRequest(tlsSocket));
+        tlsSocket.on("error", reject);
+      });
+      socket.on("error", reject);
     }
   });
 }
+
+/** HTTP 代理 CONNECT 隧道（未使用，保留兼容） */
 
 // ============ 工具定义 ============
 
@@ -229,105 +208,72 @@ const TOOLS = [
 
 // ============ Telegram API 调用 ============
 
-/** POST JSON 到 Telegram Bot API（支持代理） */
+/** POST JSON 到 Telegram Bot API（使用 tgHttpRequest） */
 function tgPost(method, body) {
-  return new Promise((resolve, reject) => {
-    const data = JSON.stringify(body);
-    requestWithProxy(
-      {
-        hostname: API_HOST,
-        path: `/bot${BOT_TOKEN}/${method}`,
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(data),
-        },
-        timeout: 15000,
-      },
-      data
-    )
-      .then((res) => {
-        let chunks = "";
-        res.on("data", (c) => (chunks += c));
-        res.on("end", () => {
-          try {
-            const parsed = JSON.parse(chunks);
-            if (parsed.ok) resolve(parsed);
-            else reject(new Error(`Telegram API error: ${parsed.description || JSON.stringify(parsed)}`));
-          } catch {
-            reject(new Error(`Failed to parse Telegram response: ${chunks.slice(0, 200)}`));
-          }
-        });
-      })
-      .catch(reject);
+  return tgHttpRequest("POST", `/bot${BOT_TOKEN}/${method}`, body).then((responseText) => {
+    const parsed = JSON.parse(responseText);
+    if (parsed.ok) return parsed;
+    throw new Error(`Telegram API error: ${parsed.description || JSON.stringify(parsed)}`);
   });
 }
 
 /** 使用 multipart/form-data 上传文件到 Telegram */
 function tgUploadFile(method, fields, filePath) {
   return new Promise((resolve, reject) => {
-    // 构造 multipart 边界
     const boundary = `----FormBoundary${Math.random().toString(36).slice(2)}`;
     const fileContent = fs.readFileSync(filePath);
     const fileName = path.basename(filePath);
 
     // 构建 multipart body
-    const chunks = [];
-
-    // chat_id 字段
-    chunks.push(
-      Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${CHAT_ID}\r\n`
-      )
-    );
-
-    // caption 字段（可选）
+    const parts = [];
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${CHAT_ID}\r\n`));
     if (fields.caption) {
-      chunks.push(
-        Buffer.from(
-          `--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${fields.caption}\r\n`
-        )
-      );
+      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${fields.caption}\r\n`));
     }
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="${fileName}"\r\nContent-Type: application/octet-stream\r\n\r\n`));
+    parts.push(fileContent);
+    parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
 
-    // 文件字段
-    chunks.push(
-      Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="${fileName}"\r\nContent-Type: application/octet-stream\r\n\r\n`
-      )
-    );
-    chunks.push(fileContent);
-    chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+    const body = Buffer.concat(parts);
+    const path = `/bot${BOT_TOKEN}/${method}`;
 
-    const body = Buffer.concat(chunks);
+    const doRequest = (tlsSocket) => {
+      let reqHeaders = `POST ${path} HTTP/1.1\r\nHost: ${API_HOST}\r\nContent-Type: multipart/form-data; boundary=${boundary}\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n`;
 
-    requestWithProxy(
-      {
-        hostname: API_HOST,
-        path: `/bot${BOT_TOKEN}/${method}`,
-        method: "POST",
-        headers: {
-          "Content-Type": `multipart/form-data; boundary=${boundary}`,
-          "Content-Length": body.length,
-        },
-        timeout: 60000,
-      },
-      body
-    )
-      .then((res) => {
-        let data = "";
-        res.on("data", (c) => (data += c));
-        res.on("end", () => {
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.ok) resolve(parsed);
-            else reject(new Error(`Telegram upload error: ${parsed.description}`));
-          } catch {
-            reject(new Error(`Failed to parse upload response: ${data.slice(0, 200)}`));
-          }
-        });
-      })
-      .catch(reject);
+      let response = ""; let resolved = false;
+      tlsSocket.on("data", (c) => { response += c.toString(); });
+      tlsSocket.on("end", () => {
+        if (resolved) return; resolved = true;
+        const bm = response.match(/\r\n\r\n(.*)/s);
+        const bodyStr = bm ? bm[1].trim() : response;
+        try {
+          const parsed = JSON.parse(bodyStr);
+          if (parsed.ok) resolve(parsed);
+          else reject(new Error(`Telegram upload error: ${parsed.description}`));
+        } catch {
+          reject(new Error(`Failed to parse upload response: ${bodyStr.slice(0, 200)}`));
+        }
+      });
+      tlsSocket.on("error", (e) => { if (!resolved) { resolved = true; reject(e); } });
+
+      tlsSocket.write(Buffer.concat([Buffer.from(reqHeaders), body]));
+      setTimeout(() => { if (!resolved) { resolved = true; tlsSocket.destroy(); reject(new Error("Upload timeout")); } }, 60000);
+    };
+
+    if (SOCKS_PROXY) {
+      socks5ConnectRaw(API_HOST, 443).then((rawSocket) => {
+        const tlsSocket = tls.connect({ socket: rawSocket, servername: API_HOST, host: API_HOST, port: 443 });
+        tlsSocket.on("secureConnect", () => doRequest(tlsSocket));
+        tlsSocket.on("error", reject);
+      }).catch(reject);
+    } else {
+      const socket = net.connect(443, API_HOST, () => {
+        const tlsSocket = tls.connect({ socket, servername: API_HOST, host: API_HOST, port: 443 });
+        tlsSocket.on("secureConnect", () => doRequest(tlsSocket));
+        tlsSocket.on("error", reject);
+      });
+      socket.on("error", reject);
+    }
   });
 }
 
@@ -346,37 +292,19 @@ function loadOffset() {
   } catch { tgUpdateOffset = 0; }
 }
 
-/** 轮询 Telegram 获取新消息 */
+/** 轮询 Telegram 获取新消息（使用 tgHttpRequest） */
 function tgGetUpdates(timeout) {
-  return new Promise((resolve, reject) => {
-    loadOffset();
-    const params = new URLSearchParams({ offset: tgUpdateOffset + 1, timeout: String(timeout), allowed_updates: '["message"]' });
-    requestWithProxy({
-      hostname: API_HOST,
-      path: `/bot${BOT_TOKEN}/getUpdates?${params}`,
-      method: "GET",
-      timeout: (timeout + 5) * 1000,
-    })
-      .then((res) => {
-        let data = "";
-        res.on("data", (c) => (data += c));
-        res.on("end", () => {
-          try {
-            const parsed = JSON.parse(data);
-            if (!parsed.ok) return reject(new Error(`Telegram API: ${parsed.description}`));
-            const updates = parsed.result || [];
-            // 更新 offset
-            for (const u of updates) {
-              if (u.update_id > tgUpdateOffset) tgUpdateOffset = u.update_id;
-            }
-            saveOffset();
-            resolve(updates);
-          } catch (e) {
-            reject(new Error(`解析 getUpdates 响应失败: ${e.message}`));
-          }
-        });
-      })
-      .catch(reject);
+  loadOffset();
+  const params = new URLSearchParams({ offset: tgUpdateOffset + 1, timeout: String(timeout), allowed_updates: '["message"]' });
+  return tgHttpRequest("GET", `/bot${BOT_TOKEN}/getUpdates?${params}`).then((responseText) => {
+    const parsed = JSON.parse(responseText);
+    if (!parsed.ok) throw new Error(`Telegram API: ${parsed.description}`);
+    const updates = parsed.result || [];
+    for (const u of updates) {
+      if (u.update_id > tgUpdateOffset) tgUpdateOffset = u.update_id;
+    }
+    saveOffset();
+    return updates;
   });
 }
 
