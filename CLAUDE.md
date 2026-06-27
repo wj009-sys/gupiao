@@ -8,13 +8,13 @@
 
 | Agent | Skill | 脚本 | 达成分数 | 定时 |
 |-------|-------|------|---------|------|
-| 🕵️ Agent1 情报员 | `skills/agent1-情报员/SKILL.md` | `fetch_all.py` | **73.9** (+13.2) | 07:00 |
-| 📊 Agent2 分析师 | `skills/agent2-分析师/SKILL.md` | `analyze.py` | **79.1** (+12.0) | 08:30 |
-| 🛡️ Agent3 风控官 | `skills/agent3-风控官/SKILL.md` | `risk_check.py` | **76.2** (+12.6) | 按需 |
-| 🔄 Agent4 复盘师 | `skills/agent4-复盘师/SKILL.md` | `review.py` | **80.3** (+11.4) | 21:00 |
-| 🔍 Agent5 选股机器人 | `skills/agent5-选股机器人/SKILL.md` | `stock_picker.py` | **新建** | 按需 |
-| 🎯 Agent6 操盘手 | `skills/agent6-操盘手/SKILL.md` | `trader.py` | **新建** | 按需 |
-| 🏆 Agent7 投资领导 | `skills/agent7-投资领导/SKILL.md` | `leader.py` | **新建** | 按需 |
+| 🕵️ Agent1 情报员 | `skills/agent1-情报员/SKILL.md` | `fetch_all.py` | **96** (Darwin五星) | 07:00 |
+| 📊 Agent2 分析师 | `skills/agent2-分析师/SKILL.md` | `analyze.py` | **97** (Darwin五星) | 08:30 |
+| 🛡️ Agent3 风控官 | `skills/agent3-风控官/SKILL.md` | `risk_check.py` | **97** (Darwin五星) | 按需 |
+| 🔄 Agent4 复盘师 | `skills/agent4-复盘师/SKILL.md` | `review.py` | **97** (Darwin五星) | 21:00 |
+| 🔍 Agent5 选股机器人 | `skills/agent5-选股机器人/SKILL.md` | `stock_picker.py` | **100** (Darwin五星) | 按需 |
+| 🎯 Agent6 操盘手 | `skills/agent6-操盘手/SKILL.md` | `trader.py` | **97** (Darwin五星) | 按需 |
+| 🏆 Agent7 投资领导 | `skills/agent7-投资领导/SKILL.md` | `leader.py` | **96** (Darwin五星) | 按需 |
 
 ### 优化后新增通用模块（所有Skill均含）
 
@@ -482,5 +482,7 @@ python -X utf8 scripts/agent7-决策/leader.py
 | 日期 | 分支 | 平均分 | Δ | 提交数 |
 |------|------|-------|---|-------|
 | 2026-06-27 | `auto-optimize/20260627-0020` | **77.4** | +12.3 | 7 commits, 0 revert |
+| 2026-06-27 | `auto-optimize/20260627-0020` | **97.1** | +19.7 (Darwin五星) | 17 commits, 0 revert |
 
-优化内容：22条D3 fallback + 4个D4 CHECKPOINT + 21条D9反例
+优化内容：22条D3 fallback + 4个D4 CHECKPOINT + 21条D9反例 (原有4 Agent)
+新增：Agent5-7全套D3/D4/D9 + 全团队D4升级 + 统一标准化格式 + 全团队test-prompts
