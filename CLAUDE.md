@@ -4,6 +4,18 @@
 
 构建A股自动化投研团队，包含7个AI Agent角色，每天自动完成情报采集→技术分析→选股推荐→风控检查→交易计划→复盘迭代的完整闭环，由投资领导统筹管理。每个Agent都经过Darwin Skill优化（评分从平均65.1提升至77.4）。
 
+## 报告格式规范
+
+| 送达渠道 | 格式 | 机制 |
+|---------|------|------|
+| 📁 本地存储 | Markdown (.md) + Word (.docx) | Python脚本生成，`md_to_docx.py`自动转换 |
+| 💬 微信推送 | **Word (.docx)** 文件 | `cc-connect send --file` 通过 ilink API 发送文件到用户微信 |
+| 📱 微信文本摘要 | 纯文本（摘要） | 通过 cc-connect 文本通道发送简要汇总 |
+
+> **强制规则**：所有通过微信发送给用户的报告，必须使用 .docx Word 格式。
+> 使用 `python scripts/utils/wechat_send.py --report <类型>` 自动完成转换和发送。
+> 如 context_token 过期，运行 `--watch` 模式等待用户消息后自动重试。
+
 ## Agent 团队
 
 | Agent | Skill | 脚本 | 达成分数 | 定时 |

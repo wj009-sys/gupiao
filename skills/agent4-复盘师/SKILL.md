@@ -419,20 +419,10 @@ knowledge/复盘记录/复盘_YYYYMMDD.json
 > 2. 调用 `telegram_send_file` 附上完整复盘报告（`reports/日报/复盘/复盘报告_YYYY-MM-DD.md`）
 > 3. 如果有策略更新，附上 `knowledge/策略/` 中新增/修改的文件
 >
-> **微信推送（可选）：**
-> 4. 调用 `wechat_agent_notify`，用机器人4（复盘师）发送：
-> ```
-> agent_id: 4
-> content: "复盘报告 YYYY-MM-DD
-> 综合准确率：xx%
-> 看涨准确率：xx%
-> 看跌准确率：xx%
-> 趋势：上升/持平/下降（连续N天）
-> 主要偏差：N 个
-> 知识库更新：N 条"
-> ```
->
-> 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
+> **微信推送：**
+> 4. 运行 `python scripts/utils/wechat_send.py --report 复盘` 自动：
+>    - 将报告 .md 转为 .docx（Word格式）
+>    - 通过 cc-connect 发送 Word 文件到微信
 >
 > **QQ推送（可选）：**
 > 5. 调用 `qq_agent_notify`，用 QQ 推送：

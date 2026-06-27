@@ -304,18 +304,10 @@ cat data/raw/交易原始数据_YYYYMMDD.json
 > 2. 如果有 🚨 止损触发或 ⚠️ 仓位超限，调用 `telegram_send_file` 附上完整报告文件（`reports/日报/风控/风控报告_YYYY-MM-DD.md`）
 > - 如果无异常（全部 🟢），只发摘要即可
 >
-> **微信推送（可选）：**
-> 3. 调用 `wechat_agent_notify`，用机器人3（风控官）发送：
-> ```
-> agent_id: 3
-> content: "风控报告 YYYY-MM-DD
-> 大盘风险等级：高/中/低
-> 止损触发：N 个
-> 仓位超限：N 个
-> 风控指令：必须执行 N 条 / 建议执行 N 条"
-> ```
->
-> 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
+> **微信推送：**
+> 3. 运行 `python scripts/utils/wechat_send.py --report 风控` 自动：
+>    - 将报告 .md 转为 .docx（Word格式）
+>    - 通过 cc-connect 发送 Word 文件到微信
 >
 > **QQ推送（可选）：**
 > 4. 调用 `qq_agent_notify`，用 QQ 推送：

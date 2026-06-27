@@ -343,16 +343,11 @@ python -X utf8 scripts/agent2-技术分析/analyze.py YYYYMMDD
 >
 > 2. 调用 `telegram_send_file` 附上完整报告（`reports/日报/决策/投资决策_YYYY-MM-DD.md`）
 >
-> **微信推送（可选）：**
-> 3. 调用 `wechat_agent_notify`，用机器人7（投资领导）发送：
-> ```
-> agent_id: 7
-> content: "投资决策 YYYY-MM-DD
-> 市场判断：XXX
-> 最终决策：XXX
-> 买入N只 | 卖出N只 | 持有N只
-> 打回重做：N个Agent"
-> ```
+> **微信推送：**
+> 3. 运行 `python scripts/utils/wechat_send.py --report 决策` 自动：
+>    - 将决策报告 .md 转为 .docx（Word格式）
+>    - 通过 cc-connect 发送 Word 文件到微信
+>    - 如 context_token 过期会等待用户发消息后自动重试
 >
 > **QQ推送（可选）：**
 > 4. 调用 `qq_agent_notify`：

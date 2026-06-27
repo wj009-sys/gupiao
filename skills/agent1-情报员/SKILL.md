@@ -215,17 +215,10 @@ limit_list = pro.limit_list(trade_date='YYYYMMDD')
 > 
 > 2. 再调用 `telegram_send_file` 附上完整报告文件（路径：`reports/日报/情报/情报摘要_YYYY-MM-DD.md`）
 >
-> **微信推送（可选）：**
-> 3. 调用 `wechat_agent_notify`，用机器人1（情报员）发送：
-> ```
-> agent_id: 1
-> content: "情报摘要 YYYY-MM-DD
-> 大盘：上证±x% | 深证±x% | 创业板±x%
-> 北向资金：净流入/出 xx亿
-> 关键资讯：N条
-> 热点板块：XX、XX、XX
-> 风险提示：..."
-> ```
+> **微信推送：**
+> 3. 运行 `python scripts/utils/wechat_send.py --report 情报` 自动：
+>    - 将报告 .md 转为 .docx（Word格式）
+>    - 通过 cc-connect 发送 Word 文件到微信
 >
 > 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
 >

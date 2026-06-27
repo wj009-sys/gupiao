@@ -13,6 +13,7 @@ node_modules/
 # Reports (auto-generated daily, keep template only)
 reports/日报/*/*.md
 reports/日报/*/*.json
+reports/日报/*/*.docx
 data/raw/
 
 # Secrets (contain tokens/credentials)

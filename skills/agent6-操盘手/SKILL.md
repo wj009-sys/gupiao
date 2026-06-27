@@ -220,15 +220,10 @@ cat reports/日报/风控/风控报告_YYYY-MM-DD.md
 >
 > 2. 调用 `telegram_send_file` 附上完整报告（`reports/日报/操盘/交易计划_YYYY-MM-DD.md`）
 >
-> **微信推送（可选）：**
-> 3. 调用 `wechat_agent_notify`，用机器人6（操盘手）发送：
-> ```
-> agent_id: 6
-> content: "交易计划 YYYY-MM-DD
-> 当前仓位：XX%
-> 买入：N只 | 卖出：N只 | 持有：N只
-> 执行后仓位：XX%"
-> ```
+> **微信推送：**
+> 3. 运行 `python scripts/utils/wechat_send.py --report 操盘` 自动：
+>    - 将报告 .md 转为 .docx（Word格式）
+>    - 通过 cc-connect 发送 Word 文件到微信
 >
 > **QQ推送（可选）：**
 > 4. 调用 `qq_agent_notify`：
