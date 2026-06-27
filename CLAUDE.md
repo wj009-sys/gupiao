@@ -156,6 +156,9 @@ scripts/           - Python 分析脚本
   └── scheduled_tasks.json - 定时任务存储
 knowledge/         - 知识库（Agent4 维护更新）
   ├── 策略/        - 选股/择时/交易策略
+  │   ├── 选股策略.md
+  │   ├── 择时策略.md
+  │   └── 交易执行规则.md
   └── 复盘记录/    - 历史复盘
 memory/            - Claude 持久记忆
 skills/            - 自定义 Skills
@@ -172,6 +175,15 @@ skills/            - 自定义 Skills
 
 - **Tushare Pro**：A股行情、财务、龙虎榜、资金流向（token通过 `.claude/settings.local.json` 自动加载，不硬编码）
 - **网页抓取**：财联社、东方财富、巨潮资讯
+
+## 策略知识库
+
+| 文件 | 用途 | 维护者 |
+|------|------|--------|
+| `knowledge/策略/选股策略.md` | 多因子选股权重、筛选参数 | Agent5 + Agent4 |
+| `knowledge/策略/择时策略.md` | 入场/出场时机、大盘联动 | Agent6 + Agent4 |
+| `knowledge/策略/交易执行规则.md` | 买卖规范、仓位分配、止盈止损规则 | Agent6 + Agent4 |
+| `knowledge/复盘记录/` | 历史复盘数据（偏差分析、准确率） | Agent4 |
 
 ## 风控规则
 
