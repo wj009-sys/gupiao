@@ -215,6 +215,8 @@ knowledge/复盘记录/复盘_YYYYMMDD.json
 
 按照以下模板生成复盘报告，保存到 `reports/日报/复盘/复盘报告_YYYY-MM-DD.md`。
 
+---
+
 ## 🔴 D4 CHECKPOINT
 
 生成报告前完成以下检查：

@@ -25,7 +25,6 @@ import json
 import glob
 from datetime import datetime
 
-import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.tushare_client import pro
 
@@ -73,11 +72,26 @@ def load_env_score_from_analysis() -> int:
         return None
 
 
+def load_index_analysis() -> list:
+    """从 Agent2 的分析结果中加载指数均线数据"""
+    raw_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    pattern = os.path.join(raw_dir, "分析原始数据_*.json")
+    files = sorted(glob.glob(pattern), reverse=True)
+    if not files:
+        return None
+    latest = files[0]
+    try:
+        data = load_json(latest)
+        return data.get("index_analysis") or data.get("indices") or None
+    except:
+        return None
+
+
 def fetch_stock_price(ts_code: str) -> dict:
     """获取个股最新的实时/日线行情"""
     try:
-        df = pro.daily(ts_code=ts_code, start_date="", end_date="")
-        if not df.empty:
+        df = pro.daily(ts_code=ts_code)
+        if df is not None and not df.empty:
             last = df.iloc[0]
             return {
                 "price": float(last["close"]),
@@ -127,11 +141,12 @@ def determine_market_environment(env_score: int, index_data: dict = None) -> dic
 def check_stop_loss(holding: dict, current_price: float, pct_chg: float) -> list:
     """对单个持仓检查是否触发止损"""
     alerts = []
-    cost = holding.get("成本价", 0)
+    cost = holding.get("成本价") or 0
     name = holding.get("名称", "未知")
     code = holding.get("代码", "")
+    current_price = current_price or 0
 
-    if cost == 0:
+    if cost == 0 or current_price == 0:
         return alerts
 
     # 当前盈亏比例
@@ -331,7 +346,8 @@ def risk_assess_trade(trade_item: dict, market_env: dict, portfolio: dict, curre
     }
 
     # === 买入审查 ===
-    if trade_item.get("action", "").startswith("买入") or "buy" in str(trade_item).lower():
+    action = (trade_item.get("action") or "").lower()
+    if action.startswith("买入") or action == "buy":
         result["type"] = "买入审查"
 
         # 1. 大盘环境检查
@@ -343,10 +359,10 @@ def risk_assess_trade(trade_item: dict, market_env: dict, portfolio: dict, curre
             result["verdict"] = "CONDITIONAL"
             result["risk_factors"].append("弱市，买入需满足仓位<50%且单票≤10%")
 
-        # 2. 仓位冲突检查
+        # 2. 仓位冲突检查（防御 null）
         max_position = market_env.get("max_position", 80)
         max_single = market_env.get("max_single", 20)
-        suggested_pos = trade_item.get("suggested_position_pct", 0)
+        suggested_pos = trade_item.get("suggested_position_pct") or 0
         if suggested_pos > max_single:
             result["verdict"] = "REJECTED"
             result["risk_factors"].append(
@@ -359,9 +375,9 @@ def risk_assess_trade(trade_item: dict, market_env: dict, portfolio: dict, curre
                 f"当前仓位 {current_position:.0f}% 接近上限 {max_position}%，买入需先减仓"
             )
 
-        # 3. 止损检查
-        stop_loss = trade_item.get("stop_loss", 0)
-        current_price = trade_item.get("current_price", 0)
+        # 3. 止损检查（防御 null）
+        stop_loss = trade_item.get("stop_loss") or 0
+        current_price = trade_item.get("current_price") or 0
         if stop_loss == 0 or current_price == 0:
             result["verdict"] = "REJECTED"
             result["risk_factors"].append("缺少止损位，不可买入")
@@ -374,19 +390,19 @@ def risk_assess_trade(trade_item: dict, market_env: dict, portfolio: dict, curre
                 )
                 result["conditions"].append(f"建议放宽止损至-5%~-7%")
 
-        # 4. 行业集中度
+        # 4. 行业集中度（按持仓列表统计同代码前缀的数量，作为近似行业分散提示）
         code = trade_item.get("code", "")
         holdings = portfolio.get("持仓列表", [])
-        same_sector_count = sum(1 for h in holdings if h.get("代码", "")[:3] == code[:3])
-        if same_sector_count >= 2:
+        same_prefix_count = sum(1 for h in holdings if h.get("代码", "")[:3] == code[:3] and h.get("代码", "") != code)
+        if same_prefix_count >= 2:
             result["verdict"] = "CONDITIONAL"
             result["risk_factors"].append(
-                f"同板块已持有{same_sector_count + 1}只，注意行业集中风险"
+                f"同板块前缀已持有{same_prefix_count}只，注意行业集中风险"
             )
             result["conditions"].append("建议降低该行业总仓位不超过40%")
 
     # === 卖出审查 ===
-    elif trade_item.get("action", "").startswith("卖出") or "sell" in str(trade_item).lower():
+    elif action.startswith("卖出") or action == "sell":
         result["type"] = "卖出审查"
 
         priority = trade_item.get("priority", "")
@@ -429,7 +445,7 @@ def risk_assess_trade_plan(trade_plan: dict, market_env: dict, portfolio: dict, 
 
     sell_assessments = []
     for sell_item in trade_plan.get("sell_plan", []):
-        assessment = risk_assess_trade(sell_item, market_env, portfolio)
+        assessment = risk_assess_trade(sell_item, market_env, portfolio, current_position)
         sell_assessments.append({
             "code": sell_item.get("code", ""),
             "name": sell_item.get("name", ""),
@@ -475,13 +491,7 @@ def suggest_position_adjustment(
 
         adj = {"code": code, "name": name, "action": "持有", "reason": "", "priority": "低"}
 
-        # 加仓条件
-        if -3 <= pnl_pct <= 5 and single_pct < max_single * 0.5:
-            adj["action"] = "可加仓"
-            adj["reason"] = f"浮盈/亏可控({pnl_pct:.1f}%)，仓位未饱和({single_pct:.0f}%<{max_single}%上限的一半)"
-            adj["priority"] = "中"
-
-        # 减仓条件
+        # 加减仓条件判断（按优先级从高到低：需减仓 > 建议减仓 > 部分止盈 > 可加仓）
         if pnl_pct <= -5:
             adj["action"] = "建议减仓"
             adj["reason"] = f"浮亏{pnl_pct:.1f}%，接近-7%止损线，建议提前减仓"
@@ -493,6 +503,10 @@ def suggest_position_adjustment(
         elif pnl_pct >= 15:
             adj["action"] = "部分止盈"
             adj["reason"] = f"浮盈{pnl_pct:.1f}%已达标，建议止盈1/3"
+            adj["priority"] = "中"
+        elif -3 <= pnl_pct <= 5 and single_pct < max_single * 0.5:
+            adj["action"] = "可加仓"
+            adj["reason"] = f"浮盈/亏可控({pnl_pct:.1f}%)，仓位未饱和({single_pct:.0f}%<{max_single}%上限的一半)"
             adj["priority"] = "中"
 
         suggestions.append(adj)
@@ -621,9 +635,11 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None, trad
     }
     print(f"  {_ok} 市场环境: {market_env['name']} (上限: {market_env['max_position']}%)")
 
-    # 4. 大盘环境检查
+    # 4. 大盘环境检查（含指数均线联动止损）
     try:
-        env_alerts = check_market_risk(env_score)
+        # 加载指数分析数据用于大盘联动止损判断
+        index_data = load_index_analysis()
+        env_alerts = check_market_risk(env_score, index_data)
         report["alerts"].extend(env_alerts)
         for a in env_alerts:
             print(f"  [{a['level']}] {a['type']}: {a['message']}")
@@ -673,7 +689,7 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None, trad
     position_suggestions = {}
     trade_conflicts = []
 
-    if trade_plan and trade_plan.get("buy_plan", []) or trade_plan.get("sell_plan", []):
+    if trade_plan and (trade_plan.get("buy_plan") or trade_plan.get("sell_plan")):
         print(f"  {_ok} 发现操盘手交易计划，开始风控审查...")
         # 计算当前总仓位百分比
         total_asset = portfolio.get("总资产", 1)

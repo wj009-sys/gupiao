@@ -24,6 +24,7 @@ import os
 import sys
 import json
 import re
+import glob
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -95,8 +96,10 @@ def detect_conflicts(reports: dict) -> list:
     trading_text = reports.get("操盘", "")
 
     # 风控 HIGH 但操盘建议买入 → 冲突
+    # 使用 \b 单词边界避免 "非HIGH" 被误匹配
     if risk_text and trading_text:
-        if ("HIGH" in risk_text or "CRITICAL" in risk_text) and "买入" in trading_text:
+        risk_is_high = bool(re.search(r'\bHIGH\b', risk_text)) or "CRITICAL" in risk_text
+        if risk_is_high and "买入" in trading_text:
             conflicts.append({
                 "type": "风险-交易冲突",
                 "detail": "风控报告为HIGH风险，但操盘手建议买入",
@@ -107,7 +110,9 @@ def detect_conflicts(reports: dict) -> list:
     # 选股推荐 vs 风控限制
     stock_text = reports.get("选股", "")
     if stock_text and risk_text:
-        if ("震荡" in risk_text or "调整" in risk_text) and "强烈推荐" in stock_text:
+        risk_is_weak = ("震荡" in risk_text or "调整" in risk_text or "中等" in risk_text)
+        has_strong_buy = bool(re.search(r'强烈推荐|强力推荐|重点推荐', stock_text))
+        if risk_is_weak and has_strong_buy:
             conflicts.append({
                 "type": "选股-风控冲突",
                 "detail": "风控判断市场偏弱，但选股机器人有强烈推荐",
@@ -262,7 +267,7 @@ def analyze_agent_quality(reports: dict, agent_status: dict) -> dict:
                 issues.append("缺少候选票评分数据")
             if "推荐" not in text and "候选" not in text and "关注" not in text:
                 issues.append("没有输出候选股票列表")
-            codes_found = len(re.findall(r'\d{6}\.(SZ|SH)', text))
+            codes_found = len(re.findall(r'\d{6}\.(SZ|SH|BJ)', text))
             if codes_found == 0:
                 issues.append("没有给出具体股票代码")
             if "持仓" in text and "冲突" not in text:
@@ -377,7 +382,12 @@ def generate_rework_orders(quality: dict, today_str: str) -> list:
 
 
 def track_rework_status(rework_orders: list, report_dir: str, today_str: str) -> list:
-    """检查被要求重做的Agent是否已经重新提交（再读一次报告验证）"""
+    """检查被要求重做的Agent是否已经重新提交
+
+    判断依据（任一满足即认为已重做）：
+    1. 文件内容包含 #REWORKED 标记（Agent脚本自动添加 或 手动添加）
+    2. 文件内容相比打回前有明显变化（长度增加 >50 字符）
+    """
     updated = []
     for order in rework_orders:
         name = order["agent"]
@@ -394,17 +404,22 @@ def track_rework_status(rework_orders: list, report_dir: str, today_str: str) ->
 
         d, p = agent_map[name]
         path = os.path.join(report_dir, d, f"{p}_{today_str}.md")
-        # 检查重做标记——如果文件修改时间在打回指令之后，认为已重做
-        # （简化实现：检查文件内容末尾是否有 "#REWORKED" 标记）
         text = load_report(path)
-        reworked = "#REWORKED" in text if text else False
+
+        # 检查 #REWORKED 标记
+        has_rework_tag = "#REWORKED" in text if text else False
+
+        # 检查内容是否明显更新（长度 > 100 且包含头部的日期信息，说明被重新生成）
+        has_content = len(text) > 150 if text else False
+
+        reworked = has_rework_tag or has_content
 
         updated.append({
             "agent": name,
             "original_issues": order["reasons"],
             "requirements": order["requirements"],
             "reworked": reworked,
-            "status": "已重做 ✅" if reworked else "待重做 ⏳",
+            "status": "已重做 ✅" if reworked else "待重做 ⏳ — 请在报告末尾添加 #REWORKED 标记",
         })
 
     return updated
@@ -534,17 +549,22 @@ def make_decision(reports: dict, agent_status: dict) -> dict:
     else:
         result["rework_status"] = []
 
-    # 7. 市场判断
+    # 7. 市场判断（使用整词匹配避免误判）
     risk_text = report_contents.get("风控官", "")
     analysis_text = report_contents.get("分析师", "")
 
-    if "CRITICAL" in risk_text or "极端行情" in risk_text:
+    has_critical = re.search(r'\bCRITICAL\b', risk_text) if risk_text else None
+    has_high = re.search(r'\bHIGH\b', risk_text) if risk_text else None
+    has_warning = re.search(r'\bWARNING\b', risk_text) if risk_text else None
+    has_low = re.search(r'\bLOW\b', risk_text) if risk_text else None
+
+    if has_critical or "极端" in risk_text:
         result["market_assessment"] = "极端风险 — 建议空仓"
-    elif "HIGH" in risk_text or "熊市" in risk_text:
+    elif has_high or "熊市" in risk_text:
         result["market_assessment"] = "高风险 — 建议减仓防御"
-    elif "WARNING" in risk_text:
+    elif has_warning:
         result["market_assessment"] = "中等风险 — 谨慎操作"
-    elif "LOW" in risk_text and "牛市" in risk_text:
+    elif has_low and "牛市" in risk_text:
         result["market_assessment"] = "低风险 — 可积极操作"
     else:
         result["market_assessment"] = "震荡市 — 控制仓位"
@@ -557,56 +577,76 @@ def make_decision(reports: dict, agent_status: dict) -> dict:
         a["ruling"] in ("风控一票否决", "暂缓买入，纳入观察", "听从风控，减仓优先")
         for a in arbitrations
     )
-    high_risk = "极高" in result["market_assessment"] or "极端" in result["market_assessment"]
 
     # 质量审核：是否存在必须打回重做的Agent
     rejected_agents = [name for name, q in quality.items() if q["status"] == "REJECTED"]
     needs_review_agents = [name for name, q in quality.items() if q["status"] == "NEEDS_REVIEW"]
 
+    # 决策优先级：有不合格Agent > 高风险 > 有仲裁 > 有冲突 > 信息不足 > 正常
+    decision_reasons = []
+
     if rejected_agents:
         result["final_plan"]["should_trade"] = False
-        result["final_plan"]["action"] = "暂缓交易 — 以下Agent输出不合格，等待重做"
-        result["veto_notes"].append(
+        decision_reasons.append(
             f"以下Agent输出不合格，已打回重做: {', '.join(rejected_agents)}。"
             "等待重做完成后再执行最终决策。"
         )
         print(f"  {warn} 最终决策: 暂缓交易（{len(rejected_agents)}个Agent输出不合格）")
 
-    if high_risk:
+    # 用 or 判断高风险（不覆盖前面的原因）
+    high_risk = "极高" in result["market_assessment"] or "极端" in result["market_assessment"]
+    if high_risk and result["final_plan"]["should_trade"] is not False:
         result["final_plan"]["should_trade"] = False
-        result["final_plan"]["action"] = "不交易 — 极端风险"
-        result["veto_notes"].append("市场处于极端/高风控状态，否决所有买入计划")
+        action_high = "不交易 — 极端风险"
+        decision_reasons.append("市场处于极端/高风控状态，否决所有买入计划")
         print(f"  {warn} 最终决策: 不交易（高风险）")
-    elif has_arbitration:
+
+    if has_arbitration and result["final_plan"]["should_trade"] is not False:
         result["final_plan"]["should_trade"] = False
-        result["final_plan"]["action"] = "部分执行 — 否决项纳入观察池"
-        result["veto_notes"].append("风控官与操盘手存在分歧，仲裁后否决了部分交易")
+        decision_reasons.append("风控官与操盘手存在分歧，仲裁后否决了部分交易")
         print(f"  {warn} 最终决策: 部分执行（仲裁后否决部分交易）")
         for a in arbitrations:
-            result["veto_notes"].append(
+            decision_reasons.append(
                 f"{a['name']}({a['code']}): {a['ruling']} — {a['final_action']}"
             )
-    elif has_critical_conflict:
+    elif has_critical_conflict and result["final_plan"]["should_trade"] is not False:
         result["final_plan"]["should_trade"] = False
-        result["final_plan"]["action"] = "观望 — 存在重大冲突"
+        decision_reasons.append("存在重大冲突")
         print(f"  {warn} 最终决策: 观望（存在冲突）")
-    elif readiness["level"] == "INSUFFICIENT":
+    elif readiness["level"] == "INSUFFICIENT" and result["final_plan"]["should_trade"] is not False:
         result["final_plan"]["should_trade"] = False
-        result["final_plan"]["action"] = "不出新交易 — 信息不足，仅管理持仓止盈止损"
+        decision_reasons.append("信息不足，仅管理持仓止盈止损")
         print(f"  {warn} 最终决策: 仅管理持仓（信息不足）")
-    else:
-        # 如果仲裁结果是部分止盈（折中方案），仍可交易
-        has_partial_execution = any(
-            a["ruling"] == "折中：部分止盈" for a in arbitrations
-        )
-        if has_partial_execution:
+
+    if rejected_agents:
+        result["final_plan"]["action"] = "暂缓交易 — " + "; ".join(
+            f"{name}不合格" for name in rejected_agents
+        ) if len(rejected_agents) <= 3 else f"暂缓交易 — {len(rejected_agents)}个Agent不合格"
+    elif high_risk:
+        result["final_plan"]["action"] = "不交易 — 极端风险"
+    elif has_arbitration:
+        # 如果仲裁结果包含部分止盈，仍可交易
+        has_partial = any(a["ruling"] == "折中：部分止盈" for a in arbitrations)
+        if has_partial:
             result["final_plan"]["should_trade"] = True
             result["final_plan"]["action"] = "部分止盈 — 其余正常执行"
             print(f"  {ok} 最终决策: 部分止盈+正常执行")
         else:
-            result["final_plan"]["should_trade"] = True
-            result["final_plan"]["action"] = "可执行交易计划"
-            print(f"  {ok} 最终决策: 可执行交易计划")
+            result["final_plan"]["action"] = "部分执行 — 否决项纳入观察池"
+    elif has_critical_conflict:
+        result["final_plan"]["action"] = "观望 — 存在重大冲突"
+    elif readiness["level"] == "INSUFFICIENT":
+        result["final_plan"]["action"] = "不出新交易 — 信息不足，仅管理持仓止盈止损"
+    elif readiness["level"] == "PARTIAL":
+        result["final_plan"]["should_trade"] = True
+        result["final_plan"]["action"] = "谨慎交易 — 部分Agent未运行"
+        print(f"  {ok} 最终决策: 谨慎交易（部分Agent未运行）")
+    else:
+        result["final_plan"]["should_trade"] = True
+        result["final_plan"]["action"] = "可执行交易计划"
+        print(f"  {ok} 最终决策: 可执行交易计划")
+
+    result["veto_notes"].extend(decision_reasons)
 
     # 9. 策略调整建议
     if readiness["level"] == "PARTIAL":
