@@ -1,13 +1,23 @@
-"""读取Excel持仓明细，生成portfolio.json"""
+"""读取Excel持仓明细，生成portfolio.json
+用法: python scripts/utils/build_portfolio.py [Excel文件路径]
+默认: C:\Users\65004\Desktop\持仓明细YYYY-MM-DD.xlsx
+"""
 import pandas as pd
 import json
 import os
 import sys
+import glob
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from scripts.utils.tushare_client import get_daily, pro
 
 # === 1. 读取Excel ===
-path = r'C:\Users\65004\Desktop\持仓明细2026-6-27.xlsx'
+if len(sys.argv) > 1:
+    path = sys.argv[1]
+else:
+    # 自动找桌面最新的持仓明细文件
+    candidates = glob.glob(os.path.expanduser(r'~\Desktop\持仓明细*.xlsx'))
+    path = max(candidates, key=os.path.getmtime) if candidates else r'C:\Users\65004\Desktop\持仓明细2026-6-27.xlsx'
+print(f'读取: {path}')
 df = pd.read_excel(path, header=0)
 df['代码'] = df['证券代码'].apply(lambda c: str(c).zfill(6))
 
@@ -67,17 +77,27 @@ for _, row in merged.iterrows():
     cost = float(row['成本价'])
     typ = classify(code, name)
     cur = prices.get(full, cost)  # 无行情则用成本价
+
+    # 处理负成本（分红除权导致）
+    note = None
+    if cost < 0:
+        note = f"原始成本{cost}元（分红除权导致负成本），已调整为名义成本0.01"
+        cost = 0.01
+
     mv = round(qty * cur, 2)
     pl = round((cur - cost) / cost * 100, 2) if cost > 0 else 0.0
     if abs(pl) < 0.01:
         pl = 0.0
 
-    items.append({
+    entry = {
         '代码': full, '名称': name, '类型': typ,
         '成本价': round(cost, 3), '当前价': cur,
         '持股数量': qty, '市值': mv,
         '盈亏比例': pl
-    })
+    }
+    if note:
+        entry['备注'] = note
+    items.append(entry)
     total_mv += mv
 
 # 按市值排序

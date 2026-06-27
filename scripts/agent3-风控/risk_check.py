@@ -207,11 +207,20 @@ def check_stop_loss(holding: dict, current_price: float, pct_chg: float, ts_code
     return alerts
 
 
+def _get_total_asset(portfolio: dict) -> float:
+    """获取总资产，兼容新旧字段名"""
+    return (portfolio.get("总资产") or
+            portfolio.get("总资产_含现金") or
+            portfolio.get("持仓总市值") or
+            sum(h.get("市值", 0) for h in portfolio.get("持仓列表", [])) or
+            1)
+
+
 def check_position_limits(portfolio: dict, market_env: dict) -> list:
     """检查仓位是否超限"""
     alerts = []
     holdings = portfolio.get("持仓列表", [])
-    total_asset = portfolio.get("总资产", 0) or sum(h.get("市值", 0) for h in holdings)
+    total_asset = _get_total_asset(portfolio)
 
     if total_asset == 0:
         return alerts
@@ -491,7 +500,7 @@ def suggest_position_adjustment(
     """基于风控视角，给出持仓加减仓建议（与操盘手独立对比）"""
     suggestions = []
     holdings = portfolio.get("持仓列表", [])
-    total_asset = portfolio.get("总资产", 0) or 1
+    total_asset = _get_total_asset(portfolio)
     max_single = market_env.get("max_single", 20)
 
     for h in holdings:
@@ -707,7 +716,7 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None, trad
     if trade_plan and (trade_plan.get("buy_plan") or trade_plan.get("sell_plan")):
         print(f"  {_ok} 发现操盘手交易计划，开始风控审查...")
         # 计算当前总仓位百分比
-        total_asset = portfolio.get("总资产", 1)
+        total_asset = _get_total_asset(portfolio)
         total_market_value = sum(
             h.get("市值", 0) or h.get("持股数量", 0) * h.get("当前价", 0)
             for h in portfolio.get("持仓列表", [])

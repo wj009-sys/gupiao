@@ -74,7 +74,7 @@ def is_st_stock(ts_code: str) -> bool:
 def is_suspended(ts_code: str, trade_date: str) -> bool:
     """检查股票是否停牌"""
     try:
-        df = pro.suspend_d(ts_code=ts_code, suspend_date=trade_code)
+        df = pro.suspend_d(ts_code=ts_code, suspend_date=trade_date)
         if df is not None and not df.empty:
             return True
     except:
@@ -431,6 +431,11 @@ def pre_market_picks(top_n: int, config: dict, today: str) -> dict:
             print(f"  {warn} {ts_code} ST/退市，跳过")
             continue
 
+        if is_suspended(ts_code, today):
+            result["suspended_stocks"].append(ts_code)
+            print(f"  {warn} {ts_code} 停牌，跳过")
+            continue
+
         try:
             valuation = score_valuation(ts_code, yesterday)
             growth = score_growth(ts_code, yesterday)
@@ -757,6 +762,7 @@ def evening_picks(top_n: int, config: dict, today: str) -> dict:
         "candidates_screened": 0,
         "ranked_stocks": [],
         "st_filtered": [],
+        "suspended_stocks": [],
         "sector_concentration": {},
         "review_deviation_notes": [],
         "warnings": [],
@@ -810,6 +816,11 @@ def evening_picks(top_n: int, config: dict, today: str) -> dict:
         if is_st_stock(ts_code):
             print(f"  {warn} {ts_code} ST/退市，跳过")
             result.setdefault("st_filtered", []).append(ts_code)
+            continue
+
+        if is_suspended(ts_code, today):
+            print(f"  {warn} {ts_code} 停牌，跳过")
+            result.setdefault("suspended_stocks", []).append(ts_code)
             continue
 
         try:

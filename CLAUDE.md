@@ -191,9 +191,10 @@ skills/            - 自定义 Skills
 | 08:30 工作日 | Agent2 技术分析 | `30 8 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
 | 09:00 工作日 | Agent5 早盘选股 | `0 9 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
 | 12:00 工作日 | Agent5 午盘选股 | `0 12 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
-| 21:00 工作日 | Agent4 复盘 + Agent5 晚间选股 | `0 21 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
+| 21:00 工作日 | Agent4 复盘 | `0 21 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
+| 21:30 工作日 | Agent5 晚间选股 | `30 21 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
 | 按需 | Agent3 风控检查 | - | 手动 `/风控官` |
-| 按需 | Agent5 盘中选股/按需选股 | - | 手动 `/选股` 或 `/盘中选股` |
+| 按需 | Agent5 盘中/按需选股 | - | 手动 `/选股` 或 `/盘中选股` |
 | 按需 | Agent6 操盘手 | - | 手动 `/操盘` |
 | 按需 | Agent7 投资领导 | - | 手动 `/决策` |
 
@@ -206,8 +207,12 @@ skills/            - 自定义 Skills
 |------|----------|------|
 | `/情报员` | agent1-情报员 | 情报采集+报告生成 |
 | `/分析师` | agent2-分析师 | 技术分析+板块排名 |
-| `/风控官` | agent3-风控官 | 风控检查+止损监控 |
+| `/风控官` | agent3-风控官 | 风控检查+止损监控+操盘审查 |
 | `/复盘师` | agent4-复盘师 | 复盘+偏差分析+知识库更新 |
+| `/选股` | agent5-选股机器人 | 多因子选股（默认晚间模式） |
+| `/盘中选股` | agent5-选股机器人 | 盘中异动选股（intraday模式） |
+| `/操盘` | agent6-操盘手 | 制定交易计划 |
+| `/决策` | agent7-投资领导 | 综合决策+质量审核+冲突仲裁 |
 
 ---
 
@@ -280,9 +285,9 @@ python -X utf8 scripts/agent3-风控/risk_check.py [--env-score N] [--trade-plan
 source venv/Scripts/activate
 python -X utf8 scripts/agent4-复盘/review.py [YYYYMMDD]
 
-# Agent5 - 选股
+# Agent5 - 选股（4种模式：pre_market/intraday/noon/evening）
 source venv/Scripts/activate
-python -X utf8 scripts/agent5-选股/stock_picker.py [--top-n 5]
+python -X utf8 scripts/agent5-选股/stock_picker.py [--mode evening] [--top-n 5]
 
 # Agent6 - 交易计划
 source venv/Scripts/activate
@@ -301,11 +306,11 @@ python -X utf8 scripts/agent7-决策/leader.py
 
 ## 优化历史（Darwin）
 
-| 日期 | 分支 | 平均分 | Δ | 提交数 |
-|------|------|-------|---|-------|
-| 2026-06-27 | `auto-optimize/20260627-0020` | **77.4** | +12.3 | 7 commits, 0 revert |
-| 2026-06-27 | `auto-optimize/20260627-0020` | **97.1** | +19.7 (Darwin五星) | 17 commits, 0 revert |
-| 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文2.0** | +22D3 +13D4 +16D9 | 脚本Bug修复+全团队D3/D4/D9再升级 |
+| 日期 | 分支 | 轮次 | Δ | 提交数 |
+|------|------|------|---|-------|
+| 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文1.0** — 全团队D3/D4/D9首轮覆盖 | 平均+12.3→77.4 | 7 commits |
+| 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文1.0续** — 五星优化+标准化+test-prompts | 平均+19.7→97.1 (五星) | 17 commits |
+| 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文2.0** — 脚本Bug修复+全员D3/D4/D9再升级 | +22D3 +13D4 +16D9 | 脚本Bug修复+全团队升级 |
 
 优化内容（第1轮）：22条D3 fallback + 4个D4 CHECKPOINT + 21条D9反例 (原有4 Agent)
 新增：Agent5-7全套D3/D4/D9 + 全团队D4升级 + 统一标准化格式 + 全团队test-prompts
