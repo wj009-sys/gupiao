@@ -45,6 +45,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.tushare_client import pro
 from scripts.utils.technical_analysis import add_all_indicators, generate_signal_summary
 
+# 数据库管理器（尽力而为，导入失败不影响报告生成）
+try:
+    from scripts.utils.db_manager import DatabaseManager
+    _db = DatabaseManager()
+except Exception as e:
+    print(f"  [WARN] 数据库连接失败，跳过DB写入: {e}")
+    _db = None
+
 
 def get_last_n_trade_days(end_date: str, n: int = 120) -> str:
     """获取前 N 个交易日的起始日期（大概往前推 2N 天确保够用）"""
@@ -80,6 +88,9 @@ def analyze_index(ts_code: str, name: str, end_date: str) -> dict:
 
     df_with_indicators = add_all_indicators(df_ta)
     signals = generate_signal_summary(df_with_indicators)
+
+    # 写入数据库（尽力而为）
+    _save_index_to_db(ts_code, df, df_with_indicators)
 
     last = df.iloc[-1]
     prev = df.iloc[-2] if len(df) > 1 else last
@@ -147,7 +158,7 @@ def analyze_sectors(end_date: str, top_n: int = 30) -> pd.DataFrame:
 
 
 def analyze_watchlist_stocks(stock_codes: list, end_date: str) -> list:
-    """分析关注列表个股的技术面"""
+    """分析关注列表个股的技术面（优先使用前复权价格）"""
     results = []
     start_date = get_last_n_trade_days(end_date, 120)
 
@@ -157,19 +168,66 @@ def analyze_watchlist_stocks(stock_codes: list, end_date: str) -> list:
             if df.empty:
                 continue
             df = df.sort_values("trade_date").reset_index(drop=True)
-            df_ta = df.rename(columns={"vol": "volume"})
+
+            # 写入个股日线行情到数据库 (asset_type='E')
+            if _db:
+                try:
+                    df_db = df.copy()
+                    if "vol" in df_db.columns:
+                        df_db = df_db.rename(columns={"vol": "volume"})
+                    _db.upsert_daily_price(df_db, asset_type='E')
+                except Exception:
+                    pass
+
+            # 检查是否有复权因子，有则使用前复权价格
+            use_adj = _db and _db.has_adj_factor(code) if _db else False
+            if use_adj:
+                df_adj = _db.get_daily_price_adj(code, start_date, end_date)
+                if df_adj is not None and not df_adj.empty:
+                    # 用前复权价格构建技术分析DataFrame
+                    df_ta = pd.DataFrame({
+                        "ts_code":  code,
+                        "trade_date": df_adj["trade_date"],
+                        "open":   df_adj["open_adj"],
+                        "high":   df_adj["high_adj"],
+                        "low":    df_adj["low_adj"],
+                        "close":  df_adj["close_adj"],
+                        "volume": df_adj["vol"] if "vol" in df_adj.columns else 0,
+                    }, index=df_adj.index)
+                    print(f"    {code}: 使用前复权价格 (latest_factor={df_adj['latest_adj_factor'].iloc[0]:.4f})")
+                else:
+                    use_adj = False
+
+            if not use_adj:
+                df_ta = df.rename(columns={"vol": "volume"})
+
+            # 确保列存在
+            for col in ["open", "high", "low", "close"]:
+                if col not in df_ta.columns:
+                    df_ta[col] = df_ta.get("close", 0)
+
             df_ta = add_all_indicators(df_ta)
             signals = generate_signal_summary(df_ta)
 
+            # 写入技术指标到数据库
+            if _db:
+                try:
+                    _db.upsert_daily_indicator(df_ta)
+                except Exception:
+                    pass
+
             last = df.iloc[-1]
+            close_price = float(df_ta.iloc[-1]["close"]) if df_ta is not None and not df_ta.empty else float(last["close"])
             results.append({
                 "ts_code": code,
                 "name": last.get("name", code),
-                "close": round(float(last["close"]), 2),
+                "close": round(close_price, 2),
                 "pct_chg": round(float(last.get("pct_chg", 0)), 2),
                 "signals": signals,
+                "price_adj": "前复权" if use_adj else "不复权",
             })
         except Exception as e:
+            print(f"    [WARN] {code} 分析失败: {e}")
             continue
 
     return results
@@ -198,6 +256,24 @@ def get_sector_rotation(sector_df: pd.DataFrame) -> list:
         })
 
     return rotation
+
+
+def _save_index_to_db(ts_code: str, df_raw: pd.DataFrame, df_indicator: pd.DataFrame):
+    """将指数日线和技术指标写入数据库（尽力而为）"""
+    if _db is None:
+        return
+    try:
+        # 写入日线行情 (asset_type='I')
+        if not df_raw.empty:
+            df_price = df_raw.copy()
+            if "vol" in df_price.columns:
+                df_price = df_price.rename(columns={"vol": "volume"})
+            _db.upsert_daily_price(df_price, asset_type='I')
+        # 写入技术指标
+        if not df_indicator.empty:
+            _db.upsert_daily_indicator(df_indicator)
+    except Exception as e:
+        print(f"  [WARN] DB写入失败 ({ts_code}): {e}")
 
 
 def generate_analysis(end_date: str = None) -> dict:
@@ -303,6 +379,15 @@ def generate_analysis(end_date: str = None) -> dict:
 
     if scores:
         result["environment_score"] = round(np.mean(scores), 0)
+
+    # 写入报告日志（尽力而为）
+    try:
+        if _db:
+            status = "ok" if not result.get("errors") else "error"
+            _db.save_report_log(end_date, "agent2", status,
+                               error_msg="; ".join(result["errors"]) if result.get("errors") else None)
+    except Exception:
+        pass
 
     return result
 

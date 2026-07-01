@@ -53,6 +53,14 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.tushare_client import pro, get_daily
 
+# 数据库管理器（尽力而为，导入失败不影响交易计划生成）
+try:
+    from scripts.utils.db_manager import DatabaseManager
+    _db = DatabaseManager()
+except Exception as e:
+    print(f"  [WARN] 数据库连接失败，跳过DB写入: {e}")
+    _db = None
+
 
 def load_json(path: str) -> dict:
     if not os.path.exists(path):
@@ -409,7 +417,39 @@ def generate_trade_plan() -> dict:
         )
         print(f"  {warn} 仓位预警: 执行后{total_after:.0f}% > 上限{max_position}%")
 
+    # 8. 写入数据库（尽力而为）
+    _save_trader_to_db(result, holdings)
+
     return result
+
+
+def _save_trader_to_db(result: dict, holdings: list):
+    """保存交易计划相关数据到数据库"""
+    global _db
+    if _db is None:
+        return
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_ymd = datetime.now().strftime("%Y%m%d")
+    ok, warn = "[OK]", "[WARN]"
+
+    # 8a. 持仓快照 → portfolio_snapshot
+    if holdings:
+        try:
+            n = _db.save_portfolio_snapshot(today, holdings)
+            print(f"  {ok} DB: 持仓快照写入 {n} 条")
+        except Exception as e:
+            print(f"  {warn} DB: 持仓快照写入失败: {e}")
+
+    # 8b. 报告日志
+    try:
+        has_errors = bool(result.get("errors"))
+        has_warnings = bool(result.get("warnings"))
+        status = "ok" if not has_errors else ("warning" if has_warnings else "error")
+        _db.save_report_log(today_ymd, "agent6", status,
+                           error_msg="; ".join(result.get("errors", []) + result.get("warnings", [])))
+    except Exception as e:
+        print(f"  {warn} DB: 报告日志写入失败: {e}")
 
 
 if __name__ == "__main__":

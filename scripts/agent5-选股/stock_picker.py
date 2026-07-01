@@ -55,10 +55,53 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.tushare_client import pro
 
+# 数据库管理器（尽力而为，导入失败降级到纯API模式）
+try:
+    from scripts.utils.db_manager import DatabaseManager
+    _db = DatabaseManager()
+except Exception as e:
+    print(f"  [WARN] 数据库连接失败，使用纯API模式: {e}")
+    _db = None
+
 
 # ============================================================
 #  工具函数
 # ============================================================
+
+def _get_daily_price_db_first(ts_code: str, days_back: int = 60) -> pd.DataFrame:
+    """
+    获取日线行情：优先从SQLite读取，失败回退到Tushare API
+
+    Args:
+        ts_code: 股票代码
+        days_back: 取最近多少天的数据
+
+    Returns:
+        DataFrame，按 trade_date 降序（最新在前）
+    """
+    global _db
+
+    # 尝试从数据库读取
+    if _db:
+        try:
+            df = _db.get_daily_price(ts_code)
+            if df is not None and not df.empty and len(df) >= 10:
+                # 数据库返回的是升序，需要降序
+                df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
+                return df.head(days_back)
+        except Exception:
+            pass
+
+    # 回退到 Tushare API
+    try:
+        df = pro.daily(ts_code=ts_code)
+        if df is not None and not df.empty:
+            df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
+            return df.head(days_back)
+    except Exception:
+        pass
+    return pd.DataFrame()
+
 
 def load_json(path: str) -> dict:
     """安全加载 JSON 文件"""
@@ -179,7 +222,52 @@ def load_config(root: str = None) -> dict:
 # ============================================================
 
 def score_valuation(ts_code: str, trade_date: str) -> dict:
-    """估值因子评分（0-100）"""
+    """估值因子评分（0-100）- DB优先读取"""
+    global _db
+
+    # 尝试从数据库读取
+    basic_data = None
+    if _db:
+        try:
+            basic_data = _db.get_daily_basic(ts_code, trade_date)
+        except Exception:
+            pass
+
+    # 数据库命中
+    if basic_data and basic_data.get("pe") is not None:
+        pe = basic_data.get("pe")
+        pb = basic_data.get("pb")
+        score = 50
+        details = {}
+        if pe and 0 < pe < 80:
+            if pe < 15:
+                score = 90
+                details["pe"] = f"PE={pe:.1f}，低估"
+            elif pe < 30:
+                score = 75
+                details["pe"] = f"PE={pe:.1f}，合理偏低"
+            elif pe < 50:
+                score = 60
+                details["pe"] = f"PE={pe:.1f}，合理偏高"
+            else:
+                score = 40
+                details["pe"] = f"PE={pe:.1f}，偏高"
+        else:
+            score -= 10
+            details["pe"] = f"PE={pe}，异常或缺失"
+
+        if pb and 0 < pb < 10:
+            if pb < 2:
+                score += 5
+                details["pb"] = f"PB={pb:.1f}，偏低"
+            else:
+                details["pb"] = f"PB={pb:.1f}，合理"
+        else:
+            score -= 5
+            details["pb"] = f"PB={pb}，异常"
+        return {"score": max(0, min(100, score)), "details": details, "source": "db"}
+
+    # 数据库未命中，回退到 Tushare API
     try:
         df = pro.daily_basic(ts_code=ts_code, trade_date=trade_date)
         if df is None or df.empty:
@@ -216,15 +304,21 @@ def score_valuation(ts_code: str, trade_date: str) -> dict:
         else:
             score -= 5
             details["pb"] = f"PB={pb}，异常"
-        return {"score": max(0, min(100, score)), "details": details}
+        # 写入数据库
+        try:
+            if _db and df is not None and not df.empty:
+                _db.upsert_daily_basic(df)
+        except Exception:
+            pass
+        return {"score": max(0, min(100, score)), "details": details, "source": "api"}
     except Exception:
         return {"score": 50, "details": {"reason": "估值评分异常"}}
 
 
 def score_momentum(ts_code: str) -> dict:
-    """动量因子评分（0-100）"""
+    """动量因子评分（0-100）- DB优先读取"""
     try:
-        df = pro.daily(ts_code=ts_code)
+        df = _get_daily_price_db_first(ts_code, days_back=60)
         if df is None or df.empty or len(df) < 40:
             return {"score": 50, "details": {"reason": "行情数据不足"}}
         close_20 = df["close"].iloc[:20].values
@@ -249,9 +343,9 @@ def score_momentum(ts_code: str) -> dict:
 
 
 def score_technical(ts_code: str) -> dict:
-    """技术面因子评分（0-100）"""
+    """技术面因子评分（0-100）- DB优先读取"""
     try:
-        df = pro.daily(ts_code=ts_code)
+        df = _get_daily_price_db_first(ts_code, days_back=30)
         if df is None or df.empty or len(df) < 30:
             return {"score": 50, "details": {"reason": "技术数据不足"}}
         closes = df["close"].values
@@ -299,9 +393,9 @@ def score_sentiment(ts_code: str, trade_date: str = None) -> dict:
                     return {"score": 40, "details": {"reason": f"主力资金净流出{abs(net):.0f}万"}}
     except Exception:
         pass
-    # 兜底：用涨跌幅判断情绪
+    # 兜底：用涨跌幅判断情绪（优先DB）
     try:
-        df = pro.daily(ts_code=ts_code)
+        df = _get_daily_price_db_first(ts_code, days_back=5)
         if df is not None and not df.empty and len(df) >= 5:
             recent = df["pct_chg"].iloc[:5].mean()
             if recent > 3:
@@ -314,9 +408,79 @@ def score_sentiment(ts_code: str, trade_date: str = None) -> dict:
 
 
 def score_growth(ts_code: str, trade_date: str) -> dict:
-    """成长因子评分（0-100）— 基于财务指标"""
+    """
+    成长因子评分（0-100）— DB优先读取财务指标
+    """
+    global _db
+
+    # 尝试从数据库读取
+    fina_data = None
+    if _db:
+        try:
+            fina_data = _db.get_fina_indicator(ts_code, latest=True)
+        except Exception:
+            pass
+
+    # 数据库命中
+    if fina_data and fina_data.get("roe") is not None:
+        score = 50
+        details = {}
+
+        rev_growth = fina_data.get("or_yoy") or fina_data.get("revenue_yoy")
+        if rev_growth is not None:
+            if rev_growth > 30:
+                score += 25
+                details["营收增长"] = f"{rev_growth:.1f}%，高速增长"
+            elif rev_growth > 15:
+                score += 15
+                details["营收增长"] = f"{rev_growth:.1f}%，稳健增长"
+            elif rev_growth > 0:
+                score += 5
+                details["营收增长"] = f"{rev_growth:.1f}%，正增长"
+            else:
+                score -= 10
+                details["营收增长"] = f"{rev_growth:.1f}%，负增长"
+
+        profit_growth = fina_data.get("profit_dedt_yoy")
+        if profit_growth is not None:
+            if profit_growth > 30:
+                score += 20
+                details["净利增长"] = f"{profit_growth:.1f}%，高速增长"
+            elif profit_growth > 10:
+                score += 10
+                details["净利增长"] = f"{profit_growth:.1f}%，稳健增长"
+            elif profit_growth > 0:
+                score += 5
+                details["净利增长"] = f"{profit_growth:.1f}%，正增长"
+            else:
+                score -= 10
+                details["净利增长"] = f"{profit_growth:.1f}%，负增长"
+
+        roe = fina_data.get("roe")
+        if roe is not None:
+            if roe > 15:
+                score += 10
+                details["ROE"] = f"{roe:.1f}%，优秀"
+            elif roe > 8:
+                score += 5
+                details["ROE"] = f"{roe:.1f}%，良好"
+            else:
+                details["ROE"] = f"{roe:.1f}%，偏低"
+
+        return {"score": max(0, min(100, score)), "details": details,
+                "source": "db"}
+
+    # 数据库未命中，回退到 Tushare API（并尝试写入DB）
     try:
         df = pro.fina_indicator(ts_code=ts_code, start_date=f"{trade_date[:4]}0101", end_date=trade_date)
+        if df is not None and not df.empty:
+            # 写入数据库
+            try:
+                if _db:
+                    _db.upsert_fina_indicator(df)
+            except Exception:
+                pass
+
         if df is None or df.empty:
             basic = pro.daily_basic(ts_code=ts_code, trade_date=trade_date)
             if basic is not None and not basic.empty:
@@ -374,7 +538,7 @@ def score_growth(ts_code: str, trade_date: str) -> dict:
             else:
                 details["ROE"] = f"{roe:.1f}%，偏低"
 
-        return {"score": max(0, min(100, score)), "details": details}
+        return {"score": max(0, min(100, score)), "details": details, "source": "api"}
     except Exception as e:
         return {"score": 50, "details": {"reason": f"成长评分异常: {e}"}}
 
@@ -1059,3 +1223,12 @@ if __name__ == "__main__":
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2, default=str)
     print(f"\n选股数据已保存: {output_path}")
+
+    # 写入报告日志（尽力而为）
+    try:
+        if _db:
+            status = "ok" if not report.get("errors") else "error"
+            _db.save_report_log(today, "agent5", status,
+                               error_msg="; ".join(report["errors"]) if report.get("errors") else None)
+    except Exception:
+        pass

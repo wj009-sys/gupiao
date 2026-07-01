@@ -7,6 +7,9 @@ __pycache__/
 # Node
 node_modules/
 
+# Database
+*.db
+
 # Temp
 *.tmp
 
@@ -34,3 +37,4 @@ cc-connect.toml
 
 # 微信扫码二维码（临时生成，不需存档）
 wechat_qr_*.png
+data/checkpoints/

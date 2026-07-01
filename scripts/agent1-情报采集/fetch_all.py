@@ -42,6 +42,14 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.tushare_client import pro
 
+# 数据库管理器（尽力而为，导入失败不影响报告生成）
+try:
+    from scripts.utils.db_manager import DatabaseManager
+    _db = DatabaseManager()
+except Exception as e:
+    print(f"  [WARN] 数据库连接失败，跳过DB写入: {e}")
+    _db = None
+
 
 def get_today() -> str:
     """获取今天的 YYYYMMDD 格式"""
@@ -232,7 +240,88 @@ def generate_data_json(trade_date: str = None) -> dict:
         for err in data["errors"]:
             print(f"    - {err}")
 
+    # 6. 写入数据库（尽力而为）
+    _save_to_db(data)
+
     return data
+
+
+def _save_to_db(data: dict):
+    """将采集数据写入本地SQLite数据库（尽力而为，失败不影响报告生成）"""
+    global _db
+    if _db is None:
+        return
+
+    trade_date = data.get("date", "")
+    if not trade_date:
+        return
+
+    ok = "[OK]"
+    warn = "[WARN]"
+
+    # 6a. 大盘指数行情 → daily_price (asset_type='I')
+    market = data.get("market_overview", {})
+    if market:
+        try:
+            rows = []
+            for name, info in market.items():
+                rows.append({
+                    "ts_code": _INDEX_NAME_MAP.get(name, name),
+                    "trade_date": trade_date,
+                    "close": info.get("close"),
+                    "pct_chg": info.get("pct_change"),
+                    "amount": info.get("amount", 0) * 1e4,  # 亿元转万元
+                })
+            if rows:
+                df_idx = pd.DataFrame(rows)
+                n = _db.upsert_daily_price(df_idx, asset_type='I')
+                print(f"  {ok} DB: 指数行情写入 {n} 条")
+        except Exception as e:
+            print(f"  {warn} DB: 指数行情写入失败: {e}")
+
+    # 6b. 北向资金 → moneyflow_hsgt
+    hsgt = data.get("moneyflow_hsgt", {})
+    if hsgt:
+        try:
+            _db.upsert_moneyflow_hsgt(trade_date, {
+                "north_net": hsgt.get("north_net"),
+                "hgt": hsgt.get("hgt"),
+                "sgt": hsgt.get("sgt"),
+            })
+            print(f"  {ok} DB: 北向资金写入")
+        except Exception as e:
+            print(f"  {warn} DB: 北向资金写入失败: {e}")
+
+    # 6c. 板块数据 → ths_daily
+    ths_hot = data.get("ths_hot", [])
+    if ths_hot:
+        try:
+            for item in ths_hot:
+                item["trade_date"] = trade_date
+                item["strength"] = item.get("pct_chg", 0)
+                item["anomaly"] = abs(item.get("pct_chg", 0)) > 3
+            df_ths = pd.DataFrame(ths_hot)
+            n = _db.upsert_ths_daily(df_ths)
+            print(f"  {ok} DB: 板块数据写入 {n} 条")
+        except Exception as e:
+            print(f"  {warn} DB: 板块数据写入失败: {e}")
+
+    # 6d. 报告日志
+    try:
+        status = "ok" if not data.get("errors") else "error"
+        _db.save_report_log(trade_date, "agent1", status,
+                           error_msg="; ".join(data["errors"]) if data["errors"] else None)
+    except Exception as e:
+        print(f"  {warn} DB: 报告日志写入失败: {e}")
+
+
+# 指数名称→Tushare代码映射
+_INDEX_NAME_MAP = {
+    "上证指数": "000001.SH",
+    "深证成指": "399001.SZ",
+    "创业板指": "399006.SZ",
+    "科创50": "000688.SH",
+}
 
 
 if __name__ == "__main__":

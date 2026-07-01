@@ -1,0 +1,21 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -u -X utf8 scripts/utils/auto_sync.py --check-only"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(python scripts/utils/auto_sync.py:*)",
+      "Bash(python scripts/utils/fetch_all_history.py:*)"
+    ]
+  }
+}

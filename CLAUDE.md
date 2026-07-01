@@ -4,6 +4,33 @@
 
 构建A股自动化投研团队，包含7个AI Agent角色，每天自动完成情报采集→技术分析→选股推荐→风控检查→交易计划→复盘迭代的完整闭环，由投资领导统筹管理。每个Agent都经过Darwin Skill优化（评分从平均65.1提升至77.4）。
 
+## 🔄 数据自动同步
+
+每次打开 Claude Code 时，`SessionStart` hook 自动运行 `python scripts/utils/auto_sync.py --check-only`，检查 `data/stocks.db` 数据新鲜度（<1秒），结果自动注入会话上下文。
+
+### 自动同步架构
+```
+Cron: 每天18:03 (工作日)
+  python auto_sync.py --auto-sync  ← 主力：收盘后自动拉全量
+        │
+        ▼
+SessionStart Hook (startup)
+  python auto_sync.py --check-only ← 备份：打开时快速检查
+  如 STALE → AI 主动触发 --auto-sync
+```
+
+### 手动同步命令
+```bash
+# 仅检查（<1秒，纯SQL）
+python scripts/utils/auto_sync.py --check-only
+
+# 自动同步所有缺失数据（默认30分钟预算）
+python scripts/utils/auto_sync.py --auto-sync
+
+# 限时/限量同步
+python scripts/utils/auto_sync.py --auto-sync --max-minutes 15 --max-stocks 500
+```
+
 ## 报告格式规范
 
 | 送达渠道 | 格式 | 机制 |
@@ -227,7 +254,7 @@ scripts/           - Python 分析脚本
   ├── agent5-选股/
   ├── agent6-操盘/
   ├── agent7-决策/
-  └── utils/       - 工具函数（Tushare客户端、技术指标库）
+  └── utils/       - 工具函数（Tushare客户端、技术指标库、DB管理、自动同步）
 .claude/           - Claude 配置
   ├── mcp-servers/
   │   └── claw/        - 定时调度 MCP 服务器 (cron)
@@ -278,6 +305,7 @@ skills/            - 自定义 Skills
 
 | 时间 | 任务 | cron | 触发方式 |
 |------|------|------|---------|
+| **18:03 工作日** | **🔄 数据自动同步** | `3 18 * * 1-5` | **claw MCP + auto_sync.py → DB更新** |
 | 07:00 工作日 | Agent1 情报采集 | `0 7 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
 | 08:30 工作日 | Agent2 技术分析 | `30 8 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
 | 09:00 工作日 | Agent5 早盘选股 | `0 9 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
