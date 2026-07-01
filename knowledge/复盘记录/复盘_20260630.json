@@ -1,0 +1,138 @@
+{
+  "date": "2026-06-30",
+  "timestamp": "2026-06-30 23:38",
+  "inputs": {
+    "情报": false,
+    "分析": false,
+    "风控": false,
+    "选股": false,
+    "操盘": false
+  },
+  "predictions": {
+    "market_定性": "",
+    "env_score": null,
+    "bullish_sectors": [],
+    "bearish_sectors": [],
+    "signals": [],
+    "risk_warnings": []
+  },
+  "stock_picks": {
+    "stocks": [],
+    "verified": [],
+    "total": 0
+  },
+  "trade_plan": {
+    "buy": [],
+    "sell": [],
+    "hold": []
+  },
+  "leader": {
+    "sell_decisions": [],
+    "buy_decisions": [],
+    "hold_decisions": [],
+    "conflicts": [],
+    "quality_review": {}
+  },
+  "actual": {
+    "date": "20260630",
+    "indices": {
+      "上证指数": {
+        "close": 4094.3972,
+        "pct_chg": 0.5031
+      },
+      "深证成指": {
+        "close": 16205.5565,
+        "pct_chg": 2.4833
+      },
+      "创业板指": {
+        "close": 4342.7123,
+        "pct_chg": 2.9884
+      },
+      "科创50": {
+        "close": 2207.8648,
+        "pct_chg": 3.8501
+      }
+    },
+    "sector_performance": {},
+    "summary": "市场震荡",
+    "up_down": {
+      "up": 3054,
+      "down": 2364,
+      "total": 5508
+    }
+  },
+  "comparison": {
+    "date": "20260630",
+    "market_定性": {
+      "predicted": "",
+      "actual": "市场震荡",
+      "correct": null
+    },
+    "env_score": {
+      "predicted": null,
+      "actual": 60,
+      "偏差": null
+    },
+    "sector_accuracy": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 0,
+      "details": []
+    },
+    "大盘方向": {
+      "correct": 0,
+      "wrong": 0,
+      "details": [
+        {
+          "index": "上证指数",
+          "pct_chg": 0.5,
+          "direction": "涨"
+        },
+        {
+          "index": "深证成指",
+          "pct_chg": 2.48,
+          "direction": "涨"
+        },
+        {
+          "index": "创业板指",
+          "pct_chg": 2.99,
+          "direction": "涨"
+        },
+        {
+          "index": "科创50",
+          "pct_chg": 3.85,
+          "direction": "涨"
+        }
+      ]
+    }
+  },
+  "accuracy": {
+    "大盘方向": {
+      "correct": 0,
+      "total": 4,
+      "rate": 0.0
+    },
+    "板块预测": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 0,
+      "verified": 0,
+      "rate": 0,
+      "pending_review": 0,
+      "note": "所有板块预测已自动校验"
+    },
+    "选股准确率": {},
+    "综合准确率": 0.0
+  },
+  "偏差分析": [],
+  "策略建议": [
+    "准确率稳定，可尝试增加新的分析维度"
+  ],
+  "因子建议": [],
+  "errors": [],
+  "accuracy_trend": {
+    "total_days": 1,
+    "avg_accuracy": 0,
+    "trend": "暂无数据"
+  }
+}

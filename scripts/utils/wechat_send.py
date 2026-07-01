@@ -2,18 +2,22 @@
 微信报告发送工具
 
 功能：
-1. 将 Markdown 报告转换为 Word (.docx)
-2. 通过 cc-connect 发送文件到微信
-3. 支持批量发送今日所有报告
+1. 通过 PushPlus API 推送报告/通知到微信（主要通道）
+2. 将 Markdown 报告转换为 Word (.docx)
+3. 通过 cc-connect 发送文件到微信（备选通道）
+4. 支持批量发送今日所有报告
 
 用法：
-    python scripts/utils/wechat_send.py                           # 发送今日所有报告
+    python scripts/utils/wechat_send.py                           # 发送今日所有报告（PushPlus）
     python scripts/utils/wechat_send.py --report 情报             # 发送指定报告
-    python scripts/utils/wechat_send.py --report 决策 --only-text  # 仅发文本摘要
+    python scripts/utils/wechat_send.py --pushplus                # 强制走 PushPlus 通道
+    python scripts/utils/wechat_send.py --report 决策 --text       # 仅发文本摘要
+    python scripts/utils/wechat_send.py --watch                   # 监控模式（cc-connect）
     python scripts/utils/wechat_send.py --file xxx.docx           # 发送指定文件
 
 依赖：
     pip install python-docx  (如未安装)
+    PUSHPLUS_TOKEN 需在 settings.local.json 中配置
 """
 
 import os
@@ -21,6 +25,7 @@ import sys
 import glob
 import time
 import json
+import urllib.request
 import subprocess
 import tempfile
 from datetime import datetime
@@ -34,7 +39,11 @@ def p(path: str) -> str:
     return os.path.join(PROJECT_ROOT, path)
 
 
-# ─── cc-connect 路径 ────────────────────────────────────────────────
+# ─── PushPlus 配置 ──────────────────────────────────────────────────
+PUSHPLUS_API = "https://www.pushplus.plus/send"
+PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN", "")
+
+# ─── cc-connect 路径（备选通道） ────────────────────────────────────
 CC_CONNECT = os.path.join(
     os.environ.get("APPDATA", "C:/Users/65004/AppData/Roaming"),
     "npm/node_modules/cc-connect/bin/cc-connect.exe"
@@ -52,6 +61,130 @@ REPORT_CATEGORIES = {
     "周度复盘": ("复盘/周度复盘_{date}.md",      "📊 周度复盘"),
 }
 
+
+# ══════════════════════════════════════════════════════════════════════
+# PushPlus 推送通道
+# ══════════════════════════════════════════════════════════════════════
+
+def send_via_pushplus(title: str, content: str, template: str = "markdown") -> bool:
+    """
+    通过 PushPlus API 推送消息到微信
+
+    Args:
+        title: 消息标题
+        content: 消息内容（支持 markdown）
+        template: 模板格式（markdown/html/txt）
+
+    Returns:
+        bool: 是否发送成功
+    """
+    if not PUSHPLUS_TOKEN:
+        print("  ❌ PUSHPLUS_TOKEN 未配置")
+        print("  💡 请在 .claude/settings.local.json 中设置 env.PUSHPLUS_TOKEN")
+        return False
+
+    # PushPlus markdown 内容过长会被截断，限制长度
+    if template == "markdown" and len(content) > 30000:
+        content = content[:30000] + "\n\n... (内容过长已截断)"
+
+    data = json.dumps({
+        "token": PUSHPLUS_TOKEN,
+        "title": title,
+        "content": content,
+        "template": template,
+    }).encode("utf-8")
+
+    try:
+        req = urllib.request.Request(
+            PUSHPLUS_API,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+
+        if result.get("code") == 200:
+            print(f"  ✅ PushPlus 推送成功: {title}")
+            return True
+        else:
+            print(f"  ❌ PushPlus 推送失败: {result.get('msg', '未知错误')}")
+            return False
+    except urllib.error.URLError as e:
+        print(f"  ❌ PushPlus 网络错误: {e.reason}")
+        return False
+    except Exception as e:
+        print(f"  ❌ PushPlus 推送异常: {e}")
+        return False
+
+
+def send_report_via_pushplus(report_type: str, date_str: str = None) -> bool:
+    """
+    读取指定类型的报告，通过 PushPlus 发送到微信
+
+    Args:
+        report_type: 报告类型（情报/分析/风控/选股/操盘/决策/复盘/周度复盘）
+        date_str: 日期 YYYY-MM-DD
+
+    Returns:
+        bool: 是否发送成功
+    """
+    if date_str is None:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+
+    if report_type not in REPORT_CATEGORIES:
+        print(f"  ❌ 未知报告类型: {report_type}")
+        return False
+
+    md_rel, emoji_title = REPORT_CATEGORIES[report_type]
+    md_path = p(f"reports/日报/{md_rel.replace('{date}', date_str)}")
+
+    if not os.path.exists(md_path):
+        print(f"  ⚠️ 报告不存在: {md_path}")
+        return False
+
+    # 读取报告内容
+    with open(md_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    title = f"{emoji_title} — {date_str}"
+    return send_via_pushplus(title, content, template="markdown")
+
+
+def send_today_reports_via_pushplus(date_str: str = None) -> dict:
+    """
+    通过 PushPlus 发送今日所有报告到微信
+
+    Returns:
+        dict: {报告类型: 发送状态}
+    """
+    if date_str is None:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+
+    today_cn = datetime.now().strftime("%Y年%m月%d日")
+    print(f"\n📤 通过 PushPlus 发送 {today_cn} 报告...")
+
+    results = {}
+    md_root = p("reports/日报")
+
+    for report_type, (md_rel, emoji_title) in REPORT_CATEGORIES.items():
+        md_path = os.path.join(md_root, md_rel.replace("{date}", date_str))
+        if os.path.exists(md_path):
+            success = send_report_via_pushplus(report_type, date_str)
+            results[report_type] = "sent" if success else "failed"
+            time.sleep(1)  # 避免 API 限频
+        else:
+            results[report_type] = "not_found"
+
+    sent_count = sum(1 for v in results.values() if v == "sent")
+    print(f"\n  📊 结果：{sent_count}/{len(results)} 份报告已推送")
+
+    return results
+
+
+# ══════════════════════════════════════════════════════════════════════
+# cc-connect 通道（备选）
+# ══════════════════════════════════════════════════════════════════════
 
 def find_docx_by_report_type(report_type: str, date_str: str = None) -> str:
     """根据报告类型查找对应的 .docx 文件"""
@@ -218,7 +351,7 @@ def generate_report_summary(date_str: str = None) -> str:
     if not has_any:
         lines.append("\n⚠️ 今日暂无报告")
 
-    lines.append("\n💡 回复「发文件」即可接收Word格式报告")
+    lines.append("\n💡 报告已通过 PushPlus 推送")
 
     return "\n".join(lines)
 
@@ -382,28 +515,37 @@ def main():
     # 手动指定日期
     date_str = None
     prefer_text = False
+    use_pushplus = False
+    use_cc_connect = False
 
     for i, arg in enumerate(args):
         if arg == "--date" and i + 1 < len(args):
             date_str = args[i + 1]
         elif arg == "--only-text":
             prefer_text = True
+        elif arg == "--pushplus":
+            use_pushplus = True
+        elif arg == "--cc-connect":
+            use_cc_connect = True
         elif arg == "--watch":
-            # 监控模式：等用户发消息后自动发送
+            # 监控模式：等用户发消息后自动发送（cc-connect）
             watch_and_send(date_str)
             return
         elif arg == "--report" and i + 1 < len(args):
             # 发送指定报告类型
             report_type = args[i + 1]
-            docx_path = find_docx_by_report_type(report_type, date_str)
-            if docx_path:
-                msg = f"📄 {REPORT_CATEGORIES.get(report_type, ('', report_type))[1]}"
-                send_to_wechat(docx_path, message=msg)
+            if use_pushplus or PUSHPLUS_TOKEN:
+                send_report_via_pushplus(report_type, date_str)
             else:
-                print(f"⚠️ 未找到 {report_type} 报告")
+                docx_path = find_docx_by_report_type(report_type, date_str)
+                if docx_path:
+                    msg = f"📄 {REPORT_CATEGORIES.get(report_type, ('', report_type))[1]}"
+                    send_to_wechat(docx_path, message=msg)
+                else:
+                    print(f"⚠️ 未找到 {report_type} 报告")
             return
         elif arg == "--file" and i + 1 < len(args):
-            # 发送指定文件
+            # 发送指定文件（只能用 cc-connect）
             send_to_wechat(args[i + 1])
             return
         elif arg == "--summary":
@@ -411,8 +553,17 @@ def main():
             print(generate_report_summary(date_str))
             return
 
-    # 默认：发送今日所有报告
-    send_today_reports(date_str, prefer_text=prefer_text)
+    # 默认：走 PushPlus（如果已配置）
+    if use_pushplus or (PUSHPLUS_TOKEN and not use_cc_connect):
+        send_today_reports_via_pushplus(date_str)
+    elif use_cc_connect:
+        send_today_reports(date_str, prefer_text=prefer_text)
+    else:
+        # 自动选择：PushPlus 优先
+        if PUSHPLUS_TOKEN:
+            send_today_reports_via_pushplus(date_str)
+        else:
+            send_today_reports(date_str, prefer_text=prefer_text)
 
 
 if __name__ == "__main__":

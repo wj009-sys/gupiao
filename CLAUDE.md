@@ -9,11 +9,12 @@
 | 送达渠道 | 格式 | 机制 |
 |---------|------|------|
 | 📁 本地存储 | Markdown (.md) + Word (.docx) | Python脚本生成，`md_to_docx.py`自动转换 |
-| 💬 微信推送 | **Word (.docx)** 文件 | `cc-connect send --file` 通过 ilink API 发送文件到用户微信 |
-| 📱 微信文本摘要 | 纯文本（摘要） | 通过 cc-connect 文本通道发送简要汇总 |
+| 💬 微信推送（主通道） | **Markdown 原文** | `PushPlus API` → PushPlus 公众号推送到微信。`wechat_send.py` 默认通道 |
+| 📱 微信推送（备选） | Word (.docx) 文件 | `cc-connect send --file` 通过 ilink API，当 PushPlus 不可用时备用 |
 
-> **强制规则**：所有通过微信发送给用户的报告，必须使用 .docx Word 格式。
-> 使用 `python scripts/utils/wechat_send.py --report <类型>` 自动完成转换和发送。
+> **默认推送通道**：PushPlus API（已配置 `PUSHPLUS_TOKEN`）。
+> 使用 `python scripts/utils/wechat_send.py --report <类型>` 自动推送。
+> 如需强制走 cc-connect（ilink），加 `--cc-connect` 参数。
 > 如 context_token 过期，运行 `--watch` 模式等待用户消息后自动重试。
 
 ## Agent 团队
@@ -306,9 +307,20 @@ skills/            - 自定义 Skills
 
 ---
 
-## 🚀 cc-connect 微信个人号消息桥接
+## 📱 PushPlus 微信推送（主通知通道）
 
-项目使用 [cc-connect](https://github.com/chenhg5/cc-connect) 对接微信个人号（ilink），实现手机微信 → Claude Code 的双向对话。
+使用 [PushPlus](https://www.pushplus.plus/) API 推送报告和通知到微信个人号（通过 PushPlus 公众号）。
+
+- **Token** 已配置在 `.claude/settings.local.json` 的 `env.PUSHPLUS_TOKEN`
+- **发送脚本**：`python scripts/utils/wechat_send.py` （默认走 PushPlus）
+- **推送内容**：Markdown 格式报告原文
+- **速率限制**：免费版约 5条/分钟，大报告间隔 3-5秒
+
+> `wechat_send.py` 自动检测 PUSHPLUS_TOKEN，有则走 PushPlus，无则走 cc-connect（ilink）。
+
+## 🚀 cc-connect 微信个人号消息桥接（备选通道）
+
+项目使用 [cc-connect](https://github.com/chenhg5/cc-connect) 对接微信个人号（ilink），实现手机微信 → Claude Code 的双向对话。**注意：cc-connect 目前已无法稳定连接 ilink（gateway error），改用 PushPlus 作为主推送通道。**
 
 ### 架构
 
