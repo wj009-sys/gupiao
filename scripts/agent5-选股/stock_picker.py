@@ -1164,10 +1164,238 @@ def evening_picks(top_n: int, config: dict, today: str) -> dict:
 
 
 # ============================================================
+#  模式5: 全量扫描 (deep_scan) — 从全市场选股
+# ============================================================
+
+def get_stock_universe_from_db(today: str, max_candidates: int = 200) -> list:
+    """
+    从数据库批量获取全量股票候选池
+
+    策略：
+    1. 获取所有正常上市的股票（排除ST/退市）
+    2. 通过SQL批量获取今日PE/换手率/涨跌幅
+    3. 预筛选：PE合理、有成交、有财务数据
+    4. 按换手率×|涨跌幅|排序取前max_candidates
+
+    Returns:
+        [{"ts_code": "000001.SZ", "name": "平安银行", ...}, ...]
+    """
+    global _db
+    if not _db or not _db.conn:
+        print("  [WARN] 数据库不可用，无法全量扫描")
+        return []
+
+    try:
+        import pandas as pd
+
+        # Step 1: 获取所有正常上市股票 + 排除ST/退市
+        sql_base = """
+            SELECT s.ts_code, s.name, s.industry, s.market,
+                   COALESCE(d.pe_ttm, d.pe) as pe,
+                   d.turnover_rate, d.total_mv, d.circ_mv,
+                   p.pct_chg, p.amount, p.vol
+            FROM stock_basic s
+            JOIN daily_price p ON s.ts_code = p.ts_code AND p.trade_date = ?
+            LEFT JOIN daily_basic d ON s.ts_code = d.ts_code AND d.trade_date = ?
+            WHERE s.list_status = 'L'
+              AND (s.name NOT LIKE '%ST%' AND s.name NOT LIKE '%退市%')
+              AND p.pct_chg IS NOT NULL
+        """
+        df = pd.read_sql_query(sql_base, _db.conn, params=[today, today])
+
+        if df.empty:
+            print("  [WARN] 全量扫描无候选股票")
+            return []
+
+        print(f"  [OK] 全量基础数据: {len(df)} 只")
+
+        # Step 2: 过滤无PE/无交易量的股票（打新债、ETF等）
+        df = df[df['pe'].notna() & (df['pe'] > 0) & (df['pe'] < 200)].copy()
+        print(f"  [OK] PE合理过滤后: {len(df)} 只")
+
+        # Step 3: 过滤无成交金额的
+        df = df[df['amount'].notna() & (df['amount'] > 0)].copy()
+
+        # Step 4: 过滤换手率极低的僵尸股
+        df = df[df['turnover_rate'].notna() & (df['turnover_rate'] > 0.3)].copy()
+        print(f"  [OK] 换手率>0.3%过滤后: {len(df)} 只")
+
+        # Step 5: 综合排序因子 = 换手率 * (1 + |涨跌幅|/10)
+        df['score_heuristic'] = df['turnover_rate'] * (1 + df['pct_chg'].abs() / 10)
+        df = df.sort_values('score_heuristic', ascending=False).head(max_candidates)
+
+        candidates = df.to_dict('records')
+        print(f"  [OK] 综合排序取前{len(candidates)}只进行多因子评分")
+
+        return candidates
+
+    except Exception as e:
+        print(f"  [FAIL] 全量扫描失败: {e}")
+        return []
+
+
+def deep_scan_picks(top_n: int, config: dict, today: str) -> dict:
+    """全量扫描选股 — 从全市场筛选"""
+    ok, warn, fail = "[OK]", "[WARN]", "[FAIL]"
+    print(f"[选股机器人] 模式=全量扫描 deep_scan top_n={top_n}...")
+
+    result = {
+        "mode": "deep_scan",
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "parameters": {"top_n": top_n},
+        "scan_summary": {},
+        "ranked_stocks": [],
+        "st_filtered": [],
+        "suspended_stocks": [],
+        "sector_concentration": {},
+        "review_deviation_notes": [],
+        "warnings": [],
+        "errors": [],
+    }
+
+    # 1. 从数据库获取全量候选
+    db_candidates = get_stock_universe_from_db(today, max_candidates=200)
+    result["scan_summary"]["total_candidates"] = len(db_candidates)
+
+    if not db_candidates:
+        result["errors"].append("全量扫描无候选，回退到晚间模式")
+        print(f"  {fail} 候选为空，请检查数据库")
+        return result
+
+    # 2. 排除已持仓
+    portfolio = config.get("portfolio", {})
+    holdings = portfolio.get("持仓列表", [])
+    held_codes = {h.get("代码", "").split(".")[0] for h in holdings}
+    held_codes_full = set()
+    for h in holdings:
+        c = h.get("代码", "")
+        if c:
+            held_codes_full.add(c if "." in c else c)
+            held_codes_full.add(c.split(".")[0] if "." in c else c)
+
+    filtered = [c for c in db_candidates if c.get("ts_code", "").split(".")[0] not in held_codes]
+    excluded_count = len(db_candidates) - len(filtered)
+    if excluded_count:
+        print(f"  {warn} 排除 {excluded_count} 只已持仓股票")
+    result["scan_summary"]["held_excluded"] = excluded_count
+
+    # 3. 停牌检查（批量：检查是否有today的行情数据）
+    #    get_stock_universe_from_db 已经通过 daily_price JOIN 保证了有行情
+    #    但有些可能今日停牌昨日有数据，再确认一下
+    suspended = []
+    active = []
+    for c in filtered:
+        if is_suspended(c["ts_code"], today):
+            suspended.append(c["ts_code"])
+        else:
+            active.append(c)
+
+    result["suspended_stocks"] = suspended
+    result["scan_summary"]["suspended"] = len(suspended)
+
+    if suspended:
+        print(f"  {warn} 停牌 {len(suspended)} 只，跳过")
+
+    if not active:
+        result["errors"].append("无可用候选")
+        return result
+
+    # 4. 多因子评分（晚间权重）
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
+    weights = config.get("rules", {}).get("因子权重", {
+        "估值": 25, "成长": 20, "动量": 20, "情绪": 15, "技术面": 20,
+    })
+
+    scored = []
+    total = len(active)
+    for idx, c in enumerate(active):
+        ts_code = c["ts_code"]
+        if idx % 50 == 0:
+            print(f"  [进度] 评分 {idx}/{total}...")
+
+        try:
+            valuation = score_valuation(ts_code, yesterday)
+            growth = score_growth(ts_code, yesterday)
+            momentum = score_momentum(ts_code)
+            technical = score_technical(ts_code)
+            sentiment = score_sentiment(ts_code, yesterday)
+
+            factor_scores = {"估值": valuation["score"], "成长": growth["score"],
+                             "动量": momentum["score"], "技术面": technical["score"],
+                             "情绪": sentiment["score"]}
+            strong_factors = sum(1 for v in factor_scores.values() if v >= 60)
+
+            total_score = (valuation["score"] * weights.get("估值", 25)
+                          + growth["score"] * weights.get("成长", 20)
+                          + momentum["score"] * weights.get("动量", 20)
+                          + technical["score"] * weights.get("技术面", 20)
+                          + sentiment["score"] * weights.get("情绪", 15)) / 100
+
+            scored.append({
+                "ts_code": ts_code,
+                "name": c.get("name", ""),
+                "total_score": round(total_score, 1),
+                "strong_factors": strong_factors,
+                "factors": factor_scores,
+                "factor_details": {"估值": valuation["details"], "成长": growth["details"],
+                                   "动量": momentum["details"], "技术面": technical["details"],
+                                   "情绪": sentiment["details"]},
+            })
+        except Exception as e:
+            result["errors"].append(f"{ts_code} 评分异常: {e}")
+
+    # 5. 排序取Top N
+    scored.sort(key=lambda x: x["total_score"], reverse=True)
+    top_stocks = scored[:top_n]
+    result["ranked_stocks"] = top_stocks
+    result["scan_summary"]["total_scored"] = len(scored)
+
+    # 6. 行业集中度检查
+    sector_counts = {}
+    for s in scored:
+        prefix = s["ts_code"][:3]
+        sector_counts[prefix] = sector_counts.get(prefix, 0) + 1
+    total_s = max(len(scored), 1)
+    for prefix, count in sector_counts.items():
+        pct = round(count / total_s * 100, 1)
+        result["sector_concentration"][f"{prefix}xxx"] = {"count": count, "pct": pct, "over_limit": pct > 40}
+    if any(c["over_limit"] for c in result["sector_concentration"].values()):
+        result["warnings"].append("行业集中度超40%限制")
+        print(f"  {warn} 行业集中度超40%")
+
+    # 7. 止损位
+    for s in top_stocks:
+        try:
+            df = pro.daily(ts_code=s["ts_code"])
+            if df is not None and not df.empty and len(df) >= 20:
+                df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
+                close = df.iloc[0]["close"]
+                s["suggested_stop_loss"] = round(float(close) * 0.93, 2)
+                s["current_price"] = round(float(close), 2)
+            else:
+                s["suggested_stop_loss"] = None
+                s["current_price"] = None
+        except Exception:
+            s["suggested_stop_loss"] = None
+            s["current_price"] = None
+
+    # 8. 打印结果
+    print(f"\n  {'='*50}")
+    print(f"  全量扫描选股 Top {top_n}")
+    print(f"  {'='*50}")
+    for i, s in enumerate(top_stocks, 1):
+        name_str = f" ({s.get('name', '')})" if s.get('name') else ""
+        print(f"  {i}. {s['ts_code']}{name_str} — {s['total_score']}分 (强因子:{s.get('strong_factors', 0)}/5)")
+        print(f"     估值:{s['factors']['估值']} 成长:{s['factors']['成长']} 动量:{s['factors']['动量']} 技术:{s['factors']['技术面']} 情绪:{s['factors']['情绪']}")
+
+    return result
+
+
+# ============================================================
 #  主入口
 # ============================================================
 
-def generate_stock_picks(top_n: int = 5, mode: str = "evening") -> dict:
+def generate_stock_picks(top_n: int = 5, mode: str = "evening", deep_scan: bool = False) -> dict:
     """主函数：按模式分发选股"""
     root = os.path.join(os.path.dirname(__file__), "..", "..")
     config = load_config(root)
@@ -1180,30 +1408,38 @@ def generate_stock_picks(top_n: int = 5, mode: str = "evening") -> dict:
         "evening": evening_picks,
     }
 
-    func = mode_map.get(mode, evening_picks)
+    if deep_scan:
+        func = deep_scan_picks
+    else:
+        func = mode_map.get(mode, evening_picks)
+
     result = func(top_n, config, today)
 
     # 统一标记
     result["mode"] = mode
+    if deep_scan:
+        result["mode"] = "deep_scan"
     return result
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="多因子选股 (4种模式)")
+    parser = argparse.ArgumentParser(description="多因子选股 (4种模式 + 全量扫描)")
     parser.add_argument("--top-n", type=int, default=5, help="输出候选数量")
     parser.add_argument("--force-refresh", action="store_true", help="强制刷新数据")
     parser.add_argument("--mode", type=str, default="evening",
                         choices=["pre_market", "intraday", "noon", "evening"],
                         help="选股模式: pre_market(早盘)/intraday(盘中)/noon(午盘)/evening(晚间)")
+    parser.add_argument("--deep-scan", action="store_true", default=False,
+                        help="全量扫描模式：从全市场选股（默认false，仅热点板块）")
     args = parser.parse_args()
 
     print(f"\n{'='*50}")
-    print(f"  选股机器人 — 模式: {args.mode}")
+    print(f"  选股机器人 — 模式: {args.mode}{'(全量扫描)' if args.deep_scan else ''}")
     print(f"{'='*50}\n")
 
-    report = generate_stock_picks(args.top_n, args.mode)
+    report = generate_stock_picks(args.top_n, args.mode, deep_scan=args.deep_scan)
 
     print("\n=== RESULT_JSON ===")
     print(json.dumps(report, ensure_ascii=False, indent=2, default=str))

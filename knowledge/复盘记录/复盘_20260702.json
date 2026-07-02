@@ -1,0 +1,439 @@
+{
+  "date": "2026-07-02",
+  "timestamp": "2026-07-02 21:38",
+  "inputs": {
+    "情报": true,
+    "分析": true,
+    "风控": true,
+    "选股": true,
+    "操盘": true,
+    "决策": true
+  },
+  "predictions": {
+    "market_定性": "核心判断",
+    "env_score": 52,
+    "bullish_sectors": [],
+    "bearish_sectors": [],
+    "signals": [
+      "| 上证指数 | 4028.90 | -2.03% | 死叉看空 | 19.9 | 44.5 | ❌ | ❌ | ❌ |",
+      "| 深证成指 | 15498.81 | -3.85% | 死叉看空 | 4.9 | 47.4 | ❌ | ❌ | ✅ |",
+      "| 创业板指 | 4017.27 | -5.71% | 死叉看空 | 4.6 | 47.2 | ❌ | ❌ | ✅ |",
+      "| 科创50 | 1987.29 | -7.70% | 多头趋势 | 28.7 | 56.7 | ❌ | ✅ | ✅ |",
+      "- **上证** 跌破MA5/MA20/MA60全部均线，进入空头排列",
+      "- **科创50** 唯一维持多头趋势（MACD>0, MA20<MA60）"
+    ],
+    "risk_warnings": []
+  },
+  "stock_picks": {
+    "stocks": [
+      {
+        "name": "易实精密",
+        "code": "920221.BJ",
+        "score": 77,
+        "actual_close": 16.62,
+        "actual_pct": 29.95,
+        "verdict": "correct"
+      },
+      {
+        "name": "峆一药业",
+        "code": "920478.BJ",
+        "score": 73,
+        "actual_close": 10.7,
+        "actual_pct": 2.39,
+        "verdict": "correct"
+      },
+      {
+        "name": "乔锋智能",
+        "code": "301603.SZ",
+        "score": 72,
+        "actual_close": 144.73,
+        "actual_pct": 4.23,
+        "verdict": "correct"
+      },
+      {
+        "name": "杭华股份",
+        "code": "688571.SH",
+        "score": 70,
+        "actual_close": 11.06,
+        "actual_pct": 5.33,
+        "verdict": "correct"
+      },
+      {
+        "name": "锦华新材",
+        "code": "920015.BJ",
+        "score": 68,
+        "actual_close": 57.8,
+        "actual_pct": 8.54,
+        "verdict": "correct"
+      }
+    ],
+    "verified": [
+      {
+        "name": "易实精密",
+        "code": "920221.BJ",
+        "score": 77,
+        "actual_close": 16.62,
+        "actual_pct": 29.95,
+        "verdict": "correct"
+      },
+      {
+        "name": "峆一药业",
+        "code": "920478.BJ",
+        "score": 73,
+        "actual_close": 10.7,
+        "actual_pct": 2.39,
+        "verdict": "correct"
+      },
+      {
+        "name": "乔锋智能",
+        "code": "301603.SZ",
+        "score": 72,
+        "actual_close": 144.73,
+        "actual_pct": 4.23,
+        "verdict": "correct"
+      },
+      {
+        "name": "杭华股份",
+        "code": "688571.SH",
+        "score": 70,
+        "actual_close": 11.06,
+        "actual_pct": 5.33,
+        "verdict": "correct"
+      },
+      {
+        "name": "锦华新材",
+        "code": "920015.BJ",
+        "score": 68,
+        "actual_close": 57.8,
+        "actual_pct": 8.54,
+        "verdict": "correct"
+      }
+    ],
+    "total": 5,
+    "vetoed": []
+  },
+  "trade_plan": {
+    "buy": [],
+    "sell": [
+      {
+        "code": "518880.SH",
+        "priority": "中",
+        "pnl_pct": "-8.0%"
+      },
+      {
+        "code": "600970.SH",
+        "priority": "中",
+        "pnl_pct": "-18.3%"
+      },
+      {
+        "code": "002930.SZ",
+        "priority": "中",
+        "pnl_pct": "-16.7%"
+      },
+      {
+        "code": "002352.SZ",
+        "priority": "中",
+        "pnl_pct": "-29.3%"
+      },
+      {
+        "code": "603072.SH",
+        "priority": "中",
+        "pnl_pct": "-27.9%"
+      },
+      {
+        "code": "603799.SH",
+        "priority": "中",
+        "pnl_pct": "+34.7%"
+      },
+      {
+        "code": "600930.SH",
+        "priority": "中",
+        "pnl_pct": "+54.6%"
+      },
+      {
+        "code": "600111.SH",
+        "priority": "中",
+        "pnl_pct": ""
+      }
+    ],
+    "hold": [
+      {
+        "code": "600388.SH"
+      },
+      {
+        "code": "510300.SH"
+      },
+      {
+        "code": "588050.SH"
+      },
+      {
+        "code": "159915.SZ"
+      }
+    ]
+  },
+  "leader": {
+    "sell_decisions": [
+      {
+        "code": "518880",
+        "name": "",
+        "reason": "卖出",
+        "pnl": "-8.0%"
+      },
+      {
+        "code": "600970",
+        "name": "",
+        "reason": "止损",
+        "pnl": "-18.3%"
+      },
+      {
+        "code": "002930",
+        "name": "",
+        "reason": "止损",
+        "pnl": "-16.7%"
+      },
+      {
+        "code": "002352",
+        "name": "",
+        "reason": "止损",
+        "pnl": "-29.3%"
+      },
+      {
+        "code": "603072",
+        "name": "",
+        "reason": "止损",
+        "pnl": "-27.9%"
+      },
+      {
+        "code": "600388",
+        "name": "",
+        "reason": "减仓",
+        "pnl": "36%"
+      },
+      {
+        "code": "603799",
+        "name": "",
+        "reason": "止盈",
+        "pnl": "+34.7%"
+      },
+      {
+        "code": "600930",
+        "name": "",
+        "reason": "止盈",
+        "pnl": "+54.6%"
+      },
+      {
+        "code": "600111",
+        "name": "",
+        "reason": "止盈",
+        "pnl": ""
+      }
+    ],
+    "buy_decisions": [],
+    "hold_decisions": [
+      {
+        "name": "510300.SH"
+      },
+      {
+        "name": "159915.SZ"
+      },
+      {
+        "name": "588050.SH"
+      }
+    ],
+    "conflicts": [
+      {
+        "type": "无分歧",
+        "detail": "**风控官 vs 操盘手：无分歧** ✅"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 中材国际(600970) | 🔴 一致止损 | -18.3%(停牌待复牌) |"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 宏川智慧(002930) | 🔴 一致止损 | -16.7%(停牌待复牌) |"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 顺丰控股(002352) | 🔴 一致止损 | -29.3%(停牌待复牌) |"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 天和磁材(603072) | 🔴 一致止损 | -27.9%(停牌待复牌) |"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 黄金ETF华安(518880) | 🔴 一致止损 | -8.0%→市价卖出 |"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 华友钴业(603799) | 🟡 一致止盈 | +34.7%→分批1/3 |"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 华电新能(600930) | 🟡 一致止盈 | +54.6%→分批1/3(停牌) |"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 北方稀土(600111) | 🟡 一致止盈 | 核实成本后执行 |"
+      }
+    ],
+    "rework_items": [],
+    "quality_review": {
+      "passed": 4,
+      "needs_work": 1,
+      "rejected": 0
+    }
+  },
+  "actual": {
+    "date": "20260702",
+    "indices": {
+      "上证指数": {
+        "close": 4028.9038,
+        "pct_chg": -2.0314
+      },
+      "深证成指": {
+        "close": 15498.8101,
+        "pct_chg": -3.8486
+      },
+      "创业板指": {
+        "close": 4017.2735,
+        "pct_chg": -5.7138
+      },
+      "科创50": {
+        "close": 1987.291,
+        "pct_chg": -7.6985
+      }
+    },
+    "sector_performance": {},
+    "summary": "市场震荡",
+    "up_down": {
+      "up": 2219,
+      "down": 3162,
+      "total": 5517
+    }
+  },
+  "comparison": {
+    "date": "20260702",
+    "market_定性": {
+      "predicted": "核心判断",
+      "actual": "市场震荡",
+      "correct": null
+    },
+    "env_score": {
+      "predicted": 52,
+      "actual": 60,
+      "偏差": 8,
+      "note": "预测为中期趋势评分，实际为单日情绪评分，两者维度不同"
+    },
+    "sector_accuracy": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 0,
+      "details": []
+    },
+    "大盘方向": {
+      "correct": 0,
+      "wrong": 0,
+      "details": [
+        {
+          "index": "上证指数",
+          "pct_chg": -2.03,
+          "direction": "跌"
+        },
+        {
+          "index": "深证成指",
+          "pct_chg": -3.85,
+          "direction": "跌"
+        },
+        {
+          "index": "创业板指",
+          "pct_chg": -5.71,
+          "direction": "跌"
+        },
+        {
+          "index": "科创50",
+          "pct_chg": -7.7,
+          "direction": "跌"
+        }
+      ]
+    }
+  },
+  "accuracy": {
+    "大盘方向": {
+      "correct": 0,
+      "total": 4,
+      "rate": 0.0
+    },
+    "板块预测": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 0,
+      "verified": 0,
+      "rate": 0,
+      "pending_review": 0,
+      "note": "所有板块预测已自动校验"
+    },
+    "选股准确率": {
+      "correct": 5,
+      "wrong": 0,
+      "total": 5,
+      "rate": 100.0
+    },
+    "综合准确率": 0.0
+  },
+  "偏差分析": [],
+  "策略建议": [
+    "准确率稳定，可尝试增加新的分析维度"
+  ],
+  "因子建议": [
+    "估值因子准确率0.0%（0/5），建议下调权重",
+    "成长因子准确率0.0%（0/5），建议下调权重",
+    "动量因子准确率80.0%（4/5），表现良好可维持权重",
+    "技术面因子准确率100.0%（5/5），表现良好可维持权重",
+    "情绪因子准确率0.0%（0/5），建议下调权重"
+  ],
+  "errors": [],
+  "因子表现": {
+    "估值": {
+      "correct": 0,
+      "wrong": 5,
+      "total": 5,
+      "avg_score": 66.0,
+      "accuracy": 0.0
+    },
+    "成长": {
+      "correct": 0,
+      "wrong": 5,
+      "total": 5,
+      "avg_score": 68.0,
+      "accuracy": 0.0
+    },
+    "动量": {
+      "correct": 4,
+      "wrong": 1,
+      "total": 5,
+      "avg_score": 76.0,
+      "accuracy": 80.0
+    },
+    "技术面": {
+      "correct": 5,
+      "wrong": 0,
+      "total": 5,
+      "avg_score": 92.0,
+      "accuracy": 100.0
+    },
+    "情绪": {
+      "correct": 0,
+      "wrong": 5,
+      "total": 5,
+      "avg_score": 59.0,
+      "accuracy": 0.0
+    }
+  },
+  "accuracy_trend": {
+    "total_days": 3,
+    "avg_accuracy": 0,
+    "trend": "暂无数据"
+  }
+}

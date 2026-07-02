@@ -71,18 +71,28 @@ def load_report(path: str) -> str:
 def check_agent_status(report_dir: str, today_str: str) -> dict:
     """检查各Agent今日执行状态"""
     agents = {
-        "情报员": {"dir": "情报", "prefix": "情报摘要"},
-        "分析师": {"dir": "分析", "prefix": "分析报告"},
-        "选股机器人": {"dir": "选股", "prefix": "选股建议"},
-        "风控官": {"dir": "风控", "prefix": "风控报告"},
-        "操盘手": {"dir": "操盘", "prefix": "交易计划"},
-        "复盘师": {"dir": "复盘", "prefix": "复盘报告"},
+        "情报员": {"dir": "情报", "prefix": "情报摘要", "raw_prefix": "情报原始数据"},
+        "分析师": {"dir": "分析", "prefix": "分析报告", "raw_prefix": "分析原始数据"},
+        "选股机器人": {"dir": "选股", "prefix": "选股建议", "raw_prefix": "选股原始数据"},
+        "风控官": {"dir": "风控", "prefix": "风控报告", "raw_prefix": "风控报告"},
+        "操盘手": {"dir": "操盘", "prefix": "交易计划", "raw_prefix": "交易原始数据"},
+        "复盘师": {"dir": "复盘", "prefix": "复盘报告", "raw_prefix": "复盘报告"},
     }
+
+    raw_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    today_raw = today_str.replace("-", "")
 
     status = {}
     for name, info in agents.items():
         path = os.path.join(report_dir, info["dir"], f"{info['prefix']}_{today_str}.md")
         exists = os.path.exists(path)
+        if not exists:
+            # 回退到 data/raw/ 目录查找 JSON 原始数据
+            raw_pattern = os.path.join(raw_dir, f"{info['raw_prefix']}_{today_raw}*.json")
+            raw_files = sorted(glob.glob(raw_pattern), reverse=True)
+            if raw_files:
+                exists = True
+                path = raw_files[0]
         status[name] = {
             "executed": exists,
             "report_path": path if exists else None,
@@ -498,13 +508,14 @@ def make_decision() -> dict:
     print(f"  {ok} 团队就绪度: {readiness['readiness_pct']}% ({readiness['level']})")
 
     # 3. 读取报告内容
-    report_names = ["情报员", "分析师", "选股机器人", "风控官", "操盘手"]
+    report_names = ["情报员", "分析师", "选股机器人", "风控官", "操盘手", "复盘师"]
     report_map = {
         "情报员": ("情报", "情报摘要"),
         "分析师": ("分析", "分析报告"),
         "选股机器人": ("选股", "选股建议"),
         "风控官": ("风控", "风控报告"),
         "操盘手": ("操盘", "交易计划"),
+        "复盘师": ("复盘", "复盘报告"),
     }
     report_contents = {}
     for name in report_names:

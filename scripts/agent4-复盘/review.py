@@ -60,16 +60,37 @@ def p(path: str) -> str:
 
 
 def read_report(path: str) -> str:
-    """读取报告文件"""
+    """读取报告文件，支持回退到 data/raw/ 目录查找原始JSON"""
     full_path = p(path)
-    if not os.path.exists(full_path):
-        return ""
-    with open(full_path, "r", encoding="utf-8") as f:
-        return f.read()
+    if os.path.exists(full_path):
+        with open(full_path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    # 回退到 data/raw/ 目录查找 JSON 原始数据
+    raw_dir = p("data/raw")
+    basename = os.path.splitext(os.path.basename(path))[0]
+    # 提取日期（YYYY-MM-DD → YYYYMMDD）
+    date_match = re.search(r"(\d{4})-(\d{2})-(\d{2})", basename)
+    if date_match:
+        date_raw = date_match.group(1) + date_match.group(2) + date_match.group(3)
+    else:
+        date_raw = ""
+    # 提取前缀（去掉日期部分）
+    prefix = basename.replace(f"_{date_match.group(0)}", "") if date_match else basename
+    # 匹配 data/raw/{prefix}_{date_raw}*.json
+    if date_raw:
+        pattern = os.path.join(raw_dir, f"{prefix}_{date_raw}*.json")
+        files = sorted(glob.glob(pattern), reverse=True)
+        if files:
+            with open(files[0], "r", encoding="utf-8") as f:
+                data = json.load(f)
+                # JSON转为可读文本摘要
+                return json.dumps(data, ensure_ascii=False, indent=2)
+    return ""
 
 
 def extract_predictions(analysis_text: str) -> dict:
-    """从分析报告中提取预测/判断"""
+    """从分析报告中提取预测/判断（支持标准Markdown + 灵活匹配）"""
     preds = {
         "market_定性": "",
         "env_score": None,
@@ -82,59 +103,48 @@ def extract_predictions(analysis_text: str) -> dict:
     if not analysis_text:
         return preds
 
-    # 提取大盘定性
     for line in analysis_text.split("\n"):
-        if "定性" in line:
-            preds["market_定性"] = line.strip()
-        if "环境评分" in line:
-            m = re.search(r"(\d+)/100", line)
+        stripped = line.strip()
+        # 大盘定性 / 核心判断
+        if any(kw in stripped for kw in ["定性", "核心判断", "大盘判断"]):
+            # 去掉Markdown标记，提取冒号后的内容
+            text = re.sub(r'[*#]', '', stripped).strip()
+            preds["market_定性"] = text.split("：")[-1].split(":")[-1].strip() if "：" in text or ":" in text else text
+
+        # 环境评分：支持 "52.0" "52/100" "**52.0**"
+        if "环境评分" in stripped:
+            # 匹配 **52.0** 或 52.0 或 52/100
+            m = re.search(r'\*{0,2}(\d+\.?\d*)\*{0,2}(?:/100)?', stripped)
             if m:
-                preds["env_score"] = int(m.group(1))
+                preds["env_score"] = int(float(m.group(1)))
 
-    # 提取看涨板块（🔥 领涨板块 / ✅ 强烈信号）
-    in_sector_section = False
-    for line in analysis_text.split("\n"):
-        # 领涨板块下面的表格行
-        if "| 1 " in line and "板块" in line:
-            parts = [p.strip() for p in line.split("|")]
+        # 看涨/强势板块（表格行或列表）
+        if re.match(r'^\|\s*\d+\s*\|', stripped):
+            parts = [p.strip() for p in stripped.split('|') if p.strip()]
             if len(parts) >= 3:
-                sector = parts[2].strip()
-                if sector and sector not in preds["bullish_sectors"]:
-                    preds["bullish_sectors"].append(sector)
+                # 取第2列作为板块名（排除排名列）
+                candidate = re.sub(r'[*#^]', '', parts[1]).strip()
+                # 排除噪声词
+                skip_words = ["板块", "指数", "收盘", "涨跌", "MACD", "MA5", "MA20", "MA60", "评分", "---------"]
+                if candidate and len(candidate) <= 12 and not any(s in candidate for s in skip_words):
+                    if candidate not in preds["bullish_sectors"]:
+                        preds["bullish_sectors"].append(candidate)
 
-        # 强烈信号
-        if "强烈信号" in line:
-            in_sector_section = True
-        if in_sector_section and "|" in line and "**" in line:
-            parts = [p.strip() for p in line.split("|")]
-            if len(parts) >= 3:
-                sector = parts[2].strip().strip("**")
-                if sector and sector not in preds["bullish_sectors"]:
-                    preds["bullish_sectors"].append(sector)
-        if in_sector_section and "关注信号" in line:
-            in_sector_section = False
+        # 领跌/看跌板块
+        if "领跌" in stripped or "回避" in stripped.lower():
+            parts = [p.strip() for p in stripped.split('|') if p.strip()]
+            for p in parts:
+                p_clean = re.sub(r'[*#^]', '', p).strip()
+                if p_clean and len(p_clean) <= 12 and "板块" not in p_clean:
+                    if p_clean not in preds["bearish_sectors"] and p_clean not in ["1", "2", "3", "4", "5"]:
+                        try:
+                            float(p_clean)
+                        except ValueError:
+                            preds["bearish_sectors"].append(p_clean)
 
-        # 看跌板块 / 风险提示
-        if "回避" in line.lower():
-            preds["bearish_sectors"].append(line.strip())
-
-    # 领跌板块（表格行，排除表头和噪声）
-    in_loser = False
-    for line in analysis_text.split("\n"):
-        if "领跌板块" in line and "###" in line:
-            in_loser = True
-            continue
-        if in_loser and line.strip().startswith("|") and "---" not in line:
-            parts = [p.strip() for p in line.split("|")]
-            if len(parts) >= 3:
-                sector = parts[2].strip()
-                # 排除表头、个股名称、噪声
-                skip_words = ["板块", "涨幅", "跌幅", "排名", "---------", "联讯", "宁德", "立讯", "新华"]
-                if sector and not any(s in sector for s in skip_words):
-                    if sector not in preds["bearish_sectors"]:
-                        preds["bearish_sectors"].append(sector)
-        if in_loser and ("异动板块" in line or "###" in line) and "领跌" not in line:
-            break
+        # 信号
+        if any(kw in stripped for kw in ["死叉", "金叉", "多头", "空头", "强烈信号", "关注信号"]):
+            preds["signals"].append(stripped[:80])
 
     return preds
 
@@ -212,7 +222,13 @@ def load_stock_picker_factors(trade_date: str) -> dict:
         try:
             with open(fp, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            stocks = data.get("stock_picks", {}).get("stocks", [])
+            # 支持多种格式:
+            #   旧格式: data["stock_picks"]["stocks"]
+            #   旧格式: data["top_stocks"]
+            #   deep_scan格式: data["ranked_stocks"]
+            stocks = data.get("ranked_stocks", [])
+            if not stocks:
+                stocks = data.get("stock_picks", {}).get("stocks", [])
             if not stocks:
                 stocks = data.get("top_stocks", [])
             for s in stocks:
@@ -397,25 +413,100 @@ def extract_stock_picks(pick_text: str) -> dict:
     if not pick_text:
         return picks
 
-    # 匹配股票代码 + 评分模式
-    stock_patterns = [
-        r'\*\*(\w+)\((\d{6}\.(?:SZ|SH))\)\*\*.*?[：:]\s*(\d+)分',
-        r'(\w+)\((\d{6}\.(?:SZ|SH))\).*?(\d+)分',
-    ]
-    for pattern in stock_patterns:
-        for m in re.finditer(pattern, pick_text, re.DOTALL):
-            picks["stocks"].append({
-                "name": m.group(1).strip(),
-                "code": m.group(2),
-                "score": int(m.group(3)),
-            })
-            picks["total"] += 1
+    # 支持 SZ, SH, BJ 三个市场
+    code_pattern = r'(\d{6}\.(?:SZ|SH|BJ))'
+    score_pattern = r'(\d+\.?\d*)\s*(?:分|(?:\|))'
+
+    # 方式1: 表格解析 — 匹配 "*| 代码 | 名称 | 市场 | **评分** |*"
+    # 例如: | 🥇 | 920221.BJ | **易实精密** | 北交所 | **77.5** | ⭐⭐⭐⭐⭐ |
+    in_table = False
+    table_started = False
+    for line in pick_text.split('\n'):
+        stripped = line.strip()
+        if '| 排名 | 代码 |' in stripped or 'Top 5' in stripped:
+            in_table = True
+            continue
+        if in_table and stripped.startswith('|') and '---' in stripped:
+            table_started = True
+            continue
+        if in_table and table_started and stripped.startswith('|'):
+            code_match = re.search(code_pattern, stripped)
+            score_match = re.search(r'\*\*(\d+\.?\d*)\*\*', stripped)
+            name_match = re.search(r'\*\*(.*?)\*\*', stripped)
+            if code_match and score_match:
+                name = name_match.group(1) if name_match else ""
+                # 避免把评分当名字
+                try:
+                    float(name)
+                    name = ""
+                except ValueError:
+                    pass
+                # 也检查 | 名称列 | 不是代码
+                parts = [p.strip().strip('*') for p in stripped.split('|') if p.strip()]
+                for part in parts:
+                    if re.match(r'^[一-鿿\w]{2,8}$', part) and not re.search(r'\d', part):
+                        name = part
+                        break
+                picks["stocks"].append({
+                    "name": name,
+                    "code": code_match.group(1),
+                    "score": int(float(score_match.group(1))),
+                })
+                picks["total"] += 1
+            elif code_match:
+                # 只有代码没有评分，用第三个管道后的数字
+                parts = [p.strip() for p in stripped.split('|') if p.strip()]
+                score = 0
+                for part in parts:
+                    m = re.search(r'(\d+\.?\d*)', part)
+                    if m:
+                        try:
+                            s = float(m.group(1))
+                            if 0 <= s <= 100:
+                                score = int(s)
+                        except ValueError:
+                            pass
+                picks["stocks"].append({
+                    "name": "",
+                    "code": code_match.group(1),
+                    "score": score,
+                })
+                picks["total"] += 1
+        elif in_table and table_started and not stripped.startswith('|'):
+            in_table = False  # 表格结束
+
+    # 方式2: 行内匹配（回退）
+    if picks["total"] == 0:
+        for line in pick_text.split('\n'):
+            code_match = re.search(code_pattern, line)
+            score_match = re.search(r'(\d+\.?\d*)\s*分', line)
+            name_match = re.search(r'\*\*(.*?)\*\*', line)
+            if code_match and score_match:
+                name = ""
+                if name_match:
+                    try:
+                        float(name_match.group(1))
+                    except ValueError:
+                        name = name_match.group(1)
+                if not name:
+                    parts = line.split('|')
+                    for p in parts:
+                        p_clean = p.strip().strip('*')
+                        if re.match(r'^[一-\ufff]{2,8}$', p_clean) and not re.search(r'\d', p_clean):
+                            name = p_clean
+                            break
+                picks["stocks"].append({
+                    "name": name,
+                    "code": code_match.group(1),
+                    "score": int(float(score_match.group(1))),
+                })
+                picks["total"] += 1
 
     # 提取否决案例
     veto_lines = [l for l in pick_text.split('\n') if '否决' in l and '~~' in l]
     picks["vetoed"] = []
     for vl in veto_lines:
-        code_match = re.search(r'(\d{6}\.(SZ|SH))', vl)
+        code_match = re.search(code_pattern, vl)
         reason_match = re.search(r'否决.*?([^。]+)', vl)
         if code_match:
             picks["vetoed"].append({
@@ -432,39 +523,46 @@ def extract_trade_plan(trade_text: str) -> dict:
     if not trade_text:
         return plan
 
-    # 提取买入清单
-    in_buy = False
-    for line in trade_text.split('\n'):
-        stripped = line.strip()
-        if '买入清单' in stripped or '### 买入' in stripped:
-            in_buy = True
-            continue
-        if '卖出清单' in stripped or '### 卖出' in stripped:
-            in_buy = False
-        if in_buy and stripped.startswith('|') and '---' not in stripped:
-            parts = [p.strip() for p in stripped.split('|') if p.strip()]
-            if len(parts) >= 2:
-                code_match = re.search(r'(\d{6}\.(SZ|SH))', stripped)
-                price_match = re.search(r'(\d+\.?\d*)\s*-\s*(\d+\.?\d*)', stripped)
-                if code_match:
-                    plan["buy"].append({
+    code_pattern = r'(\d{6}\.(?:SZ|SH|BJ))'
+
+    # 分段提取：按 ## 或 ### 标题分节
+    sections = re.split(r'#{2,}\s+', trade_text)
+    for section in sections:
+        # 卖出清单/卖出计划
+        if any(kw in section[:50] for kw in ["卖出计划", "卖出清单", "卖出操作"]):
+            for line in section.split('\n'):
+                code_match = re.search(code_pattern, line)
+                if code_match and '|' in line:
+                    parts = [p.strip() for p in line.split('|')]
+                    priority = "中"
+                    if len(parts) >= 2:
+                        prio_text = parts[0].strip()
+                        if '高' in prio_text or '最高' in prio_text or '🔴' in prio_text:
+                            priority = "高"
+                    pnl = ""
+                    for p in parts:
+                        m_pnl = re.search(r'[-+]?\d+\.?\d*%', p)
+                        if m_pnl:
+                            pnl = m_pnl.group(0)
+                            break
+                    plan["sell"].append({
                         "code": code_match.group(0),
-                        "price_range": f"{price_match.group(1)}-{price_match.group(2)}" if price_match else "",
+                        "priority": priority,
+                        "pnl_pct": pnl,
                     })
 
-    # 提取卖出清单
-    in_sell = False
-    for line in trade_text.split('\n'):
-        stripped = line.strip()
-        if '卖出清单' in stripped or '### 卖出' in stripped:
-            in_sell = True
-            continue
-        if '持有清单' in stripped or '### 持有' in stripped or '### 仓位' in stripped:
-            in_sell = False
-        if in_sell and stripped.startswith('|') and '---' not in stripped:
-            code_match = re.search(r'(\d{6}\.(SZ|SH))', stripped)
-            if code_match:
-                plan["sell"].append({"code": code_match.group(0)})
+        # 持有计划/持有清单
+        if any(kw in section[:50] for kw in ["持有计划", "持有清单"]):
+            for line in section.split('\n'):
+                code_match = re.search(code_pattern, line)
+                if code_match and '|' in line:
+                    parts = [p.strip() for p in line.split('|') if p.strip()]
+                    plan["hold"].append({"code": code_match.group(0)})
+
+        # 买入计划/买入清单 - 无内容也记录
+        if any(kw in section[:50] for kw in ["买入计划", "买入清单"]):
+            if not section.strip():
+                pass  # 无买入
 
     return plan
 
@@ -482,60 +580,66 @@ def extract_leader_decision(decision_text: str) -> dict:
     if not decision_text:
         return result
 
-    # 提取强制卖出指令
-    for line in decision_text.split('\n'):
-        stripped = line.strip()
-        if '强制卖出' in stripped or '强制止损' in stripped:
-            code_match = re.search(r'(\d{6})', stripped)
-            name_match = re.match(r'.*?\*\*(.*?)\*\*', stripped)
-            reason_match = re.search(r'-(.*?)(?:\||$)', stripped)
-            if code_match:
-                result["sell_decisions"].append({
-                    "code": code_match.group(0),
-                    "name": name_match.group(1) if name_match else "",
-                    "reason": reason_match.group(1).strip() if reason_match else "",
-                })
+    code_pattern = r'(\d{6}\.(?:SZ|SH|BJ))'
 
-    # 提取止盈指令
-    for line in decision_text.split('\n'):
-        if '分批止盈' in line or '止盈' in line:
-            code_match = re.search(r'(\d{6})', line)
-            name_match = re.search(r'\*\*(.*?)\*\*', line)
-            if code_match:
-                result["sell_decisions"].append({
-                    "code": code_match.group(0),
-                    "name": name_match.group(1) if name_match else "",
-                    "reason": "止盈",
-                })
+    # 分段处理（支持 ## 和 ###）
+    sections = re.split(r'#{2,}\s+', decision_text)
+    for section in sections:
+        # === 卖出清单 ===
+        if "卖出清单" in section[:50]:
+            for line in section.split('\n'):
+                code_match = re.search(code_pattern, line)
+                if code_match and '|' in line:
+                    # 提取操作和盈亏
+                    action = "卖出"
+                    if '止损' in line:
+                        action = "止损"
+                    elif '止盈' in line:
+                        action = "止盈"
+                    elif '减仓' in line:
+                        action = "减仓"
+                    pnl = ""
+                    m_pnl = re.search(r'[-+]?\d+\.?\d*%', line) or re.search(r'盈亏.*?([-+]?\d+\.?\d*)', line)
+                    if m_pnl:
+                        pnl = m_pnl.group(0) if '%' in m_pnl.group(0) else m_pnl.group(1) + '%'
+                    result["sell_decisions"].append({
+                        "code": code_match.group(0).split('.')[0],  # 只取6位数字
+                        "name": "",
+                        "reason": action,
+                        "pnl": pnl,
+                    })
 
-    # 提取持有指令
-    for line in decision_text.split('\n'):
-        if '继续持有' in line or '✅' in line:
-            name_match = re.search(r'\*\*(.*?)\*\*', line)
-            if name_match and '强制' not in line and '止损' not in line:
-                result["hold_decisions"].append({"name": name_match.group(1)})
+        # === 持有清单 ===
+        if "持有清单" in section[:50]:
+            for line in section.split('\n'):
+                code_match = re.search(code_pattern, line)
+                if code_match:
+                    name_match = re.search(r'\|.*?\*\*(.*?)\*\*', line)
+                    name = name_match.group(1) if name_match else ""
+                    result["hold_decisions"].append({"name": name if name else code_match.group(0)})
 
-    # 提取冲突项
-    in_conflict = False
-    for line in decision_text.split('\n'):
-        if '分歧' in line or '争议' in line or '冲突' in line:
-            in_conflict = True
-        if in_conflict and '|' in line and '仲裁' in line:
-            parts = [p.strip() for p in line.split('|') if p.strip()]
-            if len(parts) >= 4:
-                result["conflicts"].append({
-                    "asset": parts[0],
-                    "risk_opinion": parts[1],
-                    "trader_opinion": parts[2],
-                    "verdict": parts[3],
-                })
+        # === 冲突检测 ===
+        if any(kw in section[:50] for kw in ["纠纷", "冲突", "争议", "分歧", "仲裁"]):
+            for line in section.split('\n'):
+                if '一致' in line or '无分歧' in line:
+                    result["conflicts"].append({"type": "无分歧", "detail": line.strip()[:100]})
+                elif '分歧' in line:
+                    result["conflicts"].append({"type": "有分歧", "detail": line.strip()[:100]})
 
-    # 检测质量审核
-    qa_items = re.findall(r'审核结果[：:]\s*(✅|⚠️|❌|通过|需补充|不合格)', decision_text)
+    # === 全局检测：质量审核结果 ===
+    quality_section = ""
+    for section in sections:
+        if "质量审核" in section[:50] or "Agent质量" in section[:50]:
+            quality_section = section
+            break
+
+    passed = len(re.findall(r'✅\s*通过', quality_section or decision_text))
+    needs_work = len(re.findall(r'⚠️\s*需补充|⚠️\s*建议打回', quality_section or decision_text))
+    rejected = len(re.findall(r'❌\s*不合格', quality_section or decision_text))
     result["quality_review"] = {
-        "passed": qa_items.count("✅") + qa_items.count("通过"),
-        "needs_work": qa_items.count("⚠️") + qa_items.count("需补充"),
-        "rejected": qa_items.count("❌") + qa_items.count("不合格"),
+        "passed": passed,
+        "needs_work": needs_work,
+        "rejected": rejected,
     }
 
     return result

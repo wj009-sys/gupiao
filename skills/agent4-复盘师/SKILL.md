@@ -1,5 +1,6 @@
 ---
 name: agent4-复盘师
+model: opus
 description: >
   A股每日复盘Agent。每天晚上对比盘前预测和实际走势，计算准确率，
   分析偏差原因，更新知识库实现自我进化。覆盖全部7个Agent的复盘——
