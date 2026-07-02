@@ -42,7 +42,7 @@ import numpy as np
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from scripts.utils.tushare_client import pro
+from scripts.utils.tushare_client import pro, get_ths_index
 from scripts.utils.technical_analysis import add_all_indicators, generate_signal_summary
 
 # 数据库管理器（尽力而为，导入失败不影响报告生成）
@@ -123,19 +123,11 @@ def analyze_index(ts_code: str, name: str, end_date: str) -> dict:
 
 def analyze_sectors(end_date: str, top_n: int = 30) -> pd.DataFrame:
     """获取板块涨跌排名并添加技术面评分"""
-    # D4-CP3: 板块数据时效
-    actual_date = end_date
+    # D4-CP3: 板块数据时效（优先Tushare THS，失败自动回退东方财富）
     try:
-        df = pro.ths_daily(trade_date=end_date)
+        df = get_ths_index(daily=True)
         if df.empty:
-            # 尝试往前找
-            for offset in range(1, 5):
-                d = (datetime.strptime(end_date, "%Y%m%d") - timedelta(days=offset)).strftime("%Y%m%d")
-                df = pro.ths_daily(trade_date=d)
-                if not df.empty:
-                    actual_date = d
-                    print(f"  [WARN] 板块数据日期{end_date}无数据，使用{actual_date}")
-                    break
+            print(f"  [WARN] 板块数据为空（可能非交易日或API不可用）")
     except Exception:
         return pd.DataFrame()
 
@@ -148,7 +140,7 @@ def analyze_sectors(end_date: str, top_n: int = 30) -> pd.DataFrame:
     result = df.head(top_n).copy()
     result["strength"] = result["pct_chg"]  # 基础强度 = 涨跌幅
     result["anomaly"] = False
-    result["data_date"] = actual_date  # 标注数据实际日期
+    result["data_date"] = end_date
 
     # 标记异动板块（涨跌幅 > 3% 或 <-3%）
     result.loc[result["pct_chg"] > 3, "anomaly"] = True

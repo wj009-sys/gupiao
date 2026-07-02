@@ -40,7 +40,7 @@ from datetime import datetime, timedelta
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from scripts.utils.tushare_client import pro
+from scripts.utils.tushare_client import pro, get_ths_index
 
 # 数据库管理器（尽力而为，导入失败不影响报告生成）
 try:
@@ -126,14 +126,14 @@ def fetch_limit_list(trade_date: str) -> pd.DataFrame:
 
 
 def fetch_ths_hot(trade_date: str) -> pd.DataFrame:
-    """获取同花顺概念板块涨跌排名"""
+    """获取概念板块涨跌排名（优先Tushare THS，失败自动回退东方财富）"""
     try:
-        df = pro.ths_daily(trade_date=trade_date)
+        df = get_ths_index(daily=True)
         if not df.empty:
             df = df.sort_values("pct_chg", ascending=False)
             return df[["ts_code", "name", "pct_chg"]]
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  [WARN] 板块数据获取失败: {e}")
     return pd.DataFrame()
 
 
