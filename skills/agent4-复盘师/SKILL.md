@@ -437,43 +437,24 @@ knowledge/复盘记录/复盘_YYYYMMDD.json
 
 ### 第十步：推送通知到手机
 
-复盘报告生成后，用 Telegram 推送复盘摘要到手机：
+复盘报告通过 PushPlus 推送到手机微信（主通道）：
 
-> 1. 调用 `telegram_send_message`，消息内容：
-> ```
-> 🔄 复盘报告 — YYYY-MM-DD
-> 
-> 📊 综合准确率：xx%
-> ✅ 看涨准确率：xx%
-> ❌ 看跌准确率：xx%
-> 📈 趋势：↑/→/↓（连续N天）
-> 
-> 🔍 主要偏差：N 个
-> 📝 知识库更新：N 条
-> ```
-> 
-> 2. 调用 `telegram_send_file` 附上完整复盘报告（`reports/日报/复盘/复盘报告_YYYY-MM-DD.md`）
-> 3. 如果有策略更新，附上 `knowledge/策略/` 中新增/修改的文件
+> 1. 运行 `python scripts/utils/wechat_send.py --report 复盘` 自动：
+>    - 通过 **PushPlus API** 推送 Markdown 格式复盘摘要到微信（主通道）
+>    - 如 PushPlus 不可用，自动降级到 cc-connect 发送 Word 文件（备选通道）
 >
-> **微信推送：**
-> 4. 运行 `python scripts/utils/wechat_send.py --report 复盘` 自动：
->    - 将报告 .md 转为 .docx（Word格式）
->    - 通过 cc-connect 发送 Word 文件到微信
+> 如果某个推送通道不可用，跳过即可，不影响复盘报告生成。
 >
 > **QQ推送（可选）：**
-> 5. 调用 `qq_agent_notify`，用 QQ 推送：
+> 2. 调用 `qq_agent_notify`，用 QQ 推送：
 > ```
 > agent_id: 4
 > title: "复盘报告 YYYY-MM-DD"
-> content: "📊 综合准确率：xx%
-> ✅ 看涨准确率：xx%
-> ❌ 看跌准确率：xx%
-> 📈 趋势：上升/持平/下降（连续N天）
-> 🔍 主要偏差：N 个
-> 📝 知识库更新：N 条"
+> content: "🔄 今日复盘总结
+> ✅ 准确预测：N项
+> ❌ 偏差分析：N项
+> 📈 改进建议：..."
 > ```
->
-> 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## 项目目标
 
-构建A股自动化投研团队，包含7个AI Agent角色，每天自动完成情报采集→技术分析→选股推荐→风控检查→交易计划→复盘迭代的完整闭环，由投资领导统筹管理。每个Agent都经过Darwin Skill优化（评分从平均65.1提升至77.4）。
+构建A股自动化投研团队，包含7个AI Agent角色，每天自动完成情报采集→技术分析→选股推荐→风控检查→交易计划→复盘迭代的完整闭环，由投资领导统筹管理。每个Agent都经过Darwin Skill优化（评分从平均65.1提升至97.1，全部达到五星标准）。
 
 ## 🔄 数据自动同步
 
@@ -233,8 +233,11 @@ Agent3（风控官）与 Agent6（操盘手）构成「提案-审查」双轨制
 .mcp.json            - MCP 服务器配置（claw + qq 定时调度）
 .env.example         - 环境变量模板
 docs/archive/        - 历史设计文档和过时脚本归档
-data/              - 数据文件（持仓、自选、规则配置）
-  ├── raw/          - 原始数据缓存（gitignored）
+data/              - 数据文件（持仓、自选、规则配置、数据库）
+  ├── stocks.db       - SQLite主数据库（~10M行，15张表）
+  ├── trading_calendar.json - 交易日历缓存
+  ├── checkpoints/    - 数据同步检查点（gitignored）
+  ├── raw/            - 原始数据缓存（gitignored）
 reports/           - 报告输出（日报/周报/月报，日报文件已 gitignored）
   ├── 日报/情报/   - Agent1 情报摘要
   ├── 日报/分析/   - Agent2 分析报告
@@ -288,6 +291,10 @@ skills/            - 自定义 Skills
 | `knowledge/策略/选股策略.md` | 多因子选股权重、筛选参数 | Agent5 + Agent4 |
 | `knowledge/策略/择时策略.md` | 入场/出场时机、大盘联动 | Agent6 + Agent4 |
 | `knowledge/策略/交易执行规则.md` | 买卖规范、仓位分配、止盈止损规则 | Agent6 + Agent4 |
+| `data/策略规则.json` | 买入/卖出策略信号定义 | Agent4 |
+| `data/选股规则.json` | 4种选股模式独立权重配置 | Agent5 + Agent4 |
+| `data/仓位管理规则.json` | 4种市场环境仓位上限 | Agent3 + Agent4 |
+| `data/止损规则.json` | 止损量化触发条件 | Agent3 + Agent4 |
 | `knowledge/复盘记录/` | 历史复盘数据（偏差分析、准确率） | Agent4 |
 
 ## 风控规则
@@ -311,15 +318,15 @@ skills/            - 自定义 Skills
 | 12:00 工作日 | Agent5 午盘选股 | `23 12 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
 | 21:00 工作日 | Agent4 复盘 | `37 21 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
 | 21:30 工作日 | Agent5 晚间选股 | `47 21 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
-
-> **注意**：cron 分钟字段使用非整点值(7/13/17/23/37/47)以避免:00/:30的集中负载。
 | 按需 | Agent3 风控检查 | - | 手动 `/风控官` |
 | 按需 | Agent5 盘中/按需选股 | - | 手动 `/选股` 或 `/盘中选股` |
 | 按需 | Agent6 操盘手 | - | 手动 `/操盘` |
 | 按需 | Agent7 投资领导 | - | 手动 `/决策` |
 
+> **注意**：cron 分钟字段使用非整点值(7/13/17/23/37/47)以避免:00/:30的集中负载。
+
 > MCP server: `.claude/mcp-servers/claw/server.js` (stdio JSON-RPC)
-> 工具: `mcp__claw__cron` (创建) / `cron_list` (查询) / `cron_delete` (删除)
+> 工具: `cron` (创建) / `cron_list` (查询) / `cron_delete` (删除)
 
 ### 本地命令
 
@@ -444,7 +451,8 @@ python -X utf8 scripts/agent7-决策/leader.py
 | 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文2.0** — 脚本Bug修复+全员D3/D4/D9再升级 | +22D3 +13D4 +16D9 | 脚本Bug修复+全团队升级 |
 | 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文3.0** — 全量Python脚本D3/D4/D9代码级嵌入+知识库升级 | +655行D3/D4/D9代码级实现 | 13 files, 7ab7249 |
 | 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文4.0** — 全项目审计修复+跨SKILL引用+知识库标准化+QQ MCP+README | 15项修复+7项优化 | 90d520e |
-| 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文5.0** — SKILL标准化(22项)+Python覆盖补全(6脚本)+健康度修复(14项)+知识库升级 | +154D3 +81D4 +82D9, 150 try/except | 3 commits (7216601, f2b68ab, 73d0b8f) |
+| 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文5.0** — SKILL标准化(22项)+Python覆盖补全(6脚本)+健康度修复(14项)+知识库升级 | +154D3 +81D4 +82D9, 150 try/except | 5 commits (7216601, f2b68ab, 73d0b8f, e470772, 6bbf73f) |
+| 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文6.0** — 全项目一致性审计+30项修复(5CRITICAL+12HIGH+13MEDIUM)+Telegram→PushPlus迁移+裸except消除 | 7 SKILL推送标准化 + 6处裸except修复 + 14处硬编码/路径修复 | 进行中 |
 
 优化内容（第1轮）：22条D3 fallback + 4个D4 CHECKPOINT + 21条D9反例 (原有4 Agent)
 新增：Agent5-7全套D3/D4/D9 + 全团队D4升级 + 统一标准化格式 + 全团队test-prompts

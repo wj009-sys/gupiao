@@ -943,7 +943,8 @@ def save_report(report: dict) -> str:
 
     # 保存MD
     today_str = datetime.now().strftime("%Y-%m-%d")
-    md_path = p(f"reports/日报/复盘/周度复盘_{today_str}.md")
+    md_path = p(f"reports/周报/周度复盘_{today_str}.md")
+    os.makedirs(os.path.dirname(md_path), exist_ok=True)
     with open(md_path, "w", encoding="utf-8") as f:
         f.write("\n".join(md))
     print(f"\n  [OK] ✅ 全方位周度复盘报告已保存: {md_path}")

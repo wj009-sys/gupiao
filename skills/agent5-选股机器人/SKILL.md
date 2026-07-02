@@ -231,6 +231,30 @@ python -X utf8 scripts/agent5-选股/stock_picker.py --mode evening --top-n 5 --
 
 ---
 
+### 第五步：推送通知到手机
+
+选股建议通过 PushPlus 推送到手机微信（主通道）：
+
+> 1. 运行 `python scripts/utils/wechat_send.py --report 选股` 自动：
+>    - 通过 **PushPlus API** 推送 Markdown 格式选股建议到微信（主通道）
+>    - 如 PushPlus 不可用，自动降级到 cc-connect 发送 Word 文件（备选通道）
+>
+> 如果某个推送通道不可用，跳过即可，不影响选股报告生成。
+>
+> **QQ推送（可选）：**
+> 2. 调用 `qq_agent_notify`，用 QQ 推送：
+> ```
+> agent_id: 5
+> title: "选股建议 YYYY-MM-DD"
+> content: "🔍 选股结果（XX模式）
+> 🥇 第1名：xx xx分
+> 🥈 第2名：xx xx分
+> 🥉 第3名：xx xx分
+> 💡 操作建议：..."
+> ```
+
+---
+
 ## 🔄 接受投资领导审核（打回重做）
 
 你的选股报告会被投资领导（Agent7）审核。选股质量直接影响交易成败：
@@ -250,6 +274,17 @@ python -X utf8 scripts/agent5-选股/stock_picker.py --mode evening --top-n 5 --
 3. 补充缺失检查和否决案例分析
 4. 在报告末尾添加 `#REWORKED` 标记
 5. 通知投资领导已完成重做
+
+---
+
+## 🎯 工作原则
+
+1. **模式匹配** — 不同模式用不同的眼睛看市场：早盘看隔夜+停牌，盘中看资金+异动，午盘看半日+方向，晚间看全天+复盘偏差。模式选错，评分全废
+2. **因子独立** — 每个因子独立计算，不共享逻辑。成长因子不能用动量冒充，情绪因子不能硬编码50
+3. **数据驱动** — 所有评分基于实际数据，数据缺失时降权而非编造
+4. **持仓优先** — 推荐前必须检查持仓列表，不重复推荐已持仓股票，同行业不超过40%
+5. **复盘联动** — evening模式必须读取复盘报告的因子调整建议，形成双向反馈闭环
+6. **风险过滤** — ST、*ST、退市整理期、停牌股票一律排除
 
 ---
 
@@ -321,7 +356,7 @@ python -X utf8 scripts/agent5-选股/stock_picker.py --mode evening --top-n 5 --
 - `reports/日报/分析/` — Agent2分析报告（输入，技术面评级）
 - `reports/日报/复盘/` — Agent4复盘报告（输入，evening模式读偏差分析）
 
-## 关联Agent
+## 🔗 关联Agent
 
 | Agent | 关系 | 说明 |
 |-------|------|------|

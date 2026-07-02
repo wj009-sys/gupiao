@@ -81,7 +81,7 @@ python -X utf8 scripts/agent4-复盘/review.py
 
 1. **微信**（主通道）— PushPlus API → PushPlus 公众号推送
 2. **微信**（备选）— cc-connect + ilink（已不稳定，建议用 PushPlus）
-3. **QQ**（可选）— QQ 邮箱 SMTP / QQ MCP 推送
+3. **QQ**（可选）— QQ MCP 推送（通过 PushPlus API）
 
 ## 📜 详细文档
 

@@ -76,6 +76,7 @@ def check_agent_status(report_dir: str, today_str: str) -> dict:
         "选股机器人": {"dir": "选股", "prefix": "选股建议"},
         "风控官": {"dir": "风控", "prefix": "风控报告"},
         "操盘手": {"dir": "操盘", "prefix": "交易计划"},
+        "复盘师": {"dir": "复盘", "prefix": "复盘报告"},
     }
 
     status = {}
@@ -162,7 +163,8 @@ def load_risk_raw_data() -> dict:
     try:
         with open(files[0], "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except (json.JSONDecodeError, FileNotFoundError, Exception) as e:
+        print(f"[WARN] 加载风控原始数据失败: {e}")
         return {}
 
 
@@ -176,7 +178,8 @@ def load_trade_raw_data() -> dict:
     try:
         with open(files[0], "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except (json.JSONDecodeError, FileNotFoundError, Exception) as e:
+        print(f"[WARN] 加载交易原始数据失败: {e}")
         return {}
 
 

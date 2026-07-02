@@ -194,29 +194,16 @@ python -X utf8 scripts/agent2-技术分析/analyze.py [YYYYMMDD]
 
 ### 第六步：推送通知到手机
 
-报告生成后，用 Telegram 推送摘要到手机：
+报告生成后，通过 PushPlus 推送摘要到手机微信（主通道）：
 
-> 1. 调用 `telegram_send_message`，消息内容：
-> ```
-> 📈 技术分析 — YYYY-MM-DD
-> 
-> 📊 大盘评分：xx/100（xxx）
-> 🔥 强势板块：XX、XX、XX
-> ⚠️ 风险信号：XX、XX
-> 💡 操作建议：XX
-> ```
-> 
-> 2. 调用 `telegram_send_file` 附上完整报告文件（`reports/日报/分析/分析报告_YYYY-MM-DD.md`）
+> 1. 运行 `python scripts/utils/wechat_send.py --report 分析` 自动：
+>    - 通过 **PushPlus API** 推送 Markdown 格式报告到微信（主通道）
+>    - 如 PushPlus 不可用，自动降级到 cc-connect 发送 Word 文件（备选通道）
 >
-> **微信推送：**
-> 3. 运行 `python scripts/utils/wechat_send.py --report 分析` 自动：
->    - 将报告 .md 转为 .docx（Word格式）
->    - 通过 cc-connect 发送 Word 文件到微信
->
-> 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
+> 如果某个推送通道不可用，跳过即可，不影响报告生成。
 >
 > **QQ推送（可选）：**
-> 4. 调用 `qq_agent_notify`，用 QQ 推送：
+> 2. 调用 `qq_agent_notify`，用 QQ 推送：
 > ```
 > agent_id: 2
 > title: "技术分析 YYYY-MM-DD"
@@ -225,8 +212,6 @@ python -X utf8 scripts/agent2-技术分析/analyze.py [YYYYMMDD]
 > ⚠️ 风险信号：XX、XX
 > 💡 操作建议：XX"
 > ```
->
-> 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
 
 ---
 
@@ -328,6 +313,13 @@ python -X utf8 scripts/agent2-技术分析/analyze.py [YYYYMMDD]
 ---
 
 ## 🎯 工作原则
+
+1. **数据先行** — 所有技术指标基于实际数据计算，不凭感觉判断趋势
+2. **多指标共振** — 任何买卖信号必须有至少2个独立指标支持（MACD+KDJ、RSI+布林带等）
+3. **趋势为王** — 不逆大势做个股。大盘空头排列时，个股买入信号一律降级
+4. **量价配合** — 价格突破必须伴随成交量放大（>前5日均量30%），否则视为假突破
+5. **客观中立** — 报告结论基于数据，不预设多空立场，多空信号同时呈现
+6. **板块联动** — 板块轮动信号必须交叉验证（涨跌幅+资金流向+技术面），连续2天板块排名大幅变化时必须分析原因
 
 ---
 

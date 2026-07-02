@@ -362,7 +362,7 @@ def _load_trading_calendar() -> set:
     candidates = [
         os.path.join(PROJECT_ROOT, "data", "trading_calendar.json"),
         os.path.join(os.getcwd(), "data", "trading_calendar.json"),
-        os.path.expanduser("~/Desktop/小白/股票投资/data/trading_calendar.json"),
+        os.path.join(PROJECT_ROOT, "data", "trading_calendar.json"),
     ]
     for cal_path in candidates:
         if os.path.exists(cal_path):

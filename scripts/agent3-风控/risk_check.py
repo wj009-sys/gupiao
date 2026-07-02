@@ -95,7 +95,8 @@ def load_env_score_from_analysis() -> int:
     try:
         data = load_json(latest)
         return data.get("environment_score")
-    except:
+    except (FileNotFoundError, json.JSONDecodeError, Exception) as e:
+        print(f"[WARN] 加载环境评分失败: {e}")
         return None
 
 
@@ -110,7 +111,8 @@ def load_index_analysis() -> list:
     try:
         data = load_json(latest)
         return data.get("index_analysis") or data.get("indices") or None
-    except:
+    except (FileNotFoundError, json.JSONDecodeError, Exception) as e:
+        print(f"[WARN] 加载指数分析数据失败: {e}")
         return None
 
 
@@ -129,7 +131,8 @@ def fetch_stock_price(ts_code: str) -> dict:
                 "high": float(last.get("high", last["close"])),
                 "low": float(last.get("low", last["close"])),
             }
-    except:
+    except (Exception) as e:
+        print(f"[WARN] 获取{ts_code}行情失败: {e}")
         pass
     return None
 
@@ -194,7 +197,8 @@ def check_stop_loss(holding: dict, current_price: float, pct_chg: float, ts_code
             high_prices = df_sorted["high"].iloc[:60].values if "high" in df.columns else df_sorted["close"].iloc[:60].values
             if len(high_prices) > 0:
                 highest_price = max(high_prices)
-    except:
+    except (Exception) as e:
+        print(f"[WARN] 获取{ts_code}历史最高价失败: {e}")
         pass
 
     # 从高点回撤比例

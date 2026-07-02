@@ -71,7 +71,7 @@ PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN", "")
 
 # ─── cc-connect 路径（备选通道） ────────────────────────────────────
 CC_CONNECT = os.path.join(
-    os.environ.get("APPDATA", "C:/Users/65004/AppData/Roaming"),
+    os.path.join(os.path.expanduser("~"), "AppData", "Roaming"),
     "npm/node_modules/cc-connect/bin/cc-connect.exe"
 )
 

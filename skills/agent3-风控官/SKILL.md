@@ -97,7 +97,7 @@ python -X utf8 scripts/agent3-风控/risk_check.py --portfolio data/portfolio.js
 - 情报中提到的外围市场大跌（如昨晚美股暴跌）→ 即使A股还没开盘，也需预警今日可能低开
 - 方法：读取情报报告中的国际要闻
 
-### 第四步（新增）：审查操盘手交易计划
+### 第四步：审查操盘手交易计划
 
 如果操盘手（Agent6）今天已经生成了交易计划，你需要审查并给出风控意见：
 
@@ -297,39 +297,24 @@ cat data/raw/交易原始数据_YYYYMMDD.json
 
 ### 第六步：推送通知到手机
 
-报告生成后，用 Telegram 推送风险摘要到手机：
+风控提醒通过 PushPlus 推送到手机微信（主通道）：
 
-> 1. 调用 `telegram_send_message`，消息内容：
-> ```
-> 🛡️ 风控报告 — YYYY-MM-DD
-> 
-> 📊 大盘风险等级：🟢/🟡/🔴
-> 🚨 止损触发：N 个
-> ⚠️ 仓位超限：N 个
-> 
-> 风控指令：必须执行 N 条 / 建议执行 N 条
-> ```
-> 
-> 2. 如果有 🚨 止损触发或 ⚠️ 仓位超限，调用 `telegram_send_file` 附上完整报告文件（`reports/日报/风控/风控报告_YYYY-MM-DD.md`）
-> - 如果无异常（全部 🟢），只发摘要即可
+> 1. 运行 `python scripts/utils/wechat_send.py --report 风控` 自动：
+>    - 通过 **PushPlus API** 推送 Markdown 格式风控提醒到微信（主通道）
+>    - 如 PushPlus 不可用，自动降级到 cc-connect 发送 Word 文件（备选通道）
 >
-> **微信推送：**
-> 3. 运行 `python scripts/utils/wechat_send.py --report 风控` 自动：
->    - 将报告 .md 转为 .docx（Word格式）
->    - 通过 cc-connect 发送 Word 文件到微信
+> 如果某个推送通道不可用，跳过即可，不影响风控报告生成。
 >
 > **QQ推送（可选）：**
-> 4. 调用 `qq_agent_notify`，用 QQ 推送：
+> 2. 调用 `qq_agent_notify`，用 QQ 推送：
 > ```
 > agent_id: 3
-> title: "风控报告 YYYY-MM-DD"
-> content: "📊 大盘风险等级：高/中/低
-> 🚨 止损触发：N 个
-> ⚠️ 仓位超限：N 个
-> 🛡️ 风控指令：必须执行 N 条 / 建议执行 N 条"
+> title: "风控提醒 YYYY-MM-DD"
+> content: "⚠️ 风控等级：HIGH/MEDIUM/LOW
+> 📊 大盘环境：xx分
+> 🛡️ 持仓风险：N只超止损线
+> 💡 操作建议：xx"
 > ```
->
-> 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
 
 ---
 

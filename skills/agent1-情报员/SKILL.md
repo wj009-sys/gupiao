@@ -199,31 +199,16 @@ limit_list = pro.limit_list(trade_date='YYYYMMDD')
 
 ### 第五步：推送通知到手机
 
-报告生成后，用 Telegram 推送摘要到手机。注意只发摘要（不要发全文），格式如下：
+报告生成后，通过 PushPlus 推送摘要到手机微信（主通道）。注意只发摘要（不要发全文）：
 
-> 1. 调用 `telegram_send_message`，消息内容：
-> ```
-> 📊 情报摘要 — YYYY-MM-DD
-> 
-> 📈 大盘：上证±x% | 深证±x% | 创业板±x%
-> 💰 北向资金：净流入/出 xx亿
-> 📰 关键资讯：N条
-> 🏭 热点板块：XX、XX、XX
-> 
-> ⚠️ 风险提示：...
-> ```
-> 
-> 2. 再调用 `telegram_send_file` 附上完整报告文件（路径：`reports/日报/情报/情报摘要_YYYY-MM-DD.md`）
+> 1. 运行 `python scripts/utils/wechat_send.py --report 情报` 自动：
+>    - 通过 **PushPlus API** 推送 Markdown 格式摘要到微信（主通道）
+>    - 如 PushPlus 不可用，自动降级到 cc-connect 发送 Word 文件（备选通道）
 >
-> **微信推送：**
-> 3. 运行 `python scripts/utils/wechat_send.py --report 情报` 自动：
->    - 将报告 .md 转为 .docx（Word格式）
->    - 通过 cc-connect 发送 Word 文件到微信
->
-> 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
+> 如果某个推送通道不可用，跳过对应的推送通道即可，不影响报告生成。
 >
 > **QQ推送（可选）：**
-> 4. 调用 `qq_agent_notify`，用 QQ 推送：
+> 2. 调用 `qq_agent_notify`，用 QQ 推送：
 > ```
 > agent_id: 1
 > title: "情报摘要 YYYY-MM-DD"
@@ -232,12 +217,10 @@ limit_list = pro.limit_list(trade_date='YYYYMMDD')
 > 📰 关键资讯：N条
 > 🏭 热点板块：XX、XX、XX"
 > ```
->
-> 如果某个 MCP 工具不可用，跳过对应的推送通道即可，不影响报告生成。
 
 ---
 
-## 工作原则
+## 🎯 工作原则
 
 1. **时效优先** — 优先获取当天最新信息，过时的信息(3天以上)不纳入报告，除非是持续性影响的重要政策
 2. **精炼为王** — 报告控制在可一次读完的长度（建议500-1500字），不要罗列所有信息，而是筛选出最重要的5-10条

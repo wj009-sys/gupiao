@@ -249,6 +249,42 @@ CREATE_TABLES_SQL = [
         UNIQUE(report_date, agent_id)
     )
     """,
+
+    # 10. moneyflow_mkt — 大盘资金流向（需 Tushare 2000+积分权限）
+    """
+    CREATE TABLE IF NOT EXISTS moneyflow_mkt (
+        trade_date      TEXT NOT NULL,
+        ts_code         TEXT NOT NULL,
+        net_amount      REAL,
+        buy_elg_amount  REAL,
+        sell_elg_amount REAL,
+        buy_lg_amount   REAL,
+        sell_lg_amount  REAL,
+        buy_md_amount   REAL,
+        sell_md_amount  REAL,
+        buy_sm_amount   REAL,
+        sell_sm_amount  REAL,
+        PRIMARY KEY (trade_date, ts_code)
+    )
+    """,
+
+    # 11. margin — 融资融券（沪深两市）
+    """
+    CREATE TABLE IF NOT EXISTS margin (
+        trade_date  TEXT NOT NULL,
+        exchange    TEXT NOT NULL,
+        rzye        REAL,
+        rqye        REAL,
+        rzrqye      REAL,
+        rzmre       REAL,
+        rqyl        REAL,
+        rzche       REAL,
+        rqchl       REAL,
+        rzjmre      REAL,
+        rqjmyl      REAL,
+        PRIMARY KEY (trade_date, exchange)
+    )
+    """,
 ]
 
 CREATE_INDEXES_SQL = [
@@ -266,6 +302,8 @@ CREATE_INDEXES_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_div_tscode ON dividend(ts_code)",
     "CREATE INDEX IF NOT EXISTS idx_div_exdate ON dividend(ex_date)",
     "CREATE INDEX IF NOT EXISTS idx_adj_date ON adj_factor(trade_date)",
+    "CREATE INDEX IF NOT EXISTS idx_moneyflow_mkt_date ON moneyflow_mkt(trade_date)",
+    "CREATE INDEX IF NOT EXISTS idx_margin_date ON margin(trade_date)",
 ]
 
 
@@ -1472,7 +1510,8 @@ class DatabaseManager:
         tables = [
             "stock_basic", "daily_price", "daily_basic", "fina_indicator",
             "dividend", "adj_factor", "daily_indicator", "moneyflow_hsgt",
-            "ths_daily", "portfolio_snapshot", "watchlist", "report_log"
+            "ths_daily", "moneyflow_mkt", "margin",
+            "portfolio_snapshot", "watchlist", "report_log"
         ]
         stats = {}
         try:

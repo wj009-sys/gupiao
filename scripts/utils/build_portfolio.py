@@ -33,6 +33,7 @@ import json
 import os
 import sys
 import glob
+from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from scripts.utils.tushare_client import get_daily, get_fund_daily, pro
 
@@ -43,7 +44,8 @@ if len(sys.argv) > 1:
 else:
     # 自动找桌面最新的持仓明细文件
     candidates = glob.glob(os.path.expanduser(r'~\Desktop\持仓明细*.xlsx'))
-    path = max(candidates, key=os.path.getmtime) if candidates else r'C:\Users\65004\Desktop\持仓明细2026-6-27.xlsx'
+    today_str_ymd = datetime.now().strftime("%Y-%m-%d")
+    path = max(candidates, key=os.path.getmtime) if candidates else os.path.expanduser(f'~\Desktop\持仓明细{today_str_ymd}.xlsx')
 
 # D4-CP1: 文件存在检查
 if not os.path.exists(path):
@@ -82,12 +84,13 @@ merged = df.groupby(['代码','全代码','证券名称']).agg(
 ).reset_index()
 
 # === 2. 获取最新行情 ===
+latest_trade_date = datetime.now().strftime("%Y%m%d")
 prices = {}
 stock_codes = ['002352.SZ','002930.SZ','600111.SH','600388.SH',
                '600930.SH','600970.SH','603072.SH','603799.SH']
 for c in stock_codes:
     try:
-        d = get_daily(c, '20260626', '20260626')
+        d = get_daily(c, latest_trade_date, latest_trade_date)
         if d is not None and len(d) > 0:
             close_val = float(d.iloc[0]['close'])
             if close_val > 0:  # D4-CP5: 价格有效性检查
@@ -102,7 +105,7 @@ fund_codes = ['159755.SZ','159915.SZ','510300.SH','511010.SH','511260.SH',
               '511360.SH','511380.SH','512890.SH','518880.SH','588050.SH']
 for c in fund_codes:
     try:
-        f = get_fund_daily(c, '20260626')
+        f = get_fund_daily(c, latest_trade_date)
         if f is not None and len(f) > 0:
             close_val = float(f.iloc[0]['close'])
             if close_val > 0:  # D4-CP5: 价格有效性检查
@@ -208,7 +211,7 @@ warnings.append(f"⚠️ 提示: 总资产和可用余额请手动填写（本�
 portfolio = {
     '说明': '持仓信息 — 来自Excel真实持仓',
     '数据来源': path,
-    '更新日期': '2026-06-27',
+    '更新日期': datetime.now().strftime("%Y-%m-%d"),
     '总资产_含现金': None,
     '可用余额': None,
     '持仓总市值': total_mv,

@@ -46,6 +46,7 @@ def ensure_table(db, name, sql):
 
 
 def main():
+    today_str = datetime.now().strftime("%Y%m%d")
     db = DatabaseManager()
     stats_before = db.get_table_stats()
 
@@ -56,7 +57,7 @@ def main():
     print("  [1/4] 北向资金全量历史 (2014至今)")
     print("=" * 60)
     try:
-        df = pro.moneyflow_hsgt(start_date="20140101", end_date="20260701")
+        df = pro.moneyflow_hsgt(start_date="20140101", end_date=today_str)
         if df is not None and not df.empty:
             df = df.sort_values("trade_date")
             n = 0
@@ -135,7 +136,7 @@ def main():
 
     # 拉取所有交易日
     try:
-        df_cal = pro.trade_cal(exchange="SSE", start_date="20100101", end_date="20260701")
+        df_cal = pro.trade_cal(exchange="SSE", start_date="20100101", end_date=today_str)
         trade_dates = df_cal[df_cal["is_open"] == 1]["cal_date"].tolist() if df_cal is not None else []
         print(f"  交易日: {len(trade_dates)} 天")
 
@@ -206,7 +207,7 @@ def main():
     mf_total = 0
     for idx_code, idx_name in zip(MARKET_INDICES, MARKET_NAMES):
         try:
-            df_mf = pro.moneyflow(ts_code=idx_code, start_date="20070101", end_date="20260701")
+            df_mf = pro.moneyflow(ts_code=idx_code, start_date="20070101", end_date=today_str)
             if df_mf is not None and not df_mf.empty:
                 cur = db.conn.cursor()
                 for _, row in df_mf.iterrows():
