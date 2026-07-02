@@ -79,9 +79,9 @@ python -X utf8 scripts/agent4-复盘/review.py
 
 ## 📤 通知通道
 
-1. **微信**（主通道）— cc-connect + ilink 对接个人微信号
-2. **Telegram** — MCP 服务器推送
-3. **QQ**（可选）— PushPlus MCP 服务器（需配置 PUSHPLUS_TOKEN）
+1. **微信**（主通道）— PushPlus API → PushPlus 公众号推送
+2. **微信**（备选）— cc-connect + ilink（已不稳定，建议用 PushPlus）
+3. **QQ**（可选）— QQ 邮箱 SMTP / QQ MCP 推送
 
 ## 📜 详细文档
 

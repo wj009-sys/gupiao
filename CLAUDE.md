@@ -272,9 +272,9 @@ skills/            - 自定义 Skills
   ├── agent2-分析师/SKILL.md + test-prompts.json
   ├── agent3-风控官/SKILL.md + test-prompts.json
   ├── agent4-复盘师/SKILL.md + test-prompts.json
-  ├── agent5-选股机器人/SKILL.md
-  ├── agent6-操盘手/SKILL.md
-  └── agent7-投资领导/SKILL.md
+  ├── agent5-选股机器人/SKILL.md + test-prompts.json
+  ├── agent6-操盘手/SKILL.md + test-prompts.json
+  └── agent7-投资领导/SKILL.md + test-prompts.json
 ```
 
 ## 数据源
