@@ -104,13 +104,21 @@ def get_limit_list(trade_date: str) -> pd.DataFrame:
 
 
 def get_ths_index(daily: bool = True) -> pd.DataFrame:
-    """获取同花顺概念板块"""
+    """获取同花顺概念板块（Tushare优先，失败时回退到东方财富）"""
     try:
         if daily:
             return pro.ths_daily(trade_date=today_str())
         return pro.ths_index()
     except Exception as e:
-        print(f"[tushare] get_ths_index 失败: {e}")
+        print(f"[tushare] get_ths_index 失败: {e}，回退到东方财富...")
+        try:
+            from scripts.utils.eastmoney_client import get_ths_daily_fallback
+            df = get_ths_daily_fallback()
+            if not df.empty:
+                print(f"[tushare] 东方财富回退成功，获取 {len(df)} 个板块")
+                return df
+        except Exception as e2:
+            print(f"[tushare] 东方财富回退也失败: {e2}")
         return pd.DataFrame()
 
 

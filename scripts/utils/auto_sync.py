@@ -393,7 +393,7 @@ def sync_daily_basic(db: DatabaseManager, missing_dates: list,
         return result
 
     print(f"\n{'='*60}")
-    print(f"  [1/6] 每日估值 (daily_basic) — {len(missing_dates)} 天")
+    print(f"  [1/7] 每日估值 (daily_basic) — {len(missing_dates)} 天")
     print(f"{'='*60}")
 
     start_time = time.time()
@@ -443,7 +443,7 @@ def sync_index_daily(db: DatabaseManager, start_date: str, end_date: str) -> dic
     result = {"indices": 0, "rows_inserted": 0, "errors": 0, "elapsed_sec": 0}
 
     print(f"\n{'='*60}")
-    print(f"  [2/6] 大盘指数 (index_daily) — {len(MAJOR_INDICES)} 个指数")
+    print(f"  [2/7] 大盘指数 (index_daily) — {len(MAJOR_INDICES)} 个指数")
     print(f"{'='*60}")
 
     start_time = time.time()
@@ -505,7 +505,7 @@ def sync_daily_price_incremental(db: DatabaseManager, lagging_stocks: list,
     stocks_to_pull = lagging_stocks[:max_stocks] if max_stocks > 0 else lagging_stocks
 
     print(f"\n{'='*60}")
-    print(f"  [3/6] 日线行情 (daily_price) — {len(stocks_to_pull)} 只滞后股票")
+    print(f"  [3/7] 日线行情 (daily_price) — {len(stocks_to_pull)} 只滞后股票")
     print(f"  日期范围: {start_date} ~ {end_date}")
     print(f"{'='*60}")
 
@@ -577,11 +577,11 @@ def sync_adj_factor_incremental(db: DatabaseManager, all_codes: list,
 
     stocks_to_pull = [c for c in stock_codes if c not in db_existing]
     if not stocks_to_pull:
-        print(f"\n  [4/6] 复权因子 — 所有股票已有数据，跳过")
+        print(f"\n  [4/7] 复权因子 — 所有股票已有数据，跳过")
         return result
 
     print(f"\n{'='*60}")
-    print(f"  [4/6] 复权因子 (adj_factor) — {len(stocks_to_pull)} 只新股票")
+    print(f"  [4/7] 复权因子 (adj_factor) — {len(stocks_to_pull)} 只新股票")
     print(f"{'='*60}")
 
     start_time = time.time()
@@ -652,11 +652,11 @@ def sync_fina_indicator_incremental(db: DatabaseManager, all_codes: list,
             pass
 
     if not lagging_stocks:
-        print(f"\n  [5/6] 财报数据 — 所有股票已是最新，跳过")
+        print(f"\n  [5/7] 财报数据 — 所有股票已是最新，跳过")
         return result
 
     print(f"\n{'='*60}")
-    print(f"  [5/6] 财报数据 (fina_indicator) — {len(lagging_stocks)} 只滞后股票")
+    print(f"  [5/7] 财报数据 (fina_indicator) — {len(lagging_stocks)} 只滞后股票")
     print(f"{'='*60}")
 
     start_time = time.time()
@@ -860,7 +860,7 @@ def run_sync(args) -> int:
             budget = total_budget - (time.time() - start_time)
             sync_results["daily_basic"] = sync_daily_basic(db, missing, max(budget, 30))
         else:
-            print(f"\n  [1/6] 每日估值 — 已是最新，跳过")
+            print(f"\n  [1/7] 每日估值 — 已是最新，跳过")
 
     # === Phase 2: index_daily（快）===
     if args.type in (None, "all", "index_daily"):
@@ -878,7 +878,7 @@ def run_sync(args) -> int:
         if idx_start <= latest_td:
             sync_results["index_daily"] = sync_index_daily(db, idx_start, latest_td)
         else:
-            print(f"\n  [2/6] 大盘指数 — 已是最新，跳过")
+            print(f"\n  [2/7] 大盘指数 — 已是最新，跳过")
 
     # === Phase 3: daily_price（慢，主要内容）===
     if args.type in (None, "all", "daily_price"):
@@ -900,9 +900,9 @@ def run_sync(args) -> int:
                     max(budget, 60), max_stocks
                 )
             else:
-                print(f"\n  [3/6] 日线行情 — 所有股票已是最新，跳过")
+                print(f"\n  [3/7] 日线行情 — 所有股票已是最新，跳过")
         else:
-            print(f"\n  [3/6] 日线行情 — 已是最新，跳过")
+            print(f"\n  [3/7] 日线行情 — 已是最新，跳过")
 
     # === Phase 4: adj_factor ===
     if args.type in (None, "all", "adj_factor"):
@@ -916,9 +916,9 @@ def run_sync(args) -> int:
                     db, all_codes, budget
                 )
             else:
-                print(f"\n  [4/6] 复权因子 — 时间不足，跳过")
+                print(f"\n  [4/7] 复权因子 — 时间不足，跳过")
         else:
-            print(f"\n  [4/6] 复权因子 — 已是最新，跳过")
+            print(f"\n  [4/7] 复权因子 — 已是最新，跳过")
 
     # === Phase 5: fina_indicator（季度）===
     if args.type in (None, "all", "fina_indicator"):
@@ -932,9 +932,9 @@ def run_sync(args) -> int:
                     db, all_codes, budget
                 )
             else:
-                print(f"\n  [5/6] 财报数据 — 时间不足，跳过")
+                print(f"\n  [5/7] 财报数据 — 时间不足，跳过")
         else:
-            print(f"\n  [5/6] 财报数据 — 无需更新，跳过")
+            print(f"\n  [5/7] 财报数据 — 无需更新，跳过")
 
     # === Phase 6: dividend ===
     if args.type in (None, "all", "dividend"):
@@ -948,9 +948,22 @@ def run_sync(args) -> int:
                     db, all_codes, budget
                 )
             else:
-                print(f"\n  [6/6] 分红数据 — 时间不足，跳过")
+                print(f"\n  [6/7] 分红数据 — 时间不足，跳过")
         else:
-            print(f"\n  [6/6] 分红数据 — 无需更新，跳过")
+            print(f"\n  [6/7] 分红数据 — 无需更新，跳过")
+
+    # === Phase 7: ths_daily (板块数据，东方财富/Tushare) ===
+    if args.type in (None, "all", "ths_daily"):
+        budget = total_budget - (time.time() - start_time)
+        if budget > 10:  # 只需要很少时间（约6秒）
+            print(f"\n  [7/7] 概念板块 (ths_daily)")
+            try:
+                from scripts.utils.sync_sector_moneyflow import sync_ths_daily
+                sync_results["ths_daily"] = sync_ths_daily(db, latest_td)
+            except Exception as e:
+                print(f"  [7/7] 板块数据同步失败: {e}")
+        else:
+            print(f"\n  [7/7] 概念板块 — 时间不足，跳过")
 
     # === 汇总 ===
     elapsed_total = time.time() - start_time
@@ -1008,7 +1021,7 @@ def main():
                         help="自动同步缺失数据")
     parser.add_argument("--type", type=str, default=None,
                         choices=["all", "daily_price", "adj_factor", "daily_basic",
-                                 "fina_indicator", "dividend", "index_daily"],
+                                 "fina_indicator", "dividend", "index_daily", "ths_daily"],
                         help="只同步特定类型（默认 all）")
     parser.add_argument("--max-minutes", type=int, default=30,
                         help="最大时间预算（分钟，默认30）")
