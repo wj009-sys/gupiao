@@ -41,8 +41,8 @@ def ensure_table(db, name, sql):
     try:
         db.conn.execute(sql)
         db.conn.commit()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  [WARN] 建表失败: {e}", flush=True)
 
 
 def main():
@@ -103,8 +103,8 @@ def main():
                     n = db.upsert_daily_basic(df)
                     total += n
                 time.sleep(0.15)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"    [WARN] {code} {year}年估值失败: {e}", flush=True)
         if total > 0:
             print(f"{total}行")
         else:
@@ -169,8 +169,8 @@ def main():
                 if i % 100 == 0 and i > 0:
                     print(f"    进度: {i}/{len(trade_dates)} ({margin_total} 行)")
                     db.conn.commit()
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"    [WARN] {td} 融资融券拉取失败: {e}", flush=True)
             time.sleep(0.08)
         db.conn.commit()
         print(f"  融资融券: {margin_total} 行")

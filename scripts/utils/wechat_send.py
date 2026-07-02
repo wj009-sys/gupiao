@@ -70,10 +70,32 @@ PUSHPLUS_API = "https://www.pushplus.plus/send"
 PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN", "")
 
 # ─── cc-connect 路径（备选通道） ────────────────────────────────────
-CC_CONNECT = os.path.join(
-    os.path.join(os.path.expanduser("~"), "AppData", "Roaming"),
-    "npm/node_modules/cc-connect/bin/cc-connect.exe"
-)
+def _find_cc_connect() -> str:
+    """跨平台查找 cc-connect 可执行文件路径"""
+    import shutil
+    # 优先从 PATH 查找
+    which = shutil.which("cc-connect")
+    if which:
+        return which
+    # Windows: AppData\Roaming\npm
+    if sys.platform == "win32":
+        candidates = [
+            os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "npm", "cc-connect.cmd"),
+            os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "npm", "node_modules", "cc-connect", "bin", "cc-connect.exe"),
+        ]
+    else:
+        # macOS/Linux: npm global
+        candidates = [
+            os.path.join(os.path.expanduser("~"), ".npm-global", "bin", "cc-connect"),
+            "/usr/local/bin/cc-connect",
+            "/usr/bin/cc-connect",
+        ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return "cc-connect"  # 兜底：尝试直接用命令名
+
+CC_CONNECT = _find_cc_connect()
 
 # 报告路径模板（与 reports/日报/ 结构一致）
 REPORT_CATEGORIES = {

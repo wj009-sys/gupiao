@@ -34,3 +34,6 @@ cc-connect.toml
 # 微信扫码二维码（临时生成，不需存档）
 wechat_qr_*.png
 data/checkpoints/
+
+# 定时任务锁文件（自动生成）
+.claude/scheduled_tasks.lock

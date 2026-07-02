@@ -83,8 +83,8 @@ def _get_daily_price_db_first(ts_code: str, days_back: int = 60) -> pd.DataFrame
                 # 数据库返回的是升序，需要降序
                 df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
                 return df.head(days_back)
-        except Exception:
-            pass
+        except Exception as e:
+            pass  # non-critical fallback
 
     # 回退到 Tushare API
     try:
@@ -92,8 +92,8 @@ def _get_daily_price_db_first(ts_code: str, days_back: int = 60) -> pd.DataFrame
         if df is not None and not df.empty:
             df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
             return df.head(days_back)
-    except Exception:
-        pass
+    except Exception as e:
+        pass  # non-critical fallback
     return pd.DataFrame()
 
 
@@ -121,8 +121,8 @@ def get_stock_name(ts_code: str) -> str:
             name = df.iloc[0].get("name")
             if name:
                 return name
-    except Exception:
-        pass
+    except Exception as e:
+        pass  # non-critical fallback
     return ts_code
 
 
@@ -133,8 +133,8 @@ def is_st_stock(ts_code: str) -> bool:
         if df is not None and not df.empty:
             name = df.iloc[0].get("name", "")
             return "ST" in name or "退市" in name
-    except Exception:
-        pass
+    except Exception as e:
+        pass  # non-critical fallback
     return False
 
 
@@ -144,8 +144,8 @@ def is_suspended(ts_code: str, trade_date: str) -> bool:
         df = pro.suspend_d(ts_code=ts_code, suspend_date=trade_date)
         if df is not None and not df.empty:
             return True
-    except Exception:
-        pass
+    except Exception as e:
+        pass  # non-critical fallback
     return False
 
 
@@ -171,8 +171,8 @@ def get_sector_stocks(sector_name: str, max_count: int = 20) -> list:
         df = pro.ths_member(ts_code="", name=sector_name)
         if df is not None and not df.empty:
             return df["ts_code"].tolist()[:max_count]
-    except Exception:
-        pass
+    except Exception as e:
+        pass  # non-critical fallback
     return []
 
 
@@ -224,8 +224,8 @@ def score_valuation(ts_code: str, trade_date: str) -> dict:
     if _db:
         try:
             basic_data = _db.get_daily_basic(ts_code, trade_date)
-        except Exception:
-            pass
+        except Exception as e:
+            pass  # non-critical fallback
 
     # 数据库命中
     if basic_data and basic_data.get("pe") is not None:
@@ -302,8 +302,8 @@ def score_valuation(ts_code: str, trade_date: str) -> dict:
         try:
             if _db and df is not None and not df.empty:
                 _db.upsert_daily_basic(df)
-        except Exception:
-            pass
+        except Exception as e:
+            pass  # non-critical fallback
         return {"score": max(0, min(100, score)), "details": details, "source": "api"}
     except Exception:
         return {"score": 50, "details": {"reason": "估值评分异常"}}
@@ -385,8 +385,8 @@ def score_sentiment(ts_code: str, trade_date: str = None) -> dict:
                     return {"score": 65, "details": {"reason": f"主力资金净流入{net:.0f}万"}}
                 elif net < 0:
                     return {"score": 40, "details": {"reason": f"主力资金净流出{abs(net):.0f}万"}}
-    except Exception:
-        pass
+    except Exception as e:
+        pass  # non-critical fallback
     # 兜底：用涨跌幅判断情绪（优先DB）
     try:
         df = _get_daily_price_db_first(ts_code, days_back=5)
@@ -396,8 +396,8 @@ def score_sentiment(ts_code: str, trade_date: str = None) -> dict:
                 return {"score": 65, "details": {"reason": f"近5日涨幅{recent:.1f}%，情绪积极"}}
             elif recent < -3:
                 return {"score": 35, "details": {"reason": f"近5日跌幅{recent:.1f}%，情绪悲观"}}
-    except Exception:
-        pass
+    except Exception as e:
+        pass  # non-critical fallback
     return {"score": 50, "details": {"reason": "无资金流数据，中性评分"}}
 
 
@@ -412,8 +412,8 @@ def score_growth(ts_code: str, trade_date: str) -> dict:
     if _db:
         try:
             fina_data = _db.get_fina_indicator(ts_code, latest=True)
-        except Exception:
-            pass
+        except Exception as e:
+            pass  # non-critical fallback
 
     # 数据库命中
     if fina_data and fina_data.get("roe") is not None:
@@ -472,8 +472,8 @@ def score_growth(ts_code: str, trade_date: str) -> dict:
             try:
                 if _db:
                     _db.upsert_fina_indicator(df)
-            except Exception:
-                pass
+            except Exception as e:
+                pass  # non-critical fallback
 
         if df is None or df.empty:
             basic = pro.daily_basic(ts_code=ts_code, trade_date=trade_date)
@@ -907,8 +907,8 @@ def noon_picks(top_n: int, config: dict, today: str) -> dict:
         if hsgt is not None and not hsgt.empty:
             last = hsgt.iloc[-1]
             result["morning_summary"]["北向资金"] = round(float(last.get("net_hsgt", 0)), 0)
-    except Exception:
-        pass
+    except Exception as e:
+        pass  # non-critical fallback
 
     # 候选池：领涨板块成分股+自选+持仓
     candidates = set()
@@ -1224,5 +1224,5 @@ if __name__ == "__main__":
             status = "ok" if not report.get("errors") else "error"
             _db.save_report_log(today, "agent5", status,
                                error_msg="; ".join(report["errors"]) if report.get("errors") else None)
-    except Exception:
-        pass
+    except Exception as e:
+        pass  # non-critical fallback

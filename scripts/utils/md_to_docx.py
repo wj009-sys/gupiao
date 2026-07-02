@@ -158,12 +158,24 @@ def convert_md_to_docx(md_path, output_path=None):
     # 创建文档
     doc = Document()
 
-    # 设置默认字体
+    # 设置默认字体（跨平台CJK字体回退链）
     style = doc.styles['Normal']
     font = style.font
-    font.name = '微软雅黑'
+    # 按平台优先级选择CJK字体: 微软雅黑(Win) > 苹方(macOS) > 思源黑体(Linux) > 系统默认
+    import platform
+    _sys = platform.system()
+    if _sys == "Windows":
+        _cjk_font = "微软雅黑"
+    elif _sys == "Darwin":
+        _cjk_font = "PingFang SC"
+    else:
+        _cjk_font = "Source Han Sans SC"
+    font.name = _cjk_font
     font.size = Pt(11)
-    style.element.rPr.rFonts.set(qn('w:eastAsia'), '微软雅黑')
+    try:
+        style.element.rPr.rFonts.set(qn('w:eastAsia'), _cjk_font)
+    except Exception:
+        pass  # 东亚洲字体设置失败时不影响正文
 
     # 段落间距
     pf = style.paragraph_format

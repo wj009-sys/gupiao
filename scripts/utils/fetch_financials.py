@@ -28,16 +28,23 @@ D3异常处理表:
 | fina_indicator返回空 | 标记"无财报数据" | 跳过该股票 |
 | daily_basic返回空(非交易日) | 往前推1天重试 | 跳过该日，不影响其他日 |
 | 持仓文件解析失败 | 检查portfolio.json格式 | 使用空列表，仅拉取自选股 |
+| dividend接口返回空 | 这是正常现象（无分红记录） | 标记"无分红数据" |
+| adj_factor返回空 | 可能是ETF/可转债等无复权品种 | 跳过该品种，继续下一个 |
+| 数据库写入冲突 | 回滚并重试1次 | 跳过该批次，记录失败股票列表 |
 
 D4 CHECKPOINT:
 - CP1-股票列表非空：检查portfolio和watchlist至少有一个有数据
 - CP2-数据覆盖检查：写入前确认end_date/trade_date字段存在
 - CP3-汇总报告：采集完成后输出成功/失败/跳过统计
+- CP4-API限频保护：每次调用间隔≥0.3s(financials/dividend)或≥0.15s(daily_basic)
+- CP5-去重写入：使用INSERT OR REPLACE避免数据重复
 
 D9反例：
 - 不要在循环中无间隔调用API（Tushare限频，每次调用间隔≥0.3秒）
 - 不要假设所有股票都有财报数据（次新股可能只有1-2期）
 - 不要把不在portfolio也不在watchlist的股全量拉取（成本高）
+- 不要假设watchlist.values()返回的是字符串列表（值是列表的列表，需嵌套遍历）
+- 不要忽略API返回的None（None和空DataFrame都需要处理）
 """
 
 import os
@@ -80,14 +87,15 @@ def load_stock_list() -> list:
         try:
             with open(watchlist_path, "r", encoding="utf-8") as f:
                 watchlist = json.load(f)
+            watchlist_codes = set()
             for sector_stocks in watchlist.values():
                 if isinstance(sector_stocks, list):
                     for s in sector_stocks:
                         if s and s != "000000":
-                            codes.add(s)
-            # 去重
-            new_count = len(codes) - len([c for c in codes if c in watchlist.values()])
-            print(f"  自选股: {len(watchlist)} 个板块")
+                            watchlist_codes.add(s)
+            new_from_watchlist = watchlist_codes - codes
+            codes.update(watchlist_codes)
+            print(f"  自选股: {len(watchlist)} 个板块, 新增 {len(new_from_watchlist)} 只")
         except Exception as e:
             print(f"  [WARN] 自选股文件解析失败: {e}")
 

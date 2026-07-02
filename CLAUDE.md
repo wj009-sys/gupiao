@@ -24,7 +24,7 @@ SessionStart Hook (startup)
 # 仅检查（<1秒，纯SQL）
 python scripts/utils/auto_sync.py --check-only
 
-# 自动同步所有缺失数据（默认30分钟预算）
+# 自动同步所有缺失数据（默认45分钟预算）
 python scripts/utils/auto_sync.py --auto-sync
 
 # 限时/限量同步
@@ -100,7 +100,7 @@ python scripts/utils/auto_sync.py --auto-sync --max-minutes 15 --max-stocks 500
 - **职责**：基于情报热点+技术面+基本面因子，筛选候选股票池。支持4种选股模式：早盘/盘中/午盘/晚间
 - **输出**：`reports/日报/选股/选股建议_YYYY-MM-DD.md`（各模式不同格式）
 - **脚本参数**：`python stock_picker.py --mode pre_market|intraday|noon|evening --top-n 5`
-- **定时**：09:00早盘 / 12:00午盘 / 21:00晚间选股；盘中按需手动触发
+- **定时**：09:00早盘 / 12:00午盘 / 21:30晚间选股；盘中按需手动触发
 - **配置**：`data/选股规则.json`（含4种模式独立权重） + `knowledge/策略/选股策略.md`
 - **D3异常**：13条fallback（新增模式选择错误、停复牌失败、盘中数据不可用等）
 - **D4检查**：8个CP（新增模式匹配检查、模式特有检查）

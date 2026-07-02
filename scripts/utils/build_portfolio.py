@@ -42,10 +42,21 @@ from scripts.utils.tushare_client import get_daily, get_fund_daily, pro
 if len(sys.argv) > 1:
     path = sys.argv[1]
 else:
-    # 自动找桌面最新的持仓明细文件
-    candidates = glob.glob(os.path.expanduser(r'~\Desktop\持仓明细*.xlsx'))
+    # 自动搜索持仓明细文件（支持Windows桌面/macOS桌面/Linux桌面）
+    desktop_candidates = [
+        os.path.join(os.path.expanduser("~"), "Desktop"),
+        os.path.join(os.path.expanduser("~"), "桌面"),
+    ]
+    candidates = []
+    for desktop in desktop_candidates:
+        if os.path.isdir(desktop):
+            candidates.extend(glob.glob(os.path.join(desktop, "持仓明细*.xlsx")))
     today_str_ymd = datetime.now().strftime("%Y-%m-%d")
-    path = max(candidates, key=os.path.getmtime) if candidates else os.path.expanduser(f'~\Desktop\持仓明细{today_str_ymd}.xlsx')
+    if candidates:
+        path = max(candidates, key=os.path.getmtime)
+    else:
+        # 兜底：项目根目录下的 data/ 目录
+        path = os.path.join(os.path.dirname(__file__), "..", "..", "data", f"持仓明细{today_str_ymd}.xlsx")
 
 # D4-CP1: 文件存在检查
 if not os.path.exists(path):

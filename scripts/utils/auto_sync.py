@@ -224,8 +224,8 @@ def check_freshness(db: DatabaseManager, trading_days: list) -> dict:
                 )
             """, (latest_td,))
             dp_lagging = cur.fetchone()[0]
-        except Exception:
-            pass
+        except Exception as e:
+            pass  # non-critical fallback
 
     dp_status = "fresh"
     if dp_behind == 0:
@@ -280,8 +280,8 @@ def check_freshness(db: DatabaseManager, trading_days: list) -> dict:
             months_behind = (datetime.now() - max_dt).days / 30
             if months_behind > 5:
                 fina_status = "stale"
-        except Exception:
-            pass
+        except Exception as e:
+            pass  # non-critical fallback
     result["tables"]["fina_indicator"] = {
         "max_date": fina_max,
         "status": fina_status,
@@ -297,8 +297,8 @@ def check_freshness(db: DatabaseManager, trading_days: list) -> dict:
             days_behind = (datetime.now() - max_dt).days
             if days_behind > 30:
                 div_status = "stale"
-        except Exception:
-            pass
+        except Exception as e:
+            pass  # non-critical fallback
     result["tables"]["dividend"] = {
         "max_date": div_max,
         "status": div_status,
@@ -572,8 +572,8 @@ def sync_adj_factor_incremental(db: DatabaseManager, all_codes: list,
         cur = db.conn.cursor()
         cur.execute("SELECT DISTINCT ts_code FROM adj_factor")
         db_existing = set(row[0] for row in cur.fetchall())
-    except Exception:
-        pass
+    except Exception as e:
+        pass  # non-critical fallback
 
     stocks_to_pull = [c for c in stock_codes if c not in db_existing]
     if not stocks_to_pull:
@@ -648,8 +648,8 @@ def sync_fina_indicator_incremental(db: DatabaseManager, all_codes: list,
                 )
             """, (max_end_date,))
             lagging_stocks = [row[0] for row in cur.fetchall()]
-        except Exception:
-            pass
+        except Exception as e:
+            pass  # non-critical fallback
 
     if not lagging_stocks:
         print(f"\n  [5/7] 财报数据 — 所有股票已是最新，跳过")
@@ -711,8 +711,8 @@ def sync_dividend_incremental(db: DatabaseManager, all_codes: list,
         cur = db.conn.cursor()
         cur.execute("SELECT DISTINCT ts_code FROM dividend")
         db_existing = set(row[0] for row in cur.fetchall())
-    except Exception:
-        pass
+    except Exception as e:
+        pass  # non-critical fallback
 
     stocks_to_pull = [c for c in stock_codes if c not in db_existing]
     if not stocks_to_pull:
@@ -758,8 +758,8 @@ def load_all_market_codes(db: DatabaseManager) -> list:
         codes = [row[0] for row in cur.fetchall()]
         if codes:
             return codes
-    except Exception:
-        pass
+    except Exception as e:
+        pass  # non-critical fallback
 
     # 如果 stock_basic 为空，从 daily_price 获取
     try:

@@ -100,12 +100,19 @@ def migrate_agent1_data(db: DatabaseManager, data: dict, trade_date: str, dry_ru
         rows = []
         for name, info in market.items():
             if isinstance(info, dict):
+                raw_amount = info.get("amount", 0) or 0
+                # 幂等保护：如果amount已经≥100000（很可能是万元），不再乘10000
+                # 正常亿元单位的amount通常<1000（如1.5亿=1.5），万元单位则≥100000
+                if raw_amount > 10000:
+                    amount = raw_amount  # 已是万元单位，无需转换
+                else:
+                    amount = raw_amount * 10000  # 亿元→万元
                 rows.append({
                     "ts_code": INDEX_MAP.get(name, name),
                     "trade_date": trade_date,
                     "close": info.get("close"),
                     "pct_chg": info.get("pct_change", info.get("pct_chg")),
-                    "amount": (info.get("amount", 0) or 0) * 10000,  # 亿元→万元
+                    "amount": amount,
                 })
         if rows:
             df = pd.DataFrame(rows)

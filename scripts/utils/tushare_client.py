@@ -20,6 +20,9 @@ D3异常处理表：
 D4 CHECKPOINT:
 - CP1-Token验证：导入时立即检查token是否存在
 - CP2-返回值非空：调用方必须检查返回值len>0
+- CP3-日期格式校验：trade_date参数必须是YYYYMMDD格式
+- CP4-API限频保护：调用方需自行控制调用间隔(≥0.2s)
+- CP5-网络超时兜底：所有get_*函数返回空DataFrame而非抛异常
 
 D9反例：
 - 不要在脚本中硬编码token（已在.gitignore保护settings.local.json）
