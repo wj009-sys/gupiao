@@ -85,7 +85,9 @@ def main():
     print(f"  [2/4] 补拉失败估值数据")
     print(f"{'='*60}")
 
-    RETRY_CODES = ["300274.SZ", "300308.SZ", "600388.SH", "600930.SH"]
+    # 可通过环境变量 RETRY_CODES 覆盖（逗号分隔），默认补拉曾失败的历史数据
+    _retry_default = "300274.SZ,300308.SZ,600388.SH,600930.SH"
+    RETRY_CODES = os.environ.get("RETRY_CODES", _retry_default).split(",")
     current_year = datetime.now().year
 
     for code in RETRY_CODES:

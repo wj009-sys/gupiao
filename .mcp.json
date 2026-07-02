@@ -3,13 +3,13 @@
     "claw": {
       "command": "node",
       "args": [
-        "C:\\Users\\65004\\Desktop\\小白\\股票投资\\.claude\\mcp-servers\\claw\\server.js"
+        "${workspaceFolder}/.claude/mcp-servers/claw/server.js"
       ]
     },
     "qq": {
       "command": "node",
       "args": [
-        "C:\\Users\\65004\\Desktop\\小白\\股票投资\\.claude\\mcp-servers\\qq\\server.js"
+        "${workspaceFolder}/.claude/mcp-servers/qq/server.js"
       ]
     }
   }

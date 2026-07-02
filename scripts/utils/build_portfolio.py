@@ -1,7 +1,7 @@
 """读取Excel持仓明细，生成portfolio.json
 
 用法: python scripts/utils/build_portfolio.py [Excel文件路径]
-默认: C:\Users\65004\Desktop\持仓明细YYYY-MM-DD.xlsx
+默认: 自动搜索桌面上的"持仓明细*.xlsx"文件
 
 D3异常处理表：
 | 触发条件 | 一线修复 | 仍失败兜底 |
@@ -95,10 +95,13 @@ merged = df.groupby(['代码','全代码','证券名称']).agg(
 ).reset_index()
 
 # === 2. 获取最新行情 ===
+# 注意：代码列表应优先从Excel/portfolio.json读取。
+# 默认列表为持有标的，可通过 STOCK_CODES / FUND_CODES 环境变量覆盖（逗号分隔）。
 latest_trade_date = datetime.now().strftime("%Y%m%d")
 prices = {}
-stock_codes = ['002352.SZ','002930.SZ','600111.SH','600388.SH',
-               '600930.SH','600970.SH','603072.SH','603799.SH']
+_default_stocks = ['002352.SZ','002930.SZ','600111.SH','600388.SH',
+                   '600930.SH','600970.SH','603072.SH','603799.SH']
+stock_codes = os.environ.get("STOCK_CODES", ",".join(_default_stocks)).split(",")
 for c in stock_codes:
     try:
         d = get_daily(c, latest_trade_date, latest_trade_date)
@@ -111,9 +114,10 @@ for c in stock_codes:
     except Exception as e:
         print(f'[WARN] {c}: 行情获取失败({e})，使用成本价')
 
-# ETF基金
-fund_codes = ['159755.SZ','159915.SZ','510300.SH','511010.SH','511260.SH',
-              '511360.SH','511380.SH','512890.SH','518880.SH','588050.SH']
+# ETF基金（可通过 FUND_CODES 环境变量覆盖）
+_fund_defaults = ['159755.SZ','159915.SZ','510300.SH','511010.SH','511260.SH',
+                  '511360.SH','511380.SH','512890.SH','518880.SH','588050.SH']
+fund_codes = os.environ.get("FUND_CODES", ",".join(_fund_defaults)).split(",")
 for c in fund_codes:
     try:
         f = get_fund_daily(c, latest_trade_date)

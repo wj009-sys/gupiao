@@ -673,7 +673,7 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None, trad
     # 1. 加载配置
     portfolio = load_portfolio(portfolio_path)
     holdings = portfolio.get("持仓列表", [])
-    report["portfolio_summary"]["total_asset"] = portfolio.get("总资产", 0)
+    report["portfolio_summary"]["total_asset"] = _get_total_asset(portfolio)
     report["portfolio_summary"]["holding_count"] = len([h for h in holdings if h.get("代码") != "000000"])
 
     market_rules = load_position_rules()

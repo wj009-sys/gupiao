@@ -84,7 +84,7 @@ def _get_daily_price_db_first(ts_code: str, days_back: int = 60) -> pd.DataFrame
                 df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
                 return df.head(days_back)
         except Exception as e:
-            pass  # non-critical fallback
+            print(f"  ⚠️ 从DB获取{ts_code}行情失败: {e}")
 
     # 回退到 Tushare API
     try:
@@ -93,7 +93,7 @@ def _get_daily_price_db_first(ts_code: str, days_back: int = 60) -> pd.DataFrame
             df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
             return df.head(days_back)
     except Exception as e:
-        pass  # non-critical fallback
+        print(f"  ⚠️ 从API获取{ts_code}行情失败: {e}")
     return pd.DataFrame()
 
 
@@ -122,7 +122,7 @@ def get_stock_name(ts_code: str) -> str:
             if name:
                 return name
     except Exception as e:
-        pass  # non-critical fallback
+        print(f"  ⚠️ 获取{ts_code}名称失败，回退为code: {e}")
     return ts_code
 
 
@@ -134,7 +134,7 @@ def is_st_stock(ts_code: str) -> bool:
             name = df.iloc[0].get("name", "")
             return "ST" in name or "退市" in name
     except Exception as e:
-        pass  # non-critical fallback
+        print(f"  ⚠️ {ts_code} ST检查失败（默认不拦截）: {e}")
     return False
 
 
@@ -145,7 +145,7 @@ def is_suspended(ts_code: str, trade_date: str) -> bool:
         if df is not None and not df.empty:
             return True
     except Exception as e:
-        pass  # non-critical fallback
+        print(f"  ⚠️ {ts_code} 停牌检查失败（默认视为未停牌）: {e}")
     return False
 
 
@@ -172,7 +172,7 @@ def get_sector_stocks(sector_name: str, max_count: int = 20) -> list:
         if df is not None and not df.empty:
             return df["ts_code"].tolist()[:max_count]
     except Exception as e:
-        pass  # non-critical fallback
+        print(f"  ⚠️ 获取板块{sector_name}成分股失败: {e}")
     return []
 
 
@@ -190,7 +190,7 @@ def load_config(root: str = None) -> dict:
         root = os.path.join(os.path.dirname(__file__), "..", "..")
 
     rules = load_json(os.path.join(root, "data", "选股规则.json"))
-    strategy = load_json(os.path.join(root, "data", "策略规则.json"))
+    # 注意：策略规则.json 为人工参考文件（信号定义），脚本暂不直接消费
     portfolio = load_json(os.path.join(root, "data", "portfolio.json"))
     watchlist = load_json(os.path.join(root, "data", "watchlist.json"))
 
@@ -202,7 +202,6 @@ def load_config(root: str = None) -> dict:
 
     return {
         "rules": rules,
-        "strategy": strategy,
         "portfolio": portfolio,
         "watchlist": watchlist,
         "intelligence": intelligence,
@@ -225,7 +224,7 @@ def score_valuation(ts_code: str, trade_date: str) -> dict:
         try:
             basic_data = _db.get_daily_basic(ts_code, trade_date)
         except Exception as e:
-            pass  # non-critical fallback
+            print(f"  ⚠️ 读取{ts_code} daily_basic失败: {e}")
 
     # 数据库命中
     if basic_data and basic_data.get("pe") is not None:
@@ -303,7 +302,7 @@ def score_valuation(ts_code: str, trade_date: str) -> dict:
             if _db and df is not None and not df.empty:
                 _db.upsert_daily_basic(df)
         except Exception as e:
-            pass  # non-critical fallback
+            print(f"  ⚠️ 缓存{ts_code} basic数据失败: {e}")
         return {"score": max(0, min(100, score)), "details": details, "source": "api"}
     except Exception:
         return {"score": 50, "details": {"reason": "估值评分异常"}}
@@ -386,7 +385,7 @@ def score_sentiment(ts_code: str, trade_date: str = None) -> dict:
                 elif net < 0:
                     return {"score": 40, "details": {"reason": f"主力资金净流出{abs(net):.0f}万"}}
     except Exception as e:
-        pass  # non-critical fallback
+        print(f"  ⚠️ {ts_code} 主力资金数据获取失败: {e}")
     # 兜底：用涨跌幅判断情绪（优先DB）
     try:
         df = _get_daily_price_db_first(ts_code, days_back=5)
@@ -397,7 +396,7 @@ def score_sentiment(ts_code: str, trade_date: str = None) -> dict:
             elif recent < -3:
                 return {"score": 35, "details": {"reason": f"近5日跌幅{recent:.1f}%，情绪悲观"}}
     except Exception as e:
-        pass  # non-critical fallback
+        print(f"  ⚠️ {ts_code} 情绪评分价格数据获取失败: {e}")
     return {"score": 50, "details": {"reason": "无资金流数据，中性评分"}}
 
 
@@ -413,7 +412,7 @@ def score_growth(ts_code: str, trade_date: str) -> dict:
         try:
             fina_data = _db.get_fina_indicator(ts_code, latest=True)
         except Exception as e:
-            pass  # non-critical fallback
+            print(f"  ⚠️ 读取{ts_code}财务数据失败: {e}")
 
     # 数据库命中
     if fina_data and fina_data.get("roe") is not None:
@@ -473,7 +472,7 @@ def score_growth(ts_code: str, trade_date: str) -> dict:
                 if _db:
                     _db.upsert_fina_indicator(df)
             except Exception as e:
-                pass  # non-critical fallback
+                print(f"  ⚠️ 缓存{ts_code}财务数据失败: {e}")
 
         if df is None or df.empty:
             basic = pro.daily_basic(ts_code=ts_code, trade_date=trade_date)
@@ -908,7 +907,7 @@ def noon_picks(top_n: int, config: dict, today: str) -> dict:
             last = hsgt.iloc[-1]
             result["morning_summary"]["北向资金"] = round(float(last.get("net_hsgt", 0)), 0)
     except Exception as e:
-        pass  # non-critical fallback
+        print(f"  ⚠️ 北向资金数据获取失败: {e}")
 
     # 候选池：领涨板块成分股+自选+持仓
     candidates = set()
@@ -1461,4 +1460,4 @@ if __name__ == "__main__":
             _db.save_report_log(today, "agent5", status,
                                error_msg="; ".join(report["errors"]) if report.get("errors") else None)
     except Exception as e:
-        pass  # non-critical fallback
+        print(f"  ⚠️ 保存报告日志失败: {e}")

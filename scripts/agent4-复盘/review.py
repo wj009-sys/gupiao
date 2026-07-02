@@ -173,8 +173,8 @@ def fetch_actual_data(trade_date: str) -> dict:
                     "close": float(df.iloc[0]["close"]),
                     "pct_chg": float(df.iloc[0]["pct_chg"]),
                 }
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"  ⚠️ 获取指数{name}({code})行情失败: {e}")
 
     # 涨跌家数
     try:
@@ -192,8 +192,8 @@ def fetch_actual_data(trade_date: str) -> dict:
                 actual["summary"] = "市场震荡"
             else:
                 actual["summary"] = "市场偏强"
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  ⚠️ 获取涨跌家数失败: {e}")
 
     # 板块实际表现（用于验证板块预测）
     try:
@@ -205,8 +205,8 @@ def fetch_actual_data(trade_date: str) -> dict:
                 pct = row.get("pct_chg", 0)
                 if name:
                     actual["sector_performance"][name] = round(float(pct), 2)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  ⚠️ 获取板块表现失败: {e}")
 
     return actual
 

@@ -233,17 +233,19 @@ def generate_trade_plan() -> dict:
             risk_level = "LOW"
     result["risk_level"] = risk_level
 
-    # 3. 确定仓位上限
-    market_env_name = "震荡市"
-    if risk_level == "HIGH":
-        max_position = 50
-        max_single = 10
-    elif risk_level == "LOW":
-        max_position = 80
-        max_single = 20
-    else:
-        max_position = 65
-        max_single = 15
+    # 3. 确定仓位上限（从仓位管理规则.json读取）
+    position_rules = load_json(os.path.join(
+        os.path.dirname(__file__), "..", "..", "data", "仓位管理规则.json"
+    ))
+    _env_map = {
+        "HIGH": "熊市/调整",
+        "LOW": "牛市确认",
+        "MEDIUM": "震荡市",
+    }
+    market_env_name = _env_map.get(risk_level, position_rules.get("默认环境", "震荡市"))
+    env_config = position_rules.get("市场环境", {}).get(market_env_name, {})
+    max_position = env_config.get("总仓位上限", 80)
+    max_single = env_config.get("单票上限", 20)
 
     # 尝试从风控文本中读取总仓位上限和单票上限
     # 先找总仓位上限（"总仓位上限80%"或"总仓位≤80%"等模式）

@@ -195,6 +195,8 @@ python -X utf8 scripts/agent2-技术分析/analyze.py YYYYMMDD
 
 ### 第六步：输出最终决策报告
 
+🔴 **CHECKPOINT：在输出最终决策报告前，确认所有Agent输出已审核完毕（如有不合格已打回标记#REWORKED）、风控vs操盘分歧已逐项裁定、否决项已从执行清单移除、决策结论明确可执行。**
+
 写入 `reports/日报/决策/投资决策_YYYY-MM-DD.md`：
 
 ```markdown
