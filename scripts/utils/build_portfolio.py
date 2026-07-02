@@ -12,12 +12,15 @@ D3异常处理表：
 | 合并重复代码时除零（数量为0） | 跳过该行（不纳入持仓） | 输出警告，检查原始数据 |
 | 负成本（分红除权导致） | 设为名义成本0.01并备注 | 不影响其他数据的计算 |
 | JSON写入失败（权限/磁盘满） | 重试1次 | 输出错误到stderr，建议检查磁盘空间 |
+| Tushare API单只股票超时 | 跳过该股，用成本价替代，继续下一只 | 标记所有失败股票，批量提示手动更新 |
+| 基金净值API(get_fund_daily)失败 | 跳过该基金，用成本价替代 | 标记"基金净值暂缺"，提示后续手动刷新 |
 
 D4 CHECKPOINT:
 - CP1-文件存在检查：读Excel前确认文件存在
 - CP2-列名验证：确认包含"证券代码"/"证券名称"/"持仓数量"/"参考成本价"
 - CP3-行情覆盖率：标记有多少品种没获取到行情，用成本价替代
 - CP4-总资产校验：输出总市值非负，非0才计算仓位比例
+- CP5-API返回数据完整性：每个成功获取的行情必须包含close字段且>0
 
 D9反例：
 - 不要在合并重复代码时改变原始数据（groupby前备份原始df）
@@ -83,17 +86,31 @@ prices = {}
 stock_codes = ['002352.SZ','002930.SZ','600111.SH','600388.SH',
                '600930.SH','600970.SH','603072.SH','603799.SH']
 for c in stock_codes:
-    d = get_daily(c, '20260626', '20260626')
-    if d is not None and len(d) > 0:
-        prices[c] = float(d.iloc[0]['close'])
+    try:
+        d = get_daily(c, '20260626', '20260626')
+        if d is not None and len(d) > 0:
+            close_val = float(d.iloc[0]['close'])
+            if close_val > 0:  # D4-CP5: 价格有效性检查
+                prices[c] = close_val
+            else:
+                print(f'[WARN] {c}: close={close_val}，异常价格，使用成本价')
+    except Exception as e:
+        print(f'[WARN] {c}: 行情获取失败({e})，使用成本价')
 
 # ETF基金
 fund_codes = ['159755.SZ','159915.SZ','510300.SH','511010.SH','511260.SH',
               '511360.SH','511380.SH','512890.SH','518880.SH','588050.SH']
 for c in fund_codes:
-    f = get_fund_daily(c, '20260626')
-    if f is not None and len(f) > 0:
-        prices[c] = float(f.iloc[0]['close'])
+    try:
+        f = get_fund_daily(c, '20260626')
+        if f is not None and len(f) > 0:
+            close_val = float(f.iloc[0]['close'])
+            if close_val > 0:  # D4-CP5: 价格有效性检查
+                prices[c] = close_val
+            else:
+                print(f'[WARN] {c}(基金): close={close_val}，异常价格，使用成本价')
+    except Exception as e:
+        print(f'[WARN] {c}(基金): 净值获取失败({e})，使用成本价')
 
 # D4-CP3: 行情覆盖率检查
 missing_quotes = [full for _, row in merged.iterrows()

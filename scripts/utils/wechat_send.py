@@ -18,6 +18,32 @@
 依赖：
     pip install python-docx  (如未安装)
     PUSHPLUS_TOKEN 需在 settings.local.json 中配置
+
+D3 异常处理:
+    触发条件                    一线修复                            仍失败兜底
+    ──────────────────────────  ──────────────────────────────────  ──────────────────────────
+    PUSHPLUS_TOKEN未配置        检查env和settings.local.json        降级到cc-connect通道
+    PushPlus API超时(>10s)     重试1次(5s超时)                      降级到cc-connect，标注超时
+    PushPlus限频(5条/分钟)     间隔3-5秒重试                        合并多条为一条长消息
+    报告文件不存在              搜索同日期+同类型其他目录            发送文字摘要替代
+    报告内容超长(>10KB)        截取前3000字+[查看完整报告]链接      只发标题+日期摘要
+    cc-connect进程不可用        检查daemon状态、重启cc-connect       仅本地保存报告，不推送
+    PushPlus token过期/无效    检查API返回code，提示用户刷新         保存到本地待重发列表
+
+D4 CHECKPOINT:
+    [ ] CP1-Token有效: PUSHPLUS_TOKEN非空且在API预检中返回正常
+    [ ] CP2-文件存在: 报告.md文件存在且非空
+    [ ] CP3-内容非空: 发送内容长度 > 0（截取后也要检查）
+    [ ] CP4-发送确认: PushPlus返回code=200/success，或cc-connect返回exit=0
+
+D9 工作反例:
+    #  反模式                    为什么不要做                    应该怎么做
+    ──  ────────────────────────  ─────────────────────────────  ──────────────────────────
+    1   不检查Token就直接调用API   无效请求浪费限频配额             先验证Token非空且格式正确
+    2   报告发送失败不说原因      用户不知道是文件缺失还是网络问题   失败时输出具体错误码和原因
+    3   硬编码PushPlus URL        API地址变更导致不可用            用常量PUSHPLUS_API管理
+    4   大报告一次发送超过限频     被PushPlus拒绝或截断             超过10KB截断或分段发送
+    5   发送成功/失败不记录日志    无法追溯历史推送状态             每次发送写入send.log
 """
 
 import os

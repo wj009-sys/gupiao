@@ -33,12 +33,15 @@ D3异常处理表:
 | 涨跌幅超限 | 检查是否新股首日(44%)或科创板(20%) | 标记为需人工复核 |
 | 数据库写入失败 | 重试1次 | 回滚事务，报告错误 |
 | 复权因子计算溢出 | 检查adj_factor范围 | 标记该行，使用原始close |
+| 事务冲突(DB locked) | 等待5秒后重试1次 | 回滚，提示手动执行 |
+| 磁盘空间不足 | 检查可用空间，提示清理 | 回滚，输出SQL脚本到文件备用 |
 
 D4 CHECKPOINT:
 - CP1: 修复前行数 == 修复后行数（不允许数据丢失）
 - CP2: 复权价格必须满足: adj_close > 0, adj_high >= adj_low
 - CP3: NULL行修复后所有价格列非空
 - CP4: 复权因子覆盖率达到99%+
+- CP5: 清洗操作前后行数校验: 每步UPDATE/DELETE前后对比行数变化合理性
 
 D9反例:
 - 不要对指数做复权（指数没有复权因子，用原价）
@@ -388,7 +391,8 @@ def clean_null_rows(db: DatabaseManager) -> int:
     - vol/amount为NULL时填充0
     """
     print("[清洗] 修复NULL价格行...")
-    cur = db.conn.cursor()
+    try:
+        cur = db.conn.cursor()
 
     # 找到所有有NULL价格的行
     cur.execute("""
@@ -455,33 +459,45 @@ def clean_null_rows(db: DatabaseManager) -> int:
         fixed += 1
         print(f"  ✅ 修复 {ts_code} {trade_date}: open={op}, high={hi}, low={lo}, close={cl}")
 
-    db.conn.commit()
-    return fixed
+        db.conn.commit()
+        return fixed
+    except Exception as e:
+        db.conn.rollback()
+        print(f"[ERROR] clean_null_rows 失败: {e}")
+        return -1
 
 
 def clean_duplicates(db: DatabaseManager) -> int:
     """删除重复行，保留rowid最小的那条"""
     print("[清洗] 删除重复行...")
-    cur = db.conn.cursor()
+    try:
+        cur = db.conn.cursor()
 
-    total_deleted = 0
-    for table in ["daily_price", "daily_basic", "adj_factor"]:
-        # SQLite方式：保留最小rowid，删除其余
-        cur.execute(f"""
-            DELETE FROM {table}
-            WHERE rowid NOT IN (
-                SELECT MIN(rowid)
-                FROM {table}
-                GROUP BY ts_code, trade_date
-            )
-        """)
-        deleted = cur.rowcount
-        if deleted > 0:
-            print(f"  {table}: 删除 {deleted} 行重复")
-        total_deleted += deleted
+        total_deleted = 0
+        for table in ["daily_price", "daily_basic", "adj_factor"]:
+            # D4-CP5: 操作前行数校验
+            cur.execute(f"SELECT COUNT(*) FROM {table}")
+            before = cur.fetchone()[0]
+            # SQLite方式：保留最小rowid，删除其余
+            cur.execute(f"""
+                DELETE FROM {table}
+                WHERE rowid NOT IN (
+                    SELECT MIN(rowid)
+                    FROM {table}
+                    GROUP BY ts_code, trade_date
+                )
+            """)
+            deleted = cur.rowcount
+            if deleted > 0:
+                print(f"  {table}: 删除 {deleted} 行重复 (前{before}行)")
+            total_deleted += deleted
 
-    db.conn.commit()
-    return total_deleted
+        db.conn.commit()
+        return total_deleted
+    except Exception as e:
+        db.conn.rollback()
+        print(f"[ERROR] clean_duplicates 失败: {e}")
+        return -1
 
 
 def add_adj_prices(db: DatabaseManager, batch_size: int = 50000) -> dict:
