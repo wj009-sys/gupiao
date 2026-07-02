@@ -52,7 +52,7 @@ python scripts/utils/auto_sync.py --auto-sync --max-minutes 15 --max-stocks 500
 | 📊 Agent2 分析师 | `skills/agent2-分析师/SKILL.md` | `analyze.py` | **97** (Darwin五星) | 08:30 |
 | 🛡️ Agent3 风控官 | `skills/agent3-风控官/SKILL.md` | `risk_check.py` | **97** (Darwin五星) | 按需 |
 | 🔄 Agent4 复盘师 | `skills/agent4-复盘师/SKILL.md` | `review.py` | **97** (Darwin五星) | 21:00 |
-| 🔍 Agent5 选股机器人 | `skills/agent5-选股机器人/SKILL.md` | `stock_picker.py` | **100** (Darwin五星) | 按需 |
+| 🔍 Agent5 选股机器人 | `skills/agent5-选股机器人/SKILL.md` | `stock_picker.py` | **100** (Darwin五星) | 09:00/12:00/21:30 |
 | 🎯 Agent6 操盘手 | `skills/agent6-操盘手/SKILL.md` | `trader.py` | **97** (Darwin五星) | 按需 |
 | 🏆 Agent7 投资领导 | `skills/agent7-投资领导/SKILL.md` | `leader.py` | **96** (Darwin五星) | 按需 |
 
@@ -230,10 +230,9 @@ Agent3（风控官）与 Agent6（操盘手）构成「提案-审查」双轨制
 ## 目录结构
 
 ```
-.mcp.json            - MCP 服务器配置（claw 定时调度）
+.mcp.json            - MCP 服务器配置（claw + qq 定时调度）
 .env.example         - 环境变量模板
-构想.md              - 项目初始构想文档
-投研团队设计方案.md   - 投研团队详细设计方案
+docs/archive/        - 历史设计文档和过时脚本归档
 data/              - 数据文件（持仓、自选、规则配置）
   ├── raw/          - 原始数据缓存（gitignored）
 reports/           - 报告输出（日报/周报/月报，日报文件已 gitignored）
@@ -306,12 +305,14 @@ skills/            - 自定义 Skills
 | 时间 | 任务 | cron | 触发方式 |
 |------|------|------|---------|
 | **18:03 工作日** | **🔄 数据自动同步** | `3 18 * * 1-5` | **claw MCP + auto_sync.py → DB更新** |
-| 07:00 工作日 | Agent1 情报采集 | `0 7 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
-| 08:30 工作日 | Agent2 技术分析 | `30 8 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
-| 09:00 工作日 | Agent5 早盘选股 | `0 9 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
-| 12:00 工作日 | Agent5 午盘选股 | `0 12 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
-| 21:00 工作日 | Agent4 复盘 | `0 21 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
-| 21:30 工作日 | Agent5 晚间选股 | `30 21 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
+| 07:00 工作日 | Agent1 情报采集 | `7 7 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
+| 08:30 工作日 | Agent2 技术分析 | `13 8 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
+| 09:00 工作日 | Agent5 早盘选股 | `17 9 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
+| 12:00 工作日 | Agent5 午盘选股 | `23 12 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
+| 21:00 工作日 | Agent4 复盘 | `37 21 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
+| 21:30 工作日 | Agent5 晚间选股 | `47 21 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
+
+> **注意**：cron 分钟字段使用非整点值(7/13/17/23/37/47)以避免:00/:30的集中负载。
 | 按需 | Agent3 风控检查 | - | 手动 `/风控官` |
 | 按需 | Agent5 盘中/按需选股 | - | 手动 `/选股` 或 `/盘中选股` |
 | 按需 | Agent6 操盘手 | - | 手动 `/操盘` |
@@ -442,7 +443,8 @@ python -X utf8 scripts/agent7-决策/leader.py
 | 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文1.0续** — 五星优化+标准化+test-prompts | 平均+19.7→97.1 (五星) | 17 commits |
 | 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文2.0** — 脚本Bug修复+全员D3/D4/D9再升级 | +22D3 +13D4 +16D9 | 脚本Bug修复+全团队升级 |
 | 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文3.0** — 全量Python脚本D3/D4/D9代码级嵌入+知识库升级 | +655行D3/D4/D9代码级实现 | 13 files, 7ab7249 |
-| 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文4.0** — 全项目审计修复+跨SKILL引用+知识库标准化+QQ MCP+README | 15项修复+7项优化 | 当前commit |
+| 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文4.0** — 全项目审计修复+跨SKILL引用+知识库标准化+QQ MCP+README | 15项修复+7项优化 | 90d520e |
+| 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文5.0** — SKILL标准化(22项)+Python覆盖补全(6脚本)+健康度修复(14项)+知识库升级 | +154D3 +81D4 +82D9, 150 try/except | 3 commits (7216601, f2b68ab, 73d0b8f) |
 
 优化内容（第1轮）：22条D3 fallback + 4个D4 CHECKPOINT + 21条D9反例 (原有4 Agent)
 新增：Agent5-7全套D3/D4/D9 + 全团队D4升级 + 统一标准化格式 + 全团队test-prompts

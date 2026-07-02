@@ -394,70 +394,70 @@ def clean_null_rows(db: DatabaseManager) -> int:
     try:
         cur = db.conn.cursor()
 
-    # 找到所有有NULL价格的行
-    cur.execute("""
-        SELECT ts_code, trade_date, asset_type, open, high, low, close, pre_close, pct_chg, vol, amount
-        FROM daily_price
-        WHERE open IS NULL OR high IS NULL OR low IS NULL OR close IS NULL
-    """)
-    null_rows = cur.fetchall()
-
-    fixed = 0
-    for row in null_rows:
-        ts_code, trade_date, asset_type, op, hi, lo, cl, pre_cl, pct, vol, amt = row
-
-        # 如果close有值，这是最可靠的数据
-        if cl is not None and cl > 0:
-            op = op if op is not None else cl
-            hi = hi if hi is not None else cl
-            lo = lo if lo is not None else cl
-        elif op is not None and op > 0:
-            # 用open填充
-            cl = cl if cl is not None else op
-            hi = hi if hi is not None else op
-            lo = lo if lo is not None else op
-        else:
-            # 找前一日close
-            cur.execute("""
-                SELECT close FROM daily_price
-                WHERE ts_code = ? AND trade_date < ? AND close IS NOT NULL
-                ORDER BY trade_date DESC LIMIT 1
-            """, (ts_code, trade_date))
-            prev = cur.fetchone()
-            if prev and prev[0] is not None:
-                fill_price = prev[0]
-                op = op if op is not None else fill_price
-                hi = hi if hi is not None else fill_price
-                lo = lo if lo is not None else fill_price
-                cl = cl if cl is not None else fill_price
-            else:
-                print(f"  ⚠️ 无法修复 {ts_code} {trade_date}: 无前一日数据")
-                continue
-
-        # 填充pre_close, pct_chg
-        if pre_cl is None and cl is not None:
-            cur.execute("""
-                SELECT close FROM daily_price
-                WHERE ts_code = ? AND trade_date < ?
-                ORDER BY trade_date DESC LIMIT 1
-            """, (ts_code, trade_date))
-            prev_close = cur.fetchone()
-            pre_cl = prev_close[0] if prev_close else cl
-
-        if pct is None and pre_cl and pre_cl > 0 and cl is not None:
-            pct = (cl - pre_cl) / pre_cl * 100
-
-        # 成交量/成交额填0
-        vol = vol if vol is not None else 0.0
-        amt = amt if amt is not None else 0.0
-
+        # 找到所有有NULL价格的行
         cur.execute("""
-            UPDATE daily_price
-            SET open=?, high=?, low=?, close=?, pre_close=?, pct_chg=?, vol=?, amount=?
-            WHERE ts_code=? AND trade_date=?
-        """, (op, hi, lo, cl, pre_cl, pct, vol, amt, ts_code, trade_date))
-        fixed += 1
-        print(f"  ✅ 修复 {ts_code} {trade_date}: open={op}, high={hi}, low={lo}, close={cl}")
+            SELECT ts_code, trade_date, asset_type, open, high, low, close, pre_close, pct_chg, vol, amount
+            FROM daily_price
+            WHERE open IS NULL OR high IS NULL OR low IS NULL OR close IS NULL
+        """)
+        null_rows = cur.fetchall()
+
+        fixed = 0
+        for row in null_rows:
+            ts_code, trade_date, asset_type, op, hi, lo, cl, pre_cl, pct, vol, amt = row
+
+            # 如果close有值，这是最可靠的数据
+            if cl is not None and cl > 0:
+                op = op if op is not None else cl
+                hi = hi if hi is not None else cl
+                lo = lo if lo is not None else cl
+            elif op is not None and op > 0:
+                # 用open填充
+                cl = cl if cl is not None else op
+                hi = hi if hi is not None else op
+                lo = lo if lo is not None else op
+            else:
+                # 找前一日close
+                cur.execute("""
+                    SELECT close FROM daily_price
+                    WHERE ts_code = ? AND trade_date < ? AND close IS NOT NULL
+                    ORDER BY trade_date DESC LIMIT 1
+                """, (ts_code, trade_date))
+                prev = cur.fetchone()
+                if prev and prev[0] is not None:
+                    fill_price = prev[0]
+                    op = op if op is not None else fill_price
+                    hi = hi if hi is not None else fill_price
+                    lo = lo if lo is not None else fill_price
+                    cl = cl if cl is not None else fill_price
+                else:
+                    print(f"  ⚠️ 无法修复 {ts_code} {trade_date}: 无前一日数据")
+                    continue
+
+            # 填充pre_close, pct_chg
+            if pre_cl is None and cl is not None:
+                cur.execute("""
+                    SELECT close FROM daily_price
+                    WHERE ts_code = ? AND trade_date < ?
+                    ORDER BY trade_date DESC LIMIT 1
+                """, (ts_code, trade_date))
+                prev_close = cur.fetchone()
+                pre_cl = prev_close[0] if prev_close else cl
+
+            if pct is None and pre_cl and pre_cl > 0 and cl is not None:
+                pct = (cl - pre_cl) / pre_cl * 100
+
+            # 成交量/成交额填0
+            vol = vol if vol is not None else 0.0
+            amt = amt if amt is not None else 0.0
+
+            cur.execute("""
+                UPDATE daily_price
+                SET open=?, high=?, low=?, close=?, pre_close=?, pct_chg=?, vol=?, amount=?
+                WHERE ts_code=? AND trade_date=?
+            """, (op, hi, lo, cl, pre_cl, pct, vol, amt, ts_code, trade_date))
+            fixed += 1
+            print(f"  ✅ 修复 {ts_code} {trade_date}: open={op}, high={hi}, low={lo}, close={cl}")
 
         db.conn.commit()
         return fixed
