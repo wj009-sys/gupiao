@@ -82,26 +82,26 @@ def _get_indicators(ts_code: str, df: pd.DataFrame = None) -> dict:
             "signals": signals,
         }
 
-        # MACD
-        for k in ["MACD_diff", "MACD_dea", "MACD_macd"]:
+        # MACD（列名均为小写，由 technical_analysis.py 生成）
+        for k in ["macd_diff", "macd_dea", "macd"]:
             v = latest.get(k)
             if v is not None and not (isinstance(v, float) and np.isnan(v)):
                 result[k] = round(float(v), 4)
 
         # KDJ
-        for k in ["KDJ_K", "KDJ_D", "KDJ_J"]:
+        for k in ["kdj_k", "kdj_d", "kdj_j"]:
             v = latest.get(k)
             if v is not None and not (isinstance(v, float) and np.isnan(v)):
                 result[k] = round(float(v), 2)
 
         # RSI
-        for k in ["RSI_14", "RSI_6"]:
+        for k in ["rsi_14", "rsi_6"]:
             v = latest.get(k)
             if v is not None and not (isinstance(v, float) and np.isnan(v)):
                 result[k] = round(float(v), 2)
 
         # BOLL
-        for k in ["BOLL_upper", "BOLL_middle", "BOLL_lower"]:
+        for k in ["boll_upper", "boll_mid", "boll_lower"]:
             v = latest.get(k)
             if v is not None and not (isinstance(v, float) and np.isnan(v)):
                 result[k] = round(float(v), 2)
@@ -282,8 +282,8 @@ class ChanTheoryStrategy(StrategyTemplate):
                     detail_parts.append("价格重心下移")
 
         # 背驰判断（简化：用MACD顶底背离）
-        if indicators and "MACD_diff" in indicators:
-            diff = indicators["MACD_diff"]
+        if indicators and "macd_diff" in indicators:
+            diff = indicators["macd_diff"]
             if "close" in indicators:
                 price = indicators["close"]
                 if signals and signals[-1] == "buy" and diff > 0:
@@ -375,7 +375,7 @@ class MacdDivergenceStrategy(StrategyTemplate):
             if df_idx.empty:
                 return {"conclusion": "MACD计算失败", "signals": [], "detail": ""}
 
-            diff_vals = df_idx["MACD_diff"].dropna().values
+            diff_vals = df_idx["macd_diff"].dropna().values
             close_vals = df_idx["close"].dropna().values
 
             if len(diff_vals) < 20 or len(close_vals) < 20:
@@ -491,10 +491,10 @@ class RsiStrategy(StrategyTemplate):
     description = "基于RSI指标的超买超卖分析"
 
     def analyze(self, ts_code: str, df: pd.DataFrame, indicators: dict) -> dict:
-        if not indicators or "RSI_14" not in indicators:
+        if not indicators or "rsi_14" not in indicators:
             return {"conclusion": "RSI数据不足", "signals": [], "detail": ""}
-        rsi14 = indicators["RSI_14"]
-        rsi6 = indicators.get("RSI_6", rsi14)
+        rsi14 = indicators["rsi_14"]
+        rsi6 = indicators.get("rsi_6", rsi14)
 
         signals = []
         detail_parts = [f"RSI(14)={rsi14}, RSI(6)={rsi6}"]
@@ -536,11 +536,11 @@ class BollingerStrategy(StrategyTemplate):
     description = "基于布林带的上中下轨分析"
 
     def analyze(self, ts_code: str, df: pd.DataFrame, indicators: dict) -> dict:
-        if not indicators or "BOLL_upper" not in indicators:
+        if not indicators or "boll_upper" not in indicators:
             return {"conclusion": "布林带数据不足", "signals": [], "detail": ""}
-        upper = indicators["BOLL_upper"]
-        middle = indicators["BOLL_middle"]
-        lower = indicators["BOLL_lower"]
+        upper = indicators["boll_upper"]
+        middle = indicators["boll_mid"]
+        lower = indicators["boll_lower"]
         close = indicators.get("close", 0)
 
         signals = []
@@ -580,9 +580,9 @@ class KdjStrategy(StrategyTemplate):
     description = "基于KDJ的超买超卖和金叉死叉分析"
 
     def analyze(self, ts_code: str, df: pd.DataFrame, indicators: dict) -> dict:
-        if not indicators or "KDJ_K" not in indicators:
+        if not indicators or "kdj_k" not in indicators:
             return {"conclusion": "KDJ数据不足", "signals": [], "detail": ""}
-        k, d, j = indicators["KDJ_K"], indicators["KDJ_D"], indicators["KDJ_J"]
+        k, d, j = indicators["kdj_k"], indicators["kdj_d"], indicators["kdj_j"]
 
         signals = []
         detail_parts = [f"K={k:.1f}, D={d:.1f}, J={j:.1f}"]
@@ -624,8 +624,9 @@ class ComprehensiveStrategy(StrategyTemplate):
         parts = []
         all_signals = []
 
-        # 运行各子策略
-        for s in [MaStrategy(), MacdDivergenceStrategy(), VolumePriceStrategy(),
+        # 运行全部8个子策略
+        for s in [MaStrategy(), ChanTheoryStrategy(), WaveTheoryStrategy(),
+                  MacdDivergenceStrategy(), VolumePriceStrategy(),
                   RsiStrategy(), BollingerStrategy(), KdjStrategy()]:
             try:
                 r = s.analyze(ts_code, df, indicators)

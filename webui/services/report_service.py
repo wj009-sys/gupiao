@@ -29,22 +29,26 @@ def get_available_dates() -> list[str]:
         if not agent_dir.exists():
             continue
         for fname in os.listdir(str(agent_dir)):
-            # 匹配 YYYY-MM-DD 日期
-            m = re.search(r"(\d{4}-\d{2}-\d{2})", fname)
+            # 兼容 YYYY-MM-DD 和 YYYYMMDD 两种日期格式
+            m = re.search(r"(\d{4})-(\d{2})-(\d{2})", fname)
+            if not m:
+                m = re.search(r"(\d{4})(\d{2})(\d{2})", fname)
             if m:
-                dates.add(m.group(1))
+                dates.add(f"{m.group(1)}-{m.group(2)}-{m.group(3)}")
     return sorted(dates, reverse=True)
 
 
 def get_reports_for_date(target_date: str) -> list[dict]:
     """获取指定日期的所有 Agent 报告"""
+    target_compact = target_date.replace("-", "")  # "2026-07-04" → "20260704"
     reports = []
     for agent_key, cfg in AGENT_TYPES.items():
         agent_dir = REPORTS_DIR / "日报" / cfg["dir"]
         if not agent_dir.exists():
             continue
         for fname in sorted(os.listdir(str(agent_dir)), reverse=True):
-            if target_date in fname and fname.endswith(".md"):
+            # 兼容 YYYY-MM-DD 和 YYYYMMDD 两种格式
+            if fname.endswith(".md") and (target_date in fname or target_compact in fname):
                 fpath = agent_dir / fname
                 stats = fpath.stat()
                 reports.append({
@@ -128,8 +132,11 @@ def list_markdown_files(agent_key: str = None) -> list[dict]:
 
 
 def _extract_date(fname: str) -> str:
-    m = re.search(r"(\d{4}-\d{2}-\d{2})", fname)
-    return m.group(1) if m else "未知"
+    m = re.search(r"(\d{4})-(\d{2})-(\d{2})", fname)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    m = re.search(r"(\d{4})(\d{2})(\d{2})", fname)
+    return f"{m.group(1)}-{m.group(2)}-{m.group(3)}" if m else "未知"
 
 
 def _md_to_html(md_text: str) -> str:

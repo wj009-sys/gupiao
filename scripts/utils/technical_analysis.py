@@ -128,6 +128,10 @@ def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     result = df.copy()
 
+    # 列名兼容：Tushare DB返回"vol"，ta库需要"volume"
+    if "vol" in result.columns and "volume" not in result.columns:
+        result = result.rename(columns={"vol": "volume"})
+
     # D4-CP1: 验证必要列是否存在
     required_cols = ["close"]
     for col in required_cols:
