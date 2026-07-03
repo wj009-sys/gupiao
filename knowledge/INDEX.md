@@ -12,6 +12,12 @@
 |:----|:-----|:------|:-----|:--------|
 | [LLM-Wiki-工作法.md](LLM-Wiki-工作法.md) | 🏗️ Karpathy LLM Wiki 范式 — 编译而非检索的知识管理方法论 | 全团队 | — | 2026-07-03 |
 
+## 📁 元文件
+
+| 文件 | 用途 | 最后更新 |
+|:----|:-----|:--------|
+| [CHANGES.md](CHANGES.md) | 📋 知识库变更日志，每次更新自动追加 | 2026-07-04 |
+
 ## 📁 策略目录
 
 | 文件 | 用途 | 维护者 | 依赖 | 最后更新 |
@@ -41,6 +47,10 @@
 | `data/选股规则.json` | 选股策略 | 8因子4种选股模式权重配置 + scoring_profile评分曲线 |
 | `data/仓位管理规则.json` | 交易执行规则、择时策略 | 4种市场环境仓位上限 + 3种风控风格 |
 | `data/止损规则.json` | 交易执行规则、择时策略 | 止损量化触发条件 + 3种风控风格 |
+| `data/trading_calendar.json` | 全部 | 交易日历缓存（1574个交易日） |
+| `data/watchlist.json` | 选股策略 | 自选股列表 |
+| `data/portfolio.json` | 交易执行规则 | 持仓组合（仓位/市值/盈亏） |
+| `CLAUDE.md` | 全部 | Schema配置文件 — 见 [[LLM-Wiki-工作法.md]] |
 | `memory/决策反思.md` | 全部 | 投资领导决策反思，Agent7次日自动加载 |
 | `scripts/utils/l2_rerank.py` | 选股策略 | L2 LLM相对排序引擎 |
 | `scripts/utils/scorecard.py` | 选股策略 | L3 Scorecard后置分析器 |
@@ -63,15 +73,14 @@
      ↕ (偏差分析)
      ↕ (知识库更新)   择时策略.md ←→ data/策略规则.json
                                     data/止损规则.json
-交易执行规则.md ←→ data/仓位管理规则.json     data/仓位管理规则.json
+交易执行规则.md ←→ data/仓位管理规则.json
      ↕            skills/agent3-风控官/SKILL.md
      ↕            skills/agent6-操盘手/SKILL.md
-skills/agent6-操盘手/SKILL.md
 
 ZhuLinsen三项目借鉴分析.md ←→ 选股策略.md (8因子/评分曲线/管线重构)
      ↕                         择时策略.md (第三方风控)
      ↕                         交易执行规则.md (L3 Scorecard)
 TradingAgents借鉴分析.md ←→ 全部 (多Agent制衡/决策记忆/三方辩论/审计日志)
      ↕
-推理记忆/ → memory/决策反思.md
+memory/决策反思.md ←─ Agent7次日自动加载 (决策记忆)
 ```

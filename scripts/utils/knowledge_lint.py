@@ -42,6 +42,18 @@ import glob
 import logging
 from datetime import datetime, timedelta
 
+# Windows GBK 编码兼容：强制 stdout/stderr 使用 UTF-8
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except AttributeError:
+        # Python < 3.7 不支持 reconfigure，设环境变量
+        os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    try:
+        sys.stderr.reconfigure(encoding="utf-8")
+    except AttributeError:
+        pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] knowledge_lint: %(message)s",
@@ -106,7 +118,7 @@ def _extract_references(text: str, source_file: str, inside_knowledge: bool = Tr
             # 保留项目内引用
             if target.startswith(("data/", "skills/", "knowledge/")):
                 refs.append({"raw": m.group(0), "target": target, "type": "markdown"})
-            elif inside_knowledge and target.startswith(("策略/", "复盘记录/", "CHANGES.md", "INDEX.md")):
+            elif inside_knowledge and target.startswith(("策略/", "复盘记录/", "CHANGES.md", "INDEX.md", "LLM-Wiki")):
                 # knowledge/ 内文件的相对引用
                 refs.append({"raw": m.group(0), "target": "knowledge/" + target, "type": "markdown"})
     except Exception as e:
@@ -315,13 +327,13 @@ def _check_index_consistency(files: dict) -> dict:
     index_files = set()
     for m in re.finditer(r'\[([^\]]+)\]\(([^\)]+)\)', content):
         target = m.group(2).strip()
-        if target.startswith(("策略/", "复盘记录/")):
+        if target.startswith(("策略/", "复盘记录/", "CHANGES.md", "LLM-Wiki")):
             index_files.add(target)
 
-    # 实际文件系统中的知识库文件
+    # 实际文件系统中的知识库文件（不含 INDEX.md 自身）
     actual_files = set()
     for rel in files.keys():
-        if rel in ("INDEX.md", "CHANGES.md"):
+        if rel == "INDEX.md":
             continue
         actual_files.add(rel)
 
