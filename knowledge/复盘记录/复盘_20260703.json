@@ -1,0 +1,371 @@
+{
+  "date": "2026-07-03",
+  "timestamp": "2026-07-03 22:39",
+  "inputs": {
+    "情报": true,
+    "分析": true,
+    "风控": true,
+    "选股": true,
+    "操盘": true,
+    "决策": true
+  },
+  "predictions": {
+    "market_定性": "熊市/调整，环境评分45分（较昨日52继续恶化）",
+    "env_score": 45,
+    "bullish_sectors": [],
+    "bearish_sectors": [],
+    "signals": [
+      "| 上证指数 | 4043.64 | +0.37% | 空头趋势(diff<0) | 27.9 | 46.2 | ❌(4071) | ❌(4064) | ❌(4",
+      "| 深证成指 | 15597.51 | +0.64% | 空头趋势(diff<0) | 17.8 | 48.7 | ❌(15847) | ❌(15647) | ",
+      "| 创业板指 | 4019.93 | +0.07% | 空头趋势(diff<0) | 8.8 | 47.3 | ❌(4171) | ❌(4101) | ✅(38",
+      "| 科创50 | 1975.60 | -0.59% | 多头趋势(diff>0) | 24.1 | 55.9 | ❌(2090) | ✅(1878) | ✅(1",
+      "- **上证指数**：空头排列，跌破MA5/MA20/MA60全部均线，**熊市格局确认**",
+      "- **深证成指**：空头趋势，跌破MA5/MA20，MA60仍在上方提供支撑",
+      "- **创业板指**：空头趋势，KDJ-K=8.8严重超卖区域，技术性反弹需求强烈",
+      "- **科创50**：**唯一多头趋势指数**（MACD>0, MA20<MA60），结构性机会仍在"
+    ],
+    "risk_warnings": []
+  },
+  "stock_picks": {
+    "stocks": [
+      {
+        "name": "金山办公",
+        "code": "688111.SH",
+        "score": 50,
+        "actual_close": 211.35,
+        "actual_pct": -1.88,
+        "verdict": "neutral"
+      }
+    ],
+    "verified": [
+      {
+        "name": "金山办公",
+        "code": "688111.SH",
+        "score": 50,
+        "actual_close": 211.35,
+        "actual_pct": -1.88,
+        "verdict": "neutral"
+      }
+    ],
+    "total": 1,
+    "vetoed": []
+  },
+  "trade_plan": {
+    "buy": [],
+    "sell": [
+      {
+        "code": "518880.SH",
+        "priority": "中",
+        "pnl_pct": "-8.0%"
+      },
+      {
+        "code": "600970.SH",
+        "priority": "中",
+        "pnl_pct": "-16.9%"
+      },
+      {
+        "code": "002930.SZ",
+        "priority": "中",
+        "pnl_pct": "-17.8%"
+      },
+      {
+        "code": "002352.SZ",
+        "priority": "中",
+        "pnl_pct": "-29.2%"
+      },
+      {
+        "code": "603072.SH",
+        "priority": "中",
+        "pnl_pct": "-28.2%"
+      },
+      {
+        "code": "603799.SH",
+        "priority": "中",
+        "pnl_pct": "+33.9%"
+      },
+      {
+        "code": "600930.SH",
+        "priority": "中",
+        "pnl_pct": "+55.6%"
+      },
+      {
+        "code": "600111.SH",
+        "priority": "中",
+        "pnl_pct": ""
+      }
+    ],
+    "hold": [
+      {
+        "code": "600388.SH"
+      },
+      {
+        "code": "510300.SH"
+      },
+      {
+        "code": "588050.SH"
+      },
+      {
+        "code": "159915.SZ"
+      }
+    ]
+  },
+  "leader": {
+    "sell_decisions": [
+      {
+        "code": "518880",
+        "name": "",
+        "reason": "卖出",
+        "pnl": "-8.0%"
+      },
+      {
+        "code": "600970",
+        "name": "",
+        "reason": "止损",
+        "pnl": "-16.9%"
+      },
+      {
+        "code": "002930",
+        "name": "",
+        "reason": "止损",
+        "pnl": "-17.8%"
+      },
+      {
+        "code": "002352",
+        "name": "",
+        "reason": "止损",
+        "pnl": "-29.2%"
+      },
+      {
+        "code": "603072",
+        "name": "",
+        "reason": "止损",
+        "pnl": "-28.2%"
+      },
+      {
+        "code": "600388",
+        "name": "",
+        "reason": "减仓",
+        "pnl": "36%"
+      },
+      {
+        "code": "603799",
+        "name": "",
+        "reason": "止盈",
+        "pnl": "+33.9%"
+      },
+      {
+        "code": "600930",
+        "name": "",
+        "reason": "止盈",
+        "pnl": "+55.6%"
+      },
+      {
+        "code": "600111",
+        "name": "",
+        "reason": "止盈",
+        "pnl": ""
+      }
+    ],
+    "buy_decisions": [],
+    "hold_decisions": [
+      {
+        "name": "510300.SH"
+      },
+      {
+        "name": "159915.SZ"
+      },
+      {
+        "name": "588050.SH"
+      }
+    ],
+    "conflicts": [
+      {
+        "type": "无分歧",
+        "detail": "**风控官 vs 操盘手：无分歧** ✅"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 中材国际(600970) | 🔴 一致止损 | -16.9%(停牌待复牌) |"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 宏川智慧(002930) | 🔴 一致止损 | -17.8%(停牌待复牌) |"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 顺丰控股(002352) | 🔴 一致止损 | -29.2%(停牌待复牌) |"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 天和磁材(603072) | 🔴 一致止损 | -28.2%(停牌待复牌) |"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 黄金ETF华安(518880) | 🔴 一致止损 | -8.0%→市价卖出 |"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 华友钴业(603799) | 🟡 一致止盈 | +33.9%→分批1/3(停牌) |"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 华电新能(600930) | 🟡 一致止盈 | +55.6%→分批1/3(停牌) |"
+      },
+      {
+        "type": "无分歧",
+        "detail": "| 北方稀土(600111) | 🟡 一致止盈 | 核实成本后执行 |"
+      }
+    ],
+    "rework_items": [],
+    "quality_review": {
+      "passed": 5,
+      "needs_work": 0,
+      "rejected": 0
+    }
+  },
+  "actual": {
+    "date": "20260703",
+    "indices": {
+      "上证指数": {
+        "close": 4043.6432,
+        "pct_chg": 0.3658
+      },
+      "深证成指": {
+        "close": 15597.5116,
+        "pct_chg": 0.6368
+      },
+      "创业板指": {
+        "close": 4019.9341,
+        "pct_chg": 0.0662
+      },
+      "科创50": {
+        "close": 1975.6001,
+        "pct_chg": -0.5883
+      }
+    },
+    "sector_performance": {},
+    "summary": "市场偏强",
+    "up_down": {
+      "up": 3804,
+      "down": 1628,
+      "total": 5516
+    }
+  },
+  "comparison": {
+    "date": "20260703",
+    "market_定性": {
+      "predicted": "熊市/调整，环境评分45分（较昨日52继续恶化）",
+      "actual": "市场偏强",
+      "correct": null
+    },
+    "env_score": {
+      "predicted": 45,
+      "actual": 85,
+      "偏差": 40,
+      "note": "预测为中期趋势评分，实际为单日情绪评分，两者维度不同"
+    },
+    "sector_accuracy": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 0,
+      "details": []
+    },
+    "大盘方向": {
+      "correct": 0,
+      "wrong": 0,
+      "details": [
+        {
+          "index": "上证指数",
+          "pct_chg": 0.37,
+          "direction": "涨"
+        },
+        {
+          "index": "深证成指",
+          "pct_chg": 0.64,
+          "direction": "涨"
+        },
+        {
+          "index": "创业板指",
+          "pct_chg": 0.07,
+          "direction": "涨"
+        },
+        {
+          "index": "科创50",
+          "pct_chg": -0.59,
+          "direction": "跌"
+        }
+      ]
+    }
+  },
+  "accuracy": {
+    "大盘方向": {
+      "correct": 0,
+      "total": 4,
+      "rate": 0.0
+    },
+    "板块预测": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 0,
+      "verified": 0,
+      "rate": 0,
+      "pending_review": 0,
+      "note": "所有板块预测已自动校验"
+    },
+    "选股准确率": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 1,
+      "rate": 0.0
+    },
+    "综合准确率": 0.0
+  },
+  "偏差分析": [],
+  "策略建议": [
+    "准确率稳定，可尝试增加新的分析维度"
+  ],
+  "因子建议": [],
+  "errors": [],
+  "因子表现": {
+    "估值": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 0,
+      "avg_score": 0,
+      "accuracy": 0
+    },
+    "成长": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 0,
+      "avg_score": 0,
+      "accuracy": 0
+    },
+    "动量": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 0,
+      "avg_score": 0,
+      "accuracy": 0
+    },
+    "技术面": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 0,
+      "avg_score": 0,
+      "accuracy": 0
+    },
+    "情绪": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 0,
+      "avg_score": 0,
+      "accuracy": 0
+    }
+  },
+  "accuracy_trend": {
+    "total_days": 3,
+    "avg_accuracy": 0,
+    "trend": "暂无数据"
+  }
+}

@@ -45,6 +45,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.tushare_client import pro, get_ths_index
 from scripts.utils.technical_analysis import add_all_indicators, generate_signal_summary
 
+# RPS相对价格强度（导入失败不影响主流程）
+try:
+    from scripts.utils import rps as rps_engine
+    _has_rps = True
+except Exception as e:
+    print(f"  [WARN] RPS模块导入失败: {e}")
+    _has_rps = False
+
 # 数据库管理器（尽力而为，导入失败不影响报告生成）
 try:
     from scripts.utils.db_manager import DatabaseManager
@@ -371,6 +379,78 @@ def generate_analysis(end_date: str = None) -> dict:
 
     if scores:
         result["environment_score"] = round(np.mean(scores), 0)
+
+    # 5. RPS 相对价格强度分析
+    try:
+        if _has_rps:
+            trade_date = end_date
+            rps_data = rps_engine.calc_all_rps(trade_date)
+            if rps_data is not None and not rps_data.empty:
+                # RPS_120 TOP 10
+                top_col = 'rps_120' if 'rps_120' in rps_data.columns else None
+                if top_col:
+                    top10 = rps_data.sort_values(top_col, ascending=False).head(10)
+                    result["rps_top10"] = top10[[c for c in ['ts_code','name','rps_20','rps_60','rps_120','rps_250','avg_rps'] if c in top10.columns]].to_dict('records')
+
+                # RPS_120 BOTTOM 5
+                    bottom5 = rps_data.sort_values(top_col, ascending=True).head(5)
+                    result["rps_bottom5"] = bottom5[[c for c in ['ts_code','name','rps_20','rps_60','rps_120','rps_250','avg_rps'] if c in bottom5.columns]].to_dict('records')
+
+                # RPS强势股数量统计（RPS_120 >= 90）
+                strong_count = int((rps_data[top_col] >= 90).sum())
+                weak_count = int((rps_data[top_col] < 30).sum())
+                result["rps_summary"] = {
+                    "total_stocks": len(rps_data),
+                    "strong_count_rps90": strong_count,
+                    "weak_count_rps30": weak_count,
+                    "strong_ratio": round(strong_count / max(len(rps_data), 1) * 100, 1),
+                }
+
+                # 行业RPS
+                sector_rps = rps_engine.calc_sector_avg_rps_from_df(rps_data)
+                if not sector_rps.empty:
+                    result["rps_sectors"] = sector_rps.head(10).to_dict('records')
+                    worst_sectors = sector_rps.tail(5).iloc[::-1]
+                    result["rps_sectors_worst"] = worst_sectors.to_dict('records')
+
+                print(f"  {ok} RPS分析: {len(rps_data)}只股票, 强势>90={strong_count}, 弱势<30={weak_count}")
+            else:
+                result["rps_summary"] = {"error": "RPS数据为空"}
+                print(f"  [WARN] RPS分析: 数据为空")
+    except Exception as e:
+        print(f"  [WARN] RPS分析失败: {e}")
+        result.setdefault("errors", []).append(f"RPS分析失败: {e}")
+
+    # 6. OBV 量能分析（从大盘指数信号中提取OBV信息）
+    try:
+        obv_summary = {"indices_obv": [], "divergence_alerts": []}
+        for idx in result.get("indices", []):
+            sig = idx.get("signals", {})
+            obv_signal = sig.get("obv", "")
+            if obv_signal and obv_signal != "无数据":
+                obv_summary["indices_obv"].append({
+                    "name": idx.get("name", ""),
+                    "obv_signal": obv_signal,
+                })
+                # 提取背离警报
+                if "顶背离" in obv_signal:
+                    obv_summary["divergence_alerts"].append({
+                        "index": idx.get("name", ""),
+                        "type": "bearish_divergence",
+                        "detail": f"OBV顶背离 — 价格创新高但量能不济",
+                    })
+                elif "底背离" in obv_signal:
+                    obv_summary["divergence_alerts"].append({
+                        "index": idx.get("name", ""),
+                        "type": "bullish_divergence",
+                        "detail": f"OBV底背离 — 价格创新低但量能已企稳",
+                    })
+        result["obv_analysis"] = obv_summary
+        if obv_summary["divergence_alerts"]:
+            print(f"  {ok} OBV背离警报: {len(obv_summary['divergence_alerts'])} 条")
+        print(f"  {ok} OBV量能分析完成")
+    except Exception as e:
+        print(f"  [WARN] OBV分析失败: {e}")
 
     # 写入报告日志（尽力而为）
     try:

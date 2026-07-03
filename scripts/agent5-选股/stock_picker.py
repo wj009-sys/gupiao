@@ -38,8 +38,11 @@ D9工作反例：
 - 不要不看复盘偏差——evening模式必须读取复盘报告中的因子调整建议
 - 不要推荐已持仓股票——检查与现有持仓的重复
 - 不要用动量因子冒充成长因子——两因子独立计算
+- 不要忽略OBV的累积特性——OBV绝对值无意义，只看方向和交叉信号
+- 不要只看OBV不看价格——OBV必须与价格走势结合判断（顶背离/底背离）
 """
 import pandas as pd
+import numpy as np
 
 import os
 import sys
@@ -48,6 +51,14 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.tushare_client import pro
+
+# RPS相对价格强度（导入失败不影响选股）
+try:
+    from scripts.utils import rps as rps_engine
+    _has_rps = True
+except Exception as e:
+    print(f"  [WARN] RPS模块导入失败: {e}")
+    _has_rps = False
 
 # 数据库管理器（尽力而为，导入失败降级到纯API模式）
 try:
@@ -336,7 +347,7 @@ def score_momentum(ts_code: str) -> dict:
 
 
 def score_technical(ts_code: str) -> dict:
-    """技术面因子评分（0-100）- DB优先读取"""
+    """技术面因子评分（0-100）- DB优先读取 + OBV量能加分"""
     try:
         df = _get_daily_price_db_first(ts_code, days_back=30)
         if df is None or df.empty or len(df) < 30:
@@ -367,7 +378,58 @@ def score_technical(ts_code: str) -> dict:
             if prev_avg > 0 and recent_avg > prev_avg * 1.3:
                 vol_score = 15
                 detail += "，放量"
-        return {"score": max(0, min(100, score + vol_score)), "details": {"summary": detail}}
+
+        # === OBV 量能加分（基于累积成交量） ===
+        # df是降序（最新在前），OBV计算需要升序（最旧在前）
+        obv_bonus = 0
+        obv_detail = ""
+        try:
+            if volumes is not None and len(volumes) >= 10:
+                # 反转成升序计算OBV
+                close_asc = closes[::-1]
+                vol_asc = volumes[::-1]
+
+                obv_vals = np.zeros(len(close_asc))
+                for i in range(1, len(close_asc)):
+                    if close_asc[i] > close_asc[i - 1]:
+                        obv_vals[i] = obv_vals[i - 1] + vol_asc[i]
+                    elif close_asc[i] < close_asc[i - 1]:
+                        obv_vals[i] = obv_vals[i - 1] - vol_asc[i]
+                    else:
+                        obv_vals[i] = obv_vals[i - 1]
+
+                # 最新OBV值（降序的最新 = 升序的最后）
+                latest_obv = obv_vals[-1]
+                # OBV的10日均线
+                if len(obv_vals) >= 10:
+                    obv_ma10 = np.mean(obv_vals[-10:])
+
+                    # OBV > MA10 → 量能偏多
+                    if latest_obv > obv_ma10:
+                        obv_bonus += 10
+                        obv_detail += "OBV>MA10(量能偏多)"
+                    else:
+                        obv_bonus -= 5
+                        obv_detail += "OBV<MA10(量能偏空)"
+
+                    # 最近5日OBV趋势
+                    if len(obv_vals) >= 15:
+                        recent_obv_slope = obv_vals[-1] - obv_vals[-6]
+                        if recent_obv_slope > 0:
+                            obv_bonus += 5
+                            obv_detail += "，量能上升"
+                        elif recent_obv_slope < 0:
+                            obv_bonus -= 5
+                            obv_detail += "，量能下降"
+
+                if obv_detail:
+                    detail += f" | {obv_detail}"
+
+        except Exception:
+            pass  # OBV加分失败不影响主评分
+
+        final_score = max(0, min(100, score + vol_score + obv_bonus))
+        return {"score": final_score, "details": {"summary": detail}}
     except Exception:
         return {"score": 50, "details": {"reason": "技术评分异常"}}
 
@@ -398,6 +460,148 @@ def score_sentiment(ts_code: str, trade_date: str = None) -> dict:
     except Exception as e:
         print(f"  ⚠️ {ts_code} 情绪评分价格数据获取失败: {e}")
     return {"score": 50, "details": {"reason": "无资金流数据，中性评分"}}
+
+
+def score_rps(ts_code: str, trade_date: str = None) -> dict:
+    """
+    RPS相对价格强度因子评分（0-100）
+
+    基于威廉·欧奈尔CAN SLIM体系：
+    - RPS_120 ≥ 90 → 强势股特征（95分）
+    - RPS_120 80-90 → 关注区（80分）
+    - RPS_120 50-80 → 一般（60分）
+    - RPS_120 30-50 → 偏弱（40分）
+    - RPS_120 < 30 → 弱势回避（20分）
+    - RPS_20 短期动量确认：若RPS_20 < 30则降级一档
+    """
+    if not _has_rps:
+        return {"score": 50, "details": {"reason": "RPS模块不可用"}}
+
+    try:
+        rps = rps_engine.get_stock_rps(ts_code, trade_date, periods=[20, 60, 120])
+        if not rps:
+            return {"score": 50, "details": {"reason": "RPS数据不足"}}
+
+        rps_120 = rps.get('rps_120')
+        rps_20 = rps.get('rps_20')
+
+        if rps_120 is None:
+            return {"score": 50, "details": {"reason": "RPS_120无数据"}}
+
+        # 基础评分
+        if rps_120 >= 90:
+            base_score = 95
+            level = "极强"
+        elif rps_120 >= 80:
+            base_score = 80
+            level = "偏强"
+        elif rps_120 >= 50:
+            base_score = 60
+            level = "一般"
+        elif rps_120 >= 30:
+            base_score = 40
+            level = "偏弱"
+        else:
+            base_score = 20
+            level = "弱势"
+
+        # RPS_20短期确认：RPS_20过低时降级
+        if rps_20 is not None and rps_20 < 30 and base_score > 40:
+            base_score -= 15
+            level += "(短弱)"
+
+        # RPS_20强势时加分
+        if rps_20 is not None and rps_20 >= 90 and base_score < 95:
+            base_score += 5
+            level += "(短强)"
+
+        final_score = max(0, min(100, base_score))
+
+        detail = (f"RPS_120={rps_120:.0f}, RPS_60={rps.get('rps_60', 0):.0f}, "
+                  f"RPS_20={rps_20:.0f} → {level}")
+
+        return {"score": final_score, "details": {"reason": detail, "rps_120": rps_120, "rps_20": rps_20}}
+    except Exception as e:
+        print(f"  ⚠️ {ts_code} RPS评分失败: {e}")
+        return {"score": 50, "details": {"reason": f"RPS评分异常: {e}"}}
+
+
+_rps_cache_df = None
+_rps_cache_date = None
+
+
+def _enrich_scored_with_rps(scored: list, trade_date: str) -> list:
+    """
+    为已评分候选列表补充RPS因子（后处理，带缓存避免重复计算）
+
+    在每个评分块 scored.sort()/筛选后调用一次。
+    RPS权重10%，从其他因子等比例扣减。
+    """
+    global _rps_cache_df, _rps_cache_date
+
+    if not scored or not _has_rps:
+        return scored
+
+    # 缓存RPS结果，避免每只股票重复计算全市场RPS
+    if _rps_cache_date != trade_date or _rps_cache_df is None:
+        _rps_cache_df = rps_engine.calc_all_rps(trade_date, periods=[20, 60, 120])
+        _rps_cache_date = trade_date
+        if _rps_cache_df is None or _rps_cache_df.empty:
+            print("  [WARN] RPS缓存数据为空，跳过RPS因子")
+            return scored
+
+    rps_df = _rps_cache_df
+
+    for s in scored:
+        try:
+            code = s['ts_code']
+            row = rps_df[rps_df['ts_code'] == code]
+            if row.empty:
+                s.setdefault('factors', {})["RPS"] = 50
+                s.setdefault('factor_details', {})["RPS"] = {"reason": "无RPS数据"}
+            else:
+                r = row.iloc[0]
+                rps_120 = r.get('rps_120')
+                rps_20 = r.get('rps_20')
+
+                # 评分逻辑（与score_rps保持一致）
+                if pd.notna(rps_120):
+                    if rps_120 >= 90:
+                        base_score = 95
+                    elif rps_120 >= 80:
+                        base_score = 80
+                    elif rps_120 >= 50:
+                        base_score = 60
+                    elif rps_120 >= 30:
+                        base_score = 40
+                    else:
+                        base_score = 20
+
+                    if pd.notna(rps_20):
+                        if rps_20 < 30 and base_score > 40:
+                            base_score -= 15
+                        elif rps_20 >= 90 and base_score < 95:
+                            base_score += 5
+
+                    rps_score = max(0, min(100, base_score))
+                else:
+                    rps_score = 50
+
+                s.setdefault('factors', {})["RPS"] = rps_score
+                s.setdefault('factor_details', {})["RPS"] = {
+                    "reason": f"RPS_120={rps_120:.0f}, RPS_20={rps_20:.0f}" if pd.notna(rps_120) else "RPS数据不足"
+                }
+
+            # 更新强因子计数
+            s['strong_factors'] = sum(1 for v in s['factors'].values() if isinstance(v, (int, float)) and v >= 60)
+            # 10%权重注入总分
+            original = s.get('total_score', 50)
+            rps_val = s['factors'].get("RPS", 50)
+            s['total_score'] = round(original * 0.9 + rps_val * 0.1, 1)
+        except Exception:
+            s.setdefault('factors', {})["RPS"] = 50
+            s.setdefault('factor_details', {})["RPS"] = {"reason": "RPS后处理失败"}
+    return scored
 
 
 def score_growth(ts_code: str, trade_date: str) -> dict:
@@ -668,6 +872,8 @@ def pre_market_picks(top_n: int, config: dict, today: str) -> dict:
         except Exception as e:
             print(f"  {warn} {ts_code} 评分失败: {e}")
 
+    # 补充RPS因子评分
+    scored = _enrich_scored_with_rps(scored, today)
     # 排序取Top N（过滤已持仓股票）
     scored, held = filter_held_stocks(scored, config.get("portfolio", {}))
     result["held_excluded"] = held
@@ -677,7 +883,7 @@ def pre_market_picks(top_n: int, config: dict, today: str) -> dict:
     # 早盘附加检查
     for s in result["ranked_stocks"]:
         result.setdefault("pre_market_notes", []).append(
-            f"{s['ts_code']}: 动量{s['factors']['动量']} 情绪{s['factors']['情绪']} 技术{s['factors']['技术面']}"
+            f"{s['ts_code']}: RPS={s['factors'].get('RPS','N/A')} 动量{s['factors']['动量']} 技术{s['factors']['技术面']}"
         )
 
     print(f"\n  {'='*40}")
@@ -819,6 +1025,7 @@ def intraday_picks(top_n: int, config: dict, today: str) -> dict:
 
     scored, held = filter_held_stocks(scored, config.get("portfolio", {}))
     result["held_excluded"] = result.get("held_excluded", []) + held
+    scored = _enrich_scored_with_rps(scored, today)
     scored.sort(key=lambda x: x["total_score"], reverse=True)
     result["ranked_stocks"] = scored[:top_n]
 
@@ -969,6 +1176,7 @@ def noon_picks(top_n: int, config: dict, today: str) -> dict:
 
     scored, held = filter_held_stocks(scored, config.get("portfolio", {}))
     result["held_excluded"] = result.get("held_excluded", []) + held
+    scored = _enrich_scored_with_rps(scored, today)
     scored.sort(key=lambda x: x["total_score"], reverse=True)
     result["ranked_stocks"] = scored[:top_n]
 
@@ -1111,6 +1319,7 @@ def evening_picks(top_n: int, config: dict, today: str) -> dict:
             print(f"  {warn} {ts_code} 评分失败: {e}")
             result["errors"].append(f"{ts_code} 评分异常: {e}")
 
+    scored = _enrich_scored_with_rps(scored, today)
     scored, held = filter_held_stocks(scored, config.get("portfolio", {}))
     result["held_excluded"] = result.get("held_excluded", []) + held
     scored.sort(key=lambda x: x["total_score"], reverse=True)
@@ -1343,7 +1552,8 @@ def deep_scan_picks(top_n: int, config: dict, today: str) -> dict:
         except Exception as e:
             result["errors"].append(f"{ts_code} 评分异常: {e}")
 
-    # 5. 排序取Top N
+    # 5. 补充RPS因子 + 排序取Top N
+    scored = _enrich_scored_with_rps(scored, today)
     scored.sort(key=lambda x: x["total_score"], reverse=True)
     top_stocks = scored[:top_n]
     result["ranked_stocks"] = top_stocks

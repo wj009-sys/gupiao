@@ -22,6 +22,8 @@ D9反例：
 - 不要假设DataFrame包含所有列（外部数据格式可能变化）
 - 不要对NaN指标生成看多/看空信号（需过滤或标记为数据不足）
 - 不要硬编码指标参数（MACD 12/26/9、KDJ 9/3/3应有文档说明）
+- 不要混淆OBV的绝对值（OBV累积值无意义，只看方向和背离）
+- OBV顶背离出现不意味着立即卖出（需等待价格确认信号）
 """
 
 import pandas as pd
@@ -36,6 +38,80 @@ def _safe_indicator(calc_func, name: str, df: pd.DataFrame) -> pd.Series:
     except Exception as e:
         print(f"[technical_analysis] {name} 计算失败: {e}")
         return pd.Series(np.nan, index=df.index)
+
+
+def _calc_obv(df: pd.DataFrame) -> pd.Series:
+    """计算 OBV (On-Balance Volume)
+
+    公式：
+    - 当日收盘 > 前日收盘 → OBV = 前日OBV + 当日成交量
+    - 当日收盘 < 前日收盘 → OBV = 前日OBV - 当日成交量
+    - 当日收盘 = 前日收盘 → OBV = 前日OBV（不变）
+
+    参数：
+    - df: 必须包含 close, volume 列
+    返回：OBV pd.Series，第一日为 NaN（无前日比较）
+    """
+    obv = pd.Series(0.0, index=df.index, dtype=float)
+    close = df["close"].values
+    volume = df["volume"].values
+
+    for i in range(1, len(close)):
+        if close[i] > close[i - 1]:
+            obv.iloc[i] = obv.iloc[i - 1] + volume[i]
+        elif close[i] < close[i - 1]:
+            obv.iloc[i] = obv.iloc[i - 1] - volume[i]
+        else:
+            obv.iloc[i] = obv.iloc[i - 1]  # 持平
+
+    obv.iloc[0] = np.nan  # 第一天无法计算
+    return obv
+
+
+def _detect_obv_divergence(close: pd.Series, obv: pd.Series, window: int = 14) -> str:
+    """检测价格与 OBV 的背离
+
+    比较最近 window 期内价格和 OBV 的极值方向：
+    - 价格更高高点 + OBV 更低高点 → 顶背离（看空）
+    - 价格更低低点 + OBV 更高低点 → 底背离（看多）
+    返回：'bullish_divergence' / 'bearish_divergence' / 'no_divergence' / 'insufficient_data'
+    """
+    if len(close) < window * 2 or close.isna().sum() > 0 or obv.isna().sum() > 0:
+        return "insufficient_data"
+
+    # 取最近 window 期
+    recent_close = close.iloc[-window:]
+    recent_obv = obv.iloc[-window:]
+
+    close_high_idx = recent_close.idxmax()
+    close_low_idx = recent_close.idxmin()
+    obv_high_idx = recent_obv.idxmax()
+    obv_low_idx = recent_obv.idxmin()
+
+    # 将 idx 转为位置索引
+    close_high_pos = recent_close.index.get_loc(close_high_idx)
+    close_low_pos = recent_close.index.get_loc(close_low_idx)
+    obv_high_pos = recent_obv.index.get_loc(obv_high_idx)
+    obv_low_pos = recent_obv.index.get_loc(obv_low_idx)
+
+    # 顶背离：价格创新高但 OBV 没跟上（价格高点在 OBV 高点之后）
+    if close_high_pos > obv_high_pos and recent_close.iloc[-1] >= recent_close.max() * 0.95:
+        # 价格相对高位，OBV 相对低位
+        close_high_val = recent_close.max()
+        obv_at_close_high = recent_obv.loc[close_high_idx]
+        obv_max_val = recent_obv.max()
+        if obv_at_close_high < obv_max_val * 0.95:
+            return "bearish_divergence"
+
+    # 底背离：价格创新低但 OBV 已企稳（价格低点在 OBV 低点之后）
+    if close_low_pos > obv_low_pos and recent_close.iloc[-1] <= recent_close.min() * 1.05:
+        close_low_val = recent_close.min()
+        obv_at_close_low = recent_obv.loc[close_low_idx]
+        obv_min_val = recent_obv.min()
+        if obv_at_close_low > obv_min_val * 1.05:
+            return "bullish_divergence"
+
+    return "no_divergence"
 
 
 def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
@@ -59,6 +135,7 @@ def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
             return pd.DataFrame()  # 无法计算
 
     has_ohlc = all(c in result.columns for c in ["open", "high", "low", "close", "volume"])
+    has_volume = "volume" in result.columns
 
     # MACD (12, 26, 9) — 至少需要35根K线才能算出有意义的值
     if len(result) >= 35:
@@ -126,6 +203,31 @@ def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
         result["boll_break_lower"] = result["close"] < result["boll_lower"]
     else:
         print(f"[technical_analysis] 数据长度({len(result)})不足20，跳过BOLL计算")
+
+    # OBV (On-Balance Volume) — 需要成交量数据
+    if has_volume and len(result) >= 2:
+        obv_series = _safe_indicator(
+            lambda: _calc_obv(result), "OBV", result
+        )
+        result["obv"] = obv_series
+        # OBV 的 20 日均线（用于判断 OBV 趋势方向）
+        if len(result) >= 20:
+            result["obv_ma20"] = _safe_indicator(
+                lambda: obv_series.rolling(window=20, min_periods=10).mean(),
+                "OBV_MA20", result
+            )
+        # OBV 趋势方向（最近5日上升/下降）
+        if len(result) >= 6:
+            result["obv_trend"] = np.where(
+                obv_series.diff(5) > 0, "上升",
+                np.where(obv_series.diff(5) < 0, "下降", "持平")
+            )
+        # OBV 背离检测
+        result["obv_divergence"] = _detect_obv_divergence(
+            result["close"], obv_series, window=min(14, len(result) // 3)
+        )
+    else:
+        print(f"[technical_analysis] 缺少volume列或数据不足，跳过OBV计算")
 
     # 移动均线
     for window, name_suffix in [(5, "5"), (10, "10"), (20, "20"), (60, "60")]:
@@ -217,6 +319,33 @@ def generate_signal_summary(df: pd.DataFrame) -> dict:
             signals["boll"] = "中轨下方 (偏空)"
     else:
         signals["boll"] = "无数据"
+
+    # OBV 信号
+    obv = last.get("obv", np.nan)
+    obv_ma20 = last.get("obv_ma20", np.nan)
+    obv_trend = last.get("obv_trend", "")
+    obv_divergence = last.get("obv_divergence", "no_divergence")
+    if pd.isna(obv):
+        signals["obv"] = "无数据"
+    else:
+        obv_parts = []
+        # OBV 与均线位置
+        if not pd.isna(obv_ma20):
+            if obv > obv_ma20:
+                obv_parts.append("OBV>MA20(量能偏多)")
+            else:
+                obv_parts.append("OBV<MA20(量能偏空)")
+        # OBV 趋势
+        if obv_trend == "上升":
+            obv_parts.append("量能上升")
+        elif obv_trend == "下降":
+            obv_parts.append("量能下降")
+        # 背离信号
+        if obv_divergence == "bearish_divergence":
+            obv_parts.append("⚠️ 顶背离(看空)")
+        elif obv_divergence == "bullish_divergence":
+            obv_parts.append("⚠️ 底背离(看多)")
+        signals["obv"] = " | ".join(obv_parts) if obv_parts else f"OBV={obv:.0f}"
 
     # 均线排列
     ma5 = last.get("ma_5", np.nan)

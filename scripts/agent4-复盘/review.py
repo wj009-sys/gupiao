@@ -50,6 +50,14 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.tushare_client import pro
 
+# 知识库变更日志（导入失败不中断复盘）
+try:
+    from scripts.utils.knowledge_lint import update_changes, run_lint, fix_index
+    _has_knowledge_tools = True
+except Exception as e:
+    print(f"  [WARN] 知识库工具导入失败: {e}")
+    _has_knowledge_tools = False
+
 # ======== 路径常量 ========
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -673,7 +681,7 @@ def fetch_real_prices(stocks: list, trade_date: str) -> list:
 
 
 def update_knowledge(review_data: dict, trade_date: str) -> str:
-    """更新知识库（复盘记录 + 策略建议）"""
+    """更新知识库（复盘记录 + 策略建议 + 变更日志 + 索引更新）"""
     复盘记录_dir = p("knowledge/复盘记录")
     os.makedirs(复盘记录_dir, exist_ok=True)
 
@@ -681,6 +689,29 @@ def update_knowledge(review_data: dict, trade_date: str) -> str:
     record_path = os.path.join(复盘记录_dir, f"复盘_{trade_date}.json")
     with open(record_path, "w", encoding="utf-8") as f:
         json.dump(review_data, f, ensure_ascii=False, indent=2, default=str)
+
+    # === 知识库变更日志 ===
+    if _has_knowledge_tools:
+        try:
+            # CHANGES.md 记录这次复盘
+            update_changes(
+                "复盘",
+                f"复盘记录/复盘_{trade_date}.json",
+                f"日常复盘：偏差分析 + 策略建议 + 准确率趋势",
+            )
+            print(f"  [OK] CHANGES.md 已更新")
+        except Exception as e:
+            print(f"  [WARN] CHANGES.md 更新失败: {e}")
+
+        try:
+            # 更新 INDEX.md（如果有新的复盘记录文件）
+            from scripts.utils.knowledge_lint import _scan_files
+            files = _scan_files()
+            added = fix_index(files)
+            if added > 0:
+                print(f"  [OK] INDEX.md 已更新: 新增 {added} 个条目")
+        except Exception as e:
+            print(f"  [WARN] INDEX.md 更新失败: {e}")
 
     return record_path
 
@@ -910,13 +941,37 @@ def generate_review_report(trade_date: str = None) -> dict:
         else:
             review["策略建议"].append("准确率稳定，可尝试增加新的分析维度")
 
-    # 8. 更新知识库
+    # 8. 更新知识库（含变更日志 + 索引更新）
     try:
         record_path = update_knowledge(review, trade_date.replace("-", ""))
         print(f"  {ok} 复盘记录已保存: {record_path}")
     except Exception as e:
         review["errors"].append(f"知识库更新失败: {e}")
         print(f"  {fail} 知识库更新: {e}")
+
+    # 9. 知识库一致性检查（每周一次自动 lint，每天输出摘要）
+    if _has_knowledge_tools:
+        try:
+            lint_report = run_lint(max_stale_days=90)
+            review["knowledge_lint"] = {
+                "total_files": lint_report["total_files"],
+                "errors": lint_report["summary"]["errors"],
+                "warnings": lint_report["summary"]["warnings"],
+                "orphans": [o for o in lint_report.get("orphans", [])],
+                "broken_refs": len(lint_report.get("broken_refs", [])),
+                "stale": [s["file"] for s in lint_report.get("stale", [])],
+                "contradictions": len(lint_report.get("contradictions", [])),
+                "health": "健康" if lint_report["summary"]["errors"] == 0 and lint_report["summary"]["warnings"] == 0
+                          else "需关注" if lint_report["summary"]["errors"] == 0
+                          else "需修复",
+            }
+            if lint_report["summary"]["errors"] > 0 or lint_report["summary"]["warnings"] > 0:
+                print(f"  {ok} 知识库健康度: {review['knowledge_lint']['health']} "
+                      f"(错误{lint_report['summary']['errors']}, 警告{lint_report['summary']['warnings']})")
+            else:
+                print(f"  {ok} 知识库健康度: 🟢 健康")
+        except Exception as e:
+            print(f"  [WARN] 知识库 lint 检查失败: {e}")
 
     return review
 
