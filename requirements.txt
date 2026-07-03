@@ -1,0 +1,27 @@
+# 股票投研自动化项目依赖
+# 安装: pip install -r requirements.txt
+
+# ── 数据源 ──
+tushare>=1.11.0           # Tushare Pro A股数据接口
+
+# ── 数据处理 ──
+pandas>=2.0.0
+numpy>=1.24.0
+requests>=2.31.0
+
+# ── 技术分析 ──
+ta>=0.11.0                # Technical Analysis Library
+
+# ── 文档生成 ──
+python-docx>=1.1.0        # Word文档生成
+
+# ── WebUI ──
+fastapi>=0.104.0
+uvicorn>=0.24.0
+jinja2>=3.1.2
+markdown>=3.5.0
+aiofiles>=23.2.0          # 静态文件服务
+
+# ── LLM (可选, L2重排序用) ──
+# litellm>=1.0.0          # L2 LLM相对排序 (按需安装)
+# openai>=1.0.0           # OpenAI API (按需安装)

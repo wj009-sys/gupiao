@@ -71,7 +71,7 @@ jobs:
 
       - name: 🔑 验证配置
         run: |
-          echo "TUSHARE_TOKEN 长度: ${#TUSHARE_TOKEN}"
+          echo "TUSHARE_TOKEN: ${TUSHARE_TOKEN:+SET}"
           if [ -z "$TUSHARE_TOKEN" ]; then
             echo "❌ TUSHARE_TOKEN 未设置"
             exit 1
@@ -85,7 +85,9 @@ jobs:
           python scripts/utils/auto_sync.py --auto-sync --max-minutes 15 --max-stocks 1000
           echo "✅ 数据同步完成"
 
+      # ── sync_only 模式跳过所有Agent ──
       - name: 🕵️ Agent1 - 情报采集
+        if: ${{ github.event.inputs.mode != 'sync_only' }}
         continue-on-error: true
         run: |
           echo "▶️ 情报采集..."
@@ -93,6 +95,7 @@ jobs:
           echo "✅ 情报采集完成"
 
       - name: 📊 Agent2 - 技术分析
+        if: ${{ github.event.inputs.mode != 'sync_only' }}
         continue-on-error: true
         run: |
           echo "▶️ 技术分析..."
@@ -100,6 +103,7 @@ jobs:
           echo "✅ 技术分析完成"
 
       - name: 🔍 Agent5 - 晚间选股
+        if: ${{ github.event.inputs.mode != 'sync_only' }}
         continue-on-error: true
         run: |
           echo "▶️ 晚间选股..."
@@ -107,6 +111,7 @@ jobs:
           echo "✅ 选股完成"
 
       - name: 🛡️ Agent3 - 风控检查
+        if: ${{ github.event.inputs.mode != 'sync_only' }}
         continue-on-error: true
         run: |
           echo "▶️ 风控检查..."
@@ -114,13 +119,23 @@ jobs:
           echo "✅ 风控检查完成"
 
       - name: 🎯 Agent6 - 交易计划
+        if: ${{ github.event.inputs.mode != 'sync_only' }}
         continue-on-error: true
         run: |
           echo "▶️ 交易计划..."
           python scripts/agent6-操盘/trader.py
           echo "✅ 交易计划完成"
 
+      - name: 🔄 Agent4 - 复盘分析
+        if: ${{ github.event.inputs.mode != 'sync_only' }}
+        continue-on-error: true
+        run: |
+          echo "▶️ 复盘分析..."
+          python scripts/agent4-复盘/review.py
+          echo "✅ 复盘分析完成"
+
       - name: 🏆 Agent7 - 投资决策
+        if: ${{ github.event.inputs.mode != 'sync_only' }}
         continue-on-error: true
         run: |
           echo "▶️ 投资决策..."
@@ -128,11 +143,15 @@ jobs:
           echo "✅ 投资决策完成"
 
       - name: 📤 推送报告到微信
+        if: ${{ github.event.inputs.mode != 'sync_only' }}
         continue-on-error: true
         run: |
           if [ -n "$PUSHPLUS_TOKEN" ]; then
+            python scripts/utils/wechat_send.py --report 情报 2>&1 || true
             python scripts/utils/wechat_send.py --report 分析 2>&1 || true
             python scripts/utils/wechat_send.py --report 选股 2>&1 || true
+            python scripts/utils/wechat_send.py --report 复盘 2>&1 || true
+            python scripts/utils/wechat_send.py --report 决策 2>&1 || true
             echo "✅ 推送完成"
           else
             echo "ℹ️ PUSHPLUS_TOKEN未配置，跳过推送"
@@ -158,6 +177,7 @@ jobs:
           echo "| 🔍 选股 | ✅ |" >> $GITHUB_STEP_SUMMARY
           echo "| 🛡️ 风控 | ✅ |" >> $GITHUB_STEP_SUMMARY
           echo "| 🎯 操盘 | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔄 复盘 | ✅ |" >> $GITHUB_STEP_SUMMARY
           echo "| 🏆 决策 | ✅ |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "报告已保存为 Artifact: reports-${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY

@@ -52,7 +52,7 @@ if sys.platform == "win32":
     try:
         sys.stderr.reconfigure(encoding="utf-8")
     except AttributeError:
-        pass
+        logging.debug("stderr.reconfigure not available on this Python version")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,7 +70,7 @@ def p(path: str) -> str:
     return os.path.join(PROJECT_ROOT, path)
 
 
-def _scan_files() -> dict:
+def scan_files() -> dict:
     """扫描知识库目录结构"""
     knowledge_dir = p("knowledge")
     files = {}
@@ -88,6 +88,9 @@ def _scan_files() -> dict:
                 "size": os.path.getsize(full),
             }
     return files
+
+# Backward compatibility alias
+_scan_files = scan_files
 
 
 def _extract_references(text: str, source_file: str, inside_knowledge: bool = True) -> list:
@@ -370,7 +373,7 @@ def run_lint(max_stale_days: int = 90) -> dict:
     print("\n🔍 知识库一致性检查 (Knowledge Lint)")
     print("=" * 50)
 
-    files = _scan_files()
+    files = scan_files()
     print(f"\n📁 扫描文件: {len(files)} 个")
 
     # 读取所有文本内容供矛盾检测
@@ -603,7 +606,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.fix_index:
-        files = _scan_files()
+        files = scan_files()
         fix_index(files)
         sys.exit(0)
 

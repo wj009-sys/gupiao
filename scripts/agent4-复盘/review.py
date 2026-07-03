@@ -507,7 +507,7 @@ def extract_stock_picks(pick_text: str) -> dict:
                     parts = line.split('|')
                     for p in parts:
                         p_clean = p.strip().strip('*')
-                        if re.match(r'^[一-\ufff]{2,8}$', p_clean) and not re.search(r'\d', p_clean):
+                        if re.match(r'^[一-鿿]{2,8}$', p_clean) and not re.search(r'\d', p_clean):
                             name = p_clean
                             break
                 picks["stocks"].append({
@@ -681,8 +681,10 @@ def fetch_real_prices(stocks: list, trade_date: str) -> list:
                 s["actual_close"] = None
                 s["verdict"] = "no_data"
                 verified.append(s)
-        except Exception:
+        except Exception as e:
             s["verdict"] = "error"
+            s["error_info"] = str(e)
+            print(f"  [WARN] 获取{s.get('code', '?')}行情失败: {e}")
             verified.append(s)
     return verified
 
@@ -712,8 +714,8 @@ def update_knowledge(review_data: dict, trade_date: str) -> str:
 
         try:
             # 更新 INDEX.md（如果有新的复盘记录文件）
-            from scripts.utils.knowledge_lint import _scan_files
-            files = _scan_files()
+            from scripts.utils.knowledge_lint import scan_files
+            files = scan_files()
             added = fix_index(files)
             if added > 0:
                 print(f"  [OK] INDEX.md 已更新: 新增 {added} 个条目")

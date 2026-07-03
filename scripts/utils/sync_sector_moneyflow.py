@@ -285,7 +285,8 @@ def main():
             cur = db.conn.cursor()
             cur.execute(f"SELECT COUNT(*) FROM {t}")
             stats_before[t] = cur.fetchone()[0]
-        except Exception:
+        except Exception as e:
+            print(f"  [WARN] 表 {t} 统计查询失败: {e}")
             stats_before[t] = 0
 
     results = {}
@@ -310,7 +311,8 @@ def main():
             cur = db.conn.cursor()
             cur.execute(f"SELECT COUNT(*) FROM {table_name}")
             after = cur.fetchone()[0]
-        except Exception:
+        except Exception as e:
+            print(f"  [WARN] 表 {table_name} 同步后统计失败: {e}")
             after = 0
         delta = after - before
         total_new += delta

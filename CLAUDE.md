@@ -45,7 +45,7 @@
 
 ## 项目目标
 
-构建A股自动化投研团队，包含8个AI Agent角色，每天自动完成情报采集→技术分析→选股推荐→风控检查→交易计划→复盘迭代的完整闭环，由投资领导统筹管理。每个Agent都经过Darwin Skill优化（评分从平均65.1提升至97.1，全部达到五星标准）。
+构建A股自动化投研团队，包含8个AI Agent角色（7个流水线Agent + 1个交互式问股Agent），每天自动完成情报采集→技术分析→选股推荐→风控检查→交易计划→复盘迭代的完整闭环，由投资领导统筹管理。每个Agent都经过Darwin Skill优化（评分从平均65.1提升至97.1，全部达到五星标准）。
 
 ## 🔄 数据自动同步
 
@@ -299,7 +299,7 @@ Agent3（风控官）与 Agent6（操盘手）构成「提案-审查」双轨制
 .env.example         - 环境变量模板
 docs/archive/        - 历史设计文档和过时脚本归档
 data/              - 数据文件（持仓、自选、规则配置、数据库）
-  ├── stocks.db       - SQLite主数据库（~10M行，15张表）
+  ├── stocks.db       - SQLite主数据库（~4100万行，15张表）
   ├── trading_calendar.json - 交易日历缓存
   ├── checkpoints/    - 数据同步检查点（gitignored）
   ├── raw/            - 原始数据缓存（gitignored）
@@ -537,6 +537,8 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001.SZ --strategy 均线
 | 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文6.0** — 全项目一致性审计+30项修复(5CRITICAL+12HIGH+13MEDIUM)+Telegram→PushPlus迁移+裸except消除 | 7 SKILL推送标准化 + 6处裸except修复 + 14处硬编码/路径修复 | e3c2ec9 |
 | 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文7.0** — 全项目全面审计修复(5CRITICAL+7HIGH+13MEDIUM+11LOW) | CLAUDE.md计数刷新+risk_check总资产Bug+stock_picker死代码+静默pass消除+硬编码env变量化+SKILL标准化+知识库权重修正+基础设施加固 | 已完成 |
 | 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文9.0** — 借鉴ZhuLinsen三项目全面架构升级(8因子体系+L1→L2→L3+LLM排序+问股系统) | L2 LLM排序+l2_rerank+agent_ask问股9策略+SKILL+env | 已完成 |
+| 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文10.0** — 全项目全面审计修复101项(27CRITICAL+13HIGH+37MEDIUM+24LOW) | 知识库+data全面审计修复14项+knowledge_lint 2项Bug修复+补录11只指数 | c31188d, 1a83e8f, 26682e1 |
+| 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文11.0** — 全项目全面审计修复105项(8CRITICAL+22HIGH+31MEDIUM+40LOW+4INFO) | 7维度并行审计+交叉引用+38项自动修复+requirements.txt+GHA Agent4补全+Token安全+CLAUDE.md修正 | 当前 |
 
 优化内容（第9轮-达尔文9.0）：借鉴ZhuLinsen三项目全面架构升级
 - **L1→L2→L3选股管线**：stock_picker.py重构为三级管线(L1评分→L2重排序→L3后置分析器)
@@ -573,3 +575,28 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001.SZ --strategy 均线
 - **D9反例注释**：每个脚本标注常见错误做法、为什么不要做、应该怎么做
 - **知识库升级**：选股策略.md/交易执行规则.md/择时策略.md各新增D3表+D4检查点+D9反例
 - **Bug修复**：review.py死代码空循环删除、trader.py总资产字段None兼容、load_json JSONDecodeError保护、technical_analysis.py列名缺失/NaN防御
+
+优化内容（第11轮-达尔文11.0）：全项目全面审计修复105项
+- **多维度并行审计**：7维度同时审计（SKILL×8、脚本×34、知识库×14、配置×7、CLAUDE.md、WebUI、GHA+Memory）+ 跨文件交叉引用审计
+- **安全修复**：移除memory/投研-QQ通知推送.md中暴露的PushPlus Token明文；修复 _audit_output.py 硬编码C:路径
+- **基础设施修复**：创建 requirements.txt（之前缺失导致GHA `pip install` 永远失败）；GHA添加Agent4（复盘师）到工作流；GHA修复 `sync_only` 模式（之前所有Agent无条件运行）
+- **CLAUDE.md修正**：stocks.db行数~10M→~4100万；补录达尔文10.0到优化历史；新增11个未引用的工具脚本说明
+- **代码质量修复**：修复6处 except:pass 静默吞异常；修复2处硬编码日期；修复2处重复关键词；补全6个SKILL.md的 model 字段
+- **配置修复**：修复止损规则.json的type名重名（大盘联动止损×2→大盘联动止损/大盘联动清仓）
+- **知识库修复**：CHANGES.md路径前缀补全；复盘记录 correct=null→false；knowledge_lint.py stderr AttributeError加注释
+
+### 工具脚本（scripts/utils/ 补充清单）
+
+| 脚本 | 行数 | 用途 |
+|:-----|:----:|:-----|
+| `migrate_to_db.py` | 370 | 数据迁移工具 |
+| `fetch_all_history.py` | 1,104 | 全量历史行情拉取 |
+| `data_cleaner.py` | 1,062 | 数据审计+清洗+复权工具 |
+| `research_ma96_rsi.py` | 602 | MA96+RSI策略研究脚本 |
+| `research_all_strategies.py` | 1,183 | 全策略含退市股回测 |
+| `sync_sector_moneyflow.py` | 330 | 板块资金流向同步 |
+| `fetch_financials.py` | 369 | 财务数据拉取 |
+| `eastmoney_client.py` | 292 | 东方财富板块数据客户端 |
+| `weekly_review.py` | 984 | Agent4周度复盘 |
+| `debate.py` | 537 | Agent7三方辩论引擎 |
+

@@ -275,7 +275,6 @@ python -X utf8 scripts/agent2-技术分析/analyze.py [YYYYMMDD]
 
 ---
 
-
 ## 🔴 D4 CHECKPOINT
 
 分析报告产出前必须完成以下检查项：

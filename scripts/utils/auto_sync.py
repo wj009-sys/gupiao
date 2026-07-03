@@ -629,7 +629,8 @@ def sync_fina_indicator_incremental(db: DatabaseManager, all_codes: list,
         cur = db.conn.cursor()
         cur.execute("SELECT MAX(end_date) FROM fina_indicator")
         max_end_date = cur.fetchone()[0] or ""
-    except Exception:
+    except Exception as e:
+        print(f"  [WARN] 财报日期查询失败: {e}")
         max_end_date = ""
 
     # 找出 end_date < max_end_date 的股票（有新财报未拉取）
@@ -650,7 +651,8 @@ def sync_fina_indicator_incremental(db: DatabaseManager, all_codes: list,
             """, (max_end_date,))
             lagging_stocks = [row[0] for row in cur.fetchall()]
         except Exception as e:
-            pass  # non-critical fallback
+            print(f"  [WARN] 财报滞后查询失败: {e}")
+            lagging_stocks = []
 
     if not lagging_stocks:
         print(f"\n  [5/7] 财报数据 — 所有股票已是最新，跳过")
@@ -713,7 +715,8 @@ def sync_dividend_incremental(db: DatabaseManager, all_codes: list,
         cur.execute("SELECT DISTINCT ts_code FROM dividend")
         db_existing = set(row[0] for row in cur.fetchall())
     except Exception as e:
-        pass  # non-critical fallback
+        print(f"  [WARN] 分红数据查询失败: {e}")
+        db_existing = set()
 
     stocks_to_pull = [c for c in stock_codes if c not in db_existing]
     if not stocks_to_pull:
@@ -760,14 +763,15 @@ def load_all_market_codes(db: DatabaseManager) -> list:
         if codes:
             return codes
     except Exception as e:
-        pass  # non-critical fallback
+        print(f"  [WARN] stock_basic 查询失败: {e}")
 
     # 如果 stock_basic 为空，从 daily_price 获取
     try:
         cur = db.conn.cursor()
         cur.execute("SELECT DISTINCT ts_code FROM daily_price ORDER BY ts_code")
         return [row[0] for row in cur.fetchall()]
-    except Exception:
+    except Exception as e:
+        print(f"  [ERROR] 无法加载股票列表: {e}")
         return []
 
 
@@ -871,7 +875,8 @@ def run_sync(args) -> int:
             cur.execute("SELECT MAX(trade_date) FROM daily_price WHERE asset_type = 'I'")
             row = cur.fetchone()
             idx_max = row[0] if row and row[0] else ""
-        except Exception:
+        except Exception as e:
+            print(f"  [WARN] 指数日期查询失败: {e}")
             idx_max = ""
 
         idx_start = (datetime.strptime(idx_max, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d") if idx_max else "19900101"

@@ -29,6 +29,7 @@ D9反例：
 import pandas as pd
 import numpy as np
 import ta
+from datetime import datetime
 
 
 def _safe_indicator(calc_func, name: str, df: pd.DataFrame) -> pd.Series:
@@ -365,8 +366,8 @@ def generate_signal_summary(df: pd.DataFrame) -> dict:
 
 
 if __name__ == "__main__":
-    # 演示：生成示例数据
-    dates = pd.date_range("2026-01-01", periods=100, freq="D")
+    # 演示：生成示例数据（使用动态日期）
+    dates = pd.date_range(end=datetime.now(), periods=100, freq="D")
     data = {
         "open": np.random.randn(100).cumsum() + 100,
         "high": np.random.randn(100).cumsum() + 102,
@@ -393,5 +394,5 @@ if __name__ == "__main__":
     empty_df = pd.DataFrame()
     print(f"空DataFrame: {generate_signal_summary(empty_df)}")
 
-    single_row = pd.DataFrame({"close": [100]}, index=pd.date_range("2026-06-27", periods=1))
+    single_row = pd.DataFrame({"close": [100]}, index=pd.date_range(end=datetime.now(), periods=1))
     print(f"单行DataFrame: {generate_signal_summary(single_row)}")

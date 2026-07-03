@@ -14,7 +14,7 @@ Agent4 周度复盘 — 对本周市场进行全方位复盘
 
 用法：
     source venv/Scripts/activate
-    python -X utf8 scripts/agent4-复盘/weekly_review.py [--week-ending 2026-06-26]
+    python -X utf8 scripts/agent4-复盘/weekly_review.py [--week-ending YYYY-MM-DD]
 
 D3 异常处理:
     触发条件                      一线修复                            仍失败兜底
@@ -55,6 +55,7 @@ import glob
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "utils"))
 from scripts.utils.tushare_client import pro
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -518,7 +519,7 @@ def fetch_weekly_news(dates: list) -> dict:
                 cat = "policy"
             elif any(k in text for k in ["公司", "公告", "收购", "IPO", "定增"]):
                 cat = "company"
-            elif any(k in text for k in ["美股", "美联储", "美联储", "日本", "韩国", "欧洲", "贸易"]):
+            elif any(k in text for k in ["美股", "美联储", "日本", "韩国", "欧洲", "贸易"]):
                 cat = "global"
             elif any(k in text for k in ["板块", "行业", "半导体", "新能源", "医药", "消费"]):
                 cat = "industry"
@@ -684,7 +685,14 @@ def generate_outlook(report: dict) -> str:
     else:
         outlook_parts.append("3. 💰 北向资金本周净流出，关注外资动向")
 
-    outlook_parts.append("4. ⏰ 半年末资金面（6/30），注意可能波动")
+    # 动态生成季度/半年末提示
+    current_month = datetime.now().month
+    quarter_end_months = [3, 6, 9, 12]
+    if current_month in quarter_end_months:
+        season_label = "半年末" if current_month == 6 else ("年末" if current_month == 12 else "季末")
+        outlook_parts.append(f"4. ⏰ {season_label}资金面，注意可能波动")
+    else:
+        outlook_parts.append("4. ⏰ 关注资金面和宏观政策变化")
 
     outlook_parts.append("\n### 操作策略\n")
     outlook_parts.append("- 控制总仓位，震荡市上限80%")
@@ -951,7 +959,6 @@ def save_report(report: dict) -> str:
 
     # 转Word
     try:
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "utils"))
         from md_to_docx import convert_md_to_docx
         docx_path = convert_md_to_docx(md_path)
         if docx_path:
@@ -961,7 +968,6 @@ def save_report(report: dict) -> str:
 
     # 发送微信
     try:
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "utils"))
         from wechat_send import auto_convert_and_send
         auto_convert_and_send(md_path)
     except Exception as e:

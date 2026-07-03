@@ -50,17 +50,20 @@
 | `data/trading_calendar.json` | 全部 | 交易日历缓存（1574个交易日） |
 | `data/watchlist.json` | 选股策略 | 自选股列表 |
 | `data/portfolio.json` | 交易执行规则 | 持仓组合（仓位/市值/盈亏） |
-| `CLAUDE.md` | 全部 | Schema配置文件 — 见 [[LLM-Wiki-工作法.md]] |
+| `CLAUDE.md` | 全部 | Schema配置文件 — 见 [[LLM-Wiki-工作法]] |
 | `memory/决策反思.md` | 全部 | 投资领导决策反思，Agent7次日自动加载 |
 | `scripts/utils/l2_rerank.py` | 选股策略 | L2 LLM相对排序引擎 |
 | `scripts/utils/scorecard.py` | 选股策略 | L3 Scorecard后置分析器 |
 | `scripts/utils/risk_overlay.py` | 选股策略 | 风险叠加层(6项独立惩罚) |
 | `scripts/utils/data_provider.py` | 全部 | Tushare+AkShare多数据源fallback |
 | `scripts/agent_ask/ask.py` | 全部 | Agent策略问股(9策略模板) |
+| `skills/agent1-情报员/SKILL.md` | 全部 | 情报采集规范 |
+| `skills/agent2-分析师/SKILL.md` | 全部 | 技术分析规范 |
 | `skills/agent3-风控官/SKILL.md` | 交易执行规则 | 风控审查标准 |
+| `skills/agent4-复盘师/SKILL.md` | 全部 | 复盘师规范 |
 | `skills/agent5-选股机器人/SKILL.md` | 选股策略 | 选股机器人操作规范 |
 | `skills/agent6-操盘手/SKILL.md` | 交易执行规则 | 操盘手操作规范 |
-| `skills/agent4-复盘师/SKILL.md` | 全部 | 复盘师规范 |
+| `skills/agent7-投资领导/SKILL.md` | 全部 | 投资领导规范 |
 | `skills/agent-问股/SKILL.md` | 全部 | 策略问股Agent规范 |
 
 ## 🔄 双向引用关系
@@ -84,3 +87,5 @@ TradingAgents借鉴分析.md ←→ 全部 (多Agent制衡/决策记忆/三方�
      ↕
 memory/决策反思.md ←─ Agent7次日自动加载 (决策记忆)
 ```
+| [复盘记录/复盘_20260704.json](复盘记录/复盘_20260704.json) | 2026-07-04 | 日常复盘 | — |
+

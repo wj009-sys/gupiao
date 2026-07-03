@@ -1,4 +1,5 @@
 import json
+import os
 
 findings = [
     {"file": "scripts/agent4-复盘/review.py", "severity": "CRITICAL", "issue": "calculate_accuracy_trend (L391) reads key 'sector_accuracy_rate' but saved JSON uses Chinese key '板块预测'. Trend always returns avg=0.", "line": 391, "fix": "Change L391 to acc.get('板块预测', {}).get('rate') or normalize keys on save/load."},
@@ -24,7 +25,8 @@ findings = [
 ]
 
 result = {"findings": findings, "files_checked": 2, "issues_count": len(findings)}
-with open("C:\\Users\\65004\\Desktop\\小白\\股票投资\\scripts\\agent4-复盘\\_audit_result.json", "w", encoding="utf-8") as f:
+output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '_audit_result.json')
+with open(output_path, "w", encoding="utf-8") as f:
     json.dump(result, f, ensure_ascii=True, indent=2)
 print("OK")
 

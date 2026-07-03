@@ -466,7 +466,8 @@ class DatabaseManager:
         try:
             self.conn.execute("SELECT 1")
             return True
-        except Exception:
+        except Exception as e:
+            print(f"  [WARN] DB连接检查失败: {e}")
             self._auto_connect()
             return self.conn is not None
 
@@ -942,7 +943,8 @@ class DatabaseManager:
             cur = self.conn.cursor()
             cur.execute("SELECT 1 FROM adj_factor WHERE ts_code = ? LIMIT 1", (ts_code,))
             return cur.fetchone() is not None
-        except Exception:
+        except Exception as e:
+            print(f"  [WARN] has_adj_factor({ts_code}) 失败: {e}")
             return False
 
     def upsert_daily_indicator(self, df: pd.DataFrame) -> int:
@@ -1328,7 +1330,8 @@ class DatabaseManager:
             cur.execute("SELECT MAX(trade_date) FROM daily_price")
             row = cur.fetchone()
             return row[0] if row and row[0] else ""
-        except Exception:
+        except Exception as e:
+            print(f"  [WARN] get_latest_trade_date 失败: {e}")
             return ""
 
     def has_data_for_date(self, ts_code: str, trade_date: str) -> bool:
@@ -1343,7 +1346,8 @@ class DatabaseManager:
                 (ts_code, trade_date)
             )
             return cur.fetchone() is not None
-        except Exception:
+        except Exception as e:
+            print(f"  [WARN] has_data_for_date({ts_code}, {trade_date}) 失败: {e}")
             return False
 
     def get_table_freshness(self) -> dict:
@@ -1611,7 +1615,8 @@ class DatabaseManager:
             cur.execute(f"SELECT MIN(trade_date), MAX(trade_date) FROM {table}")
             row = cur.fetchone()
             return (row[0] or "", row[1] or "")
-        except Exception:
+        except Exception as e:
+            print(f"  [WARN] get_date_range({table}) 失败: {e}")
             return ("", "")
 
     def vacuum(self):

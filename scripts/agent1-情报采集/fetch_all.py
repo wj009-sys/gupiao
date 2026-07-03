@@ -156,7 +156,8 @@ def fetch_stock_daily(stock_code: str, start_date: str, end_date: str) -> pd.Dat
     try:
         df = pro.daily(ts_code=stock_code, start_date=start_date, end_date=end_date)
         return df
-    except Exception:
+    except Exception as e:
+        print(f"  [WARN] fetch_stock_daily({stock_code}) 失败: {e}")
         return pd.DataFrame()
 
 

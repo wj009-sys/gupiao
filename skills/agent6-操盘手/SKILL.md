@@ -301,6 +301,7 @@ cat reports/日报/风控/风控报告_YYYY-MM-DD.md
 - `data/portfolio.json` — 持仓数据（当前仓位计算）
 - `knowledge/策略/交易执行规则.md` — 交易执行规范（复盘师可更新）
 - `knowledge/策略/择时策略.md` — 入场/出场时机判断
+- `knowledge/策略/选股策略.md` — 选股权重与筛选参数（Agent5输入的基础策略）
 - `reports/日报/选股/` — Agent5选股建议（输入）
 - `reports/日报/风控/` — Agent3风控报告（输入+审查）
 

@@ -607,7 +607,8 @@ def score_valuation(ts_code: str, trade_date: str) -> dict:
         except Exception as e:
             print(f"  ⚠️ 缓存{ts_code} basic数据失败: {e}")
         return {"score": max(0, min(100, score)), "details": details, "source": "api"}
-    except Exception:
+    except Exception as e:
+        print(f"  [WARN] 估值评分{ts_code}失败: {e}")
         return {"score": 50, "details": {"reason": "估值评分异常"}}
 
 
@@ -634,7 +635,8 @@ def score_momentum(ts_code: str) -> dict:
 
         return {"score": max(0, min(100, score)),
                 "details": {"ret_20": f"{ret_20:.1f}%", "ret_60": f"{ret_60:.1f}%" if ret_60 else "N/A"}}
-    except Exception:
+    except Exception as e:
+        print(f"  [WARN] 动量评分{ts_code}失败: {e}")
         return {"score": 50, "details": {"reason": "动量评分异常"}}
 
 
@@ -722,7 +724,8 @@ def score_technical(ts_code: str) -> dict:
 
         final_score = max(0, min(100, score + vol_score + obv_bonus))
         return {"score": final_score, "details": {"summary": detail}}
-    except Exception:
+    except Exception as e:
+        print(f"  [WARN] 技术评分{ts_code}失败: {e}")
         return {"score": 50, "details": {"reason": "技术评分异常"}}
 
 

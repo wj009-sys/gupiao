@@ -443,6 +443,7 @@ cat data/raw/交易原始数据_YYYYMMDD.json
 - `data/仓位管理规则.json` — 仓位管理规则
 - `data/portfolio.json` — 持仓数据
 - `scripts/agent3-风控/risk_check.py` — 风控检查脚本（含操盘计划审查功能）
+- `knowledge/策略/交易执行规则.md` — 买卖规范、仓位分配、止盈止损规则
 - `reports/日报/分析/` — Agent2技术分析报告（大盘环境评分输入）
 - `reports/日报/情报/` — Agent1情报报告（外围风险/板块风险输入）
 - `reports/日报/操盘/交易计划_YYYY-MM-DD.md` — Agent6操盘手交易计划（风控审查输入）
