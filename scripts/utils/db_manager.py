@@ -398,9 +398,10 @@ def _to_native(val):
             return val.tolist()
         if isinstance(val, pd.Timestamp):
             return val.strftime("%Y%m%d")
-    except Exception:
-        pass
-    return val
+    except Exception as e:
+        # 类型转换失败时，回退到安全字符串，避免非预期类型进入 SQLite
+        print(f"[DB] _to_native 类型转换失败: {e}, val type={type(val)}")
+        return str(val) if val is not None else ''
 
 
 def _safe_float(val, default=None):
@@ -420,7 +421,6 @@ def _safe_int(val, default=None):
         return int(val)
     except (TypeError, ValueError):
         return default
-
 
 # ============================================================
 #  DatabaseManager 类
@@ -481,8 +481,8 @@ class DatabaseManager:
             for sql in CREATE_INDEXES_SQL:
                 try:
                     cur.execute(sql)
-                except Exception:
-                    pass  # 索引创建失败不阻塞
+                except Exception as e:
+                    print(f'  [DB] 建索引失败: {e}')  # 索引创建失败不阻塞主流程
             self.conn.commit()
         except Exception as e:
             print(f"[DB] 建表失败: {e}")
@@ -492,8 +492,8 @@ class DatabaseManager:
         if self.conn:
             try:
                 self.conn.close()
-            except Exception:
-                pass
+            except Exception as e:
+                print(f'[DB] 关闭连接失败: {e}')
             self.conn = None
 
     def __enter__(self):
@@ -1626,6 +1626,58 @@ class DatabaseManager:
 
 
 # ============================================================
+#  共享工具函数
+# ============================================================
+
+def get_daily_price_db_first(ts_code: str, days_back: int = 60, caller: str = "") -> pd.DataFrame:
+    """
+    获取日线行情：DB优先→Tushare API→DataProvider(Tushare→AkShare自动fallback)。
+
+    原本在 stock_picker.py / risk_overlay.py / scorecard.py 三处重复定义，
+    统一提取到此作为通用工具函数。三层fallback确保最大数据可用性。
+
+    Args:
+        ts_code: 股票代码（如 000001.SZ）
+        days_back: 取最近多少天的数据
+        caller: 调用方标识（用于日志标签，如 "risk_overlay"）
+
+    Returns:
+        DataFrame，按 trade_date 降序（最新在前），数据不足时返回空DataFrame
+    """
+    tag = f"[{caller}]" if caller else "[db_manager]"
+    try:
+        _db = DatabaseManager()
+        df = _db.get_daily_price(ts_code)
+        if df is not None and not df.empty and len(df) >= 10:
+            df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
+            return df.head(days_back)
+    except Exception as e:
+        print(f"  [WARN] {tag} DB行情读取失败 ({ts_code}): {e}")
+
+    # Fallback to Tushare API
+    try:
+        from scripts.utils.tushare_client import pro
+        df = pro.daily(ts_code=ts_code)
+        if df is not None and not df.empty:
+            df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
+            return df.head(days_back)
+    except Exception as e:
+        print(f"  [WARN] {tag} Tushare行情失败 ({ts_code}): {e}")
+
+    # 最终兜底：DataProvider（Tushare→AkShare自动fallback）
+    try:
+        from scripts.utils.data_provider import get_provider
+        dp = get_provider()
+        df = dp.daily(ts_code=ts_code)
+        if df is not None and not df.empty:
+            df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
+            return df.head(days_back)
+    except Exception as e:
+        print(f"  [WARN] {tag} DataProvider行情失败 ({ts_code}): {e}")
+    return pd.DataFrame()
+
+
+# ============================================================
 #  自检
 # ============================================================
 
@@ -1686,8 +1738,8 @@ if __name__ == "__main__":
         db.conn.execute("DELETE FROM daily_indicator WHERE ts_code='000001.SZ' AND trade_date='20260701'")
         db.conn.commit()
         print("    测试数据已清理")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"   [WARN] 测试数据清理失败: {e}")
 
     # 5. 数据范围
     print("\n[5] 数据范围...")

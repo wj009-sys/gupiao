@@ -101,7 +101,8 @@ def get_trading_calendar(force_refresh: bool = False) -> list:
             with open(CALENDAR_CACHE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 cached_dates = data.get("dates", [])
-        except Exception:
+        except (json.JSONDecodeError, FileNotFoundError, PermissionError, OSError, AttributeError, TypeError) as e:
+            print(f"  [WARN] 交易日历缓存读取失败: {e}，将重新拉取", flush=True)
             cached_dates = []
 
     # 如果缓存足够新（最后日期 >= 今天），直接返回

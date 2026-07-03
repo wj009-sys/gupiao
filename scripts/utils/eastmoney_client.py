@@ -78,8 +78,8 @@ def _load_proxy() -> Optional[dict]:
                     proxy_url = s.get("env", {}).get("SOCKS_PROXY", "")
                     if proxy_url:
                         return {"http": proxy_url, "https": proxy_url}
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  [WARN] 读取SOCKS_PROXY配置失败: {e}")
     return None
 
 

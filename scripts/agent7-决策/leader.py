@@ -58,7 +58,8 @@ import glob
 import importlib.util
 from datetime import datetime
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, PROJECT_ROOT)
 
 # ============================================================
 # 【TradingAgents借鉴】加载决策记忆反思（由Agent4复盘师写入）
@@ -77,7 +78,7 @@ def load_decision_reflection() -> str:
     - 让 LLM 意识到自己之前哪里判断错了
     - 避免重复犯错
     """
-    memory_path = os.path.join(os.path.dirname(__file__), "..", "..", "memory", "决策反思.md")
+    memory_path = os.path.join(PROJECT_ROOT, "memory", "决策反思.md")
     if not os.path.exists(memory_path):
         return ""
     try:
@@ -132,7 +133,7 @@ def check_agent_status(report_dir: str, today_str: str) -> dict:
         "复盘师": {"dir": "复盘", "prefix": "复盘报告", "raw_prefix": "复盘报告"},
     }
 
-    raw_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    raw_dir = os.path.join(PROJECT_ROOT, "data", "raw")
     today_raw = today_str.replace("-", "")
 
     status = {}
@@ -218,7 +219,7 @@ def detect_conflicts(reports: dict) -> list:
 
 def load_risk_raw_data() -> dict:
     """读取风控官最新原始数据（含trade_conflicts等结构化数据）"""
-    raw_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    raw_dir = os.path.join(PROJECT_ROOT, "data", "raw")
     pattern = os.path.join(raw_dir, "风控报告_*.json")
     files = sorted(glob.glob(pattern), reverse=True)
     if not files:
@@ -233,7 +234,7 @@ def load_risk_raw_data() -> dict:
 
 def load_trade_raw_data() -> dict:
     """读取操盘手最新原始数据（含交易计划明细）"""
-    raw_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    raw_dir = os.path.join(PROJECT_ROOT, "data", "raw")
     pattern = os.path.join(raw_dir, "交易原始数据_*.json")
     files = sorted(glob.glob(pattern), reverse=True)
     if not files:
@@ -522,7 +523,7 @@ def make_decision() -> dict:
     warn = "[WARN]"
     fail = "[FAIL]"
 
-    root = os.path.join(os.path.dirname(__file__), "..", "..")
+    root = PROJECT_ROOT
     today_str = datetime.now().strftime("%Y-%m-%d")
     report_dir = os.path.join(root, "reports", "日报")
 
@@ -810,7 +811,7 @@ if __name__ == "__main__":
     print("=== END ===")
 
     # 保存
-    output_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    output_dir = os.path.join(PROJECT_ROOT, "data", "raw")
     os.makedirs(output_dir, exist_ok=True)
     today = datetime.now().strftime("%Y%m%d")
     output_path = os.path.join(output_dir, f"决策原始数据_{today}.json")

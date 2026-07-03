@@ -59,9 +59,9 @@ import numpy as np
 from typing import List, Optional, Union, Dict, Tuple
 
 # 确保项目根在 sys.path 中（支持直接 python rps.py 运行）
-_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 # ============================================================
 #  内部工具
@@ -220,8 +220,8 @@ def calc_n_day_returns(trade_date: str, n: int, min_trading_days: int = None) ->
                 cutoff_dt = pd.Timestamp(cutoff) - pd.Timedelta(days=n * 2)
                 short_history = list_dates[list_dates['list_date_dt'] > cutoff_dt]['ts_code'].tolist()
                 df.loc[df['ts_code'].isin(short_history), 'ret_n'] = np.nan
-        except Exception:
-            pass  # 次新股过滤失败不影响主流程
+        except Exception as e:
+            print(f"[RPS] [WARN] 次新股过滤失败: {e}")
 
     return df
 
@@ -345,8 +345,8 @@ def calc_all_rps(trade_date: Optional[str] = None,
             db.conn
         )
         result = result.merge(names, on='ts_code', how='left')
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[RPS] [WARN] 加载股票名称失败: {e}")
 
     # 计算平均RPS（仅对有效周期求平均）
     rps_cols = [c for c in result.columns if c.startswith('rps_')]
@@ -499,7 +499,8 @@ def get_sector_avg_rps(trade_date: Optional[str] = None,
             db.conn
         )
         df = df.merge(industry, on='ts_code', how='inner')
-    except Exception:
+    except Exception as e:
+        print(f"[RPS] [WARN] 加载行业信息失败: {e}")
         return pd.DataFrame()
 
     # 按行业分组
@@ -590,7 +591,8 @@ def calc_sector_avg_rps_from_df(df: pd.DataFrame) -> pd.DataFrame:
             db.conn
         )
         df2 = df.merge(industry, on='ts_code', how='inner')
-    except Exception:
+    except Exception as e:
+        print(f"[RPS] [WARN] 加载行业信息失败: {e}")
         return pd.DataFrame()
 
     rps_cols = [c for c in df2.columns if c.startswith('rps_')]

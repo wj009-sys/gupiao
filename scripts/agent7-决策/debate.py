@@ -54,6 +54,8 @@ from collections import Counter
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
 
 def load_json(path: str) -> dict:
     """安全加载JSON文件，失败时返回空dict"""
@@ -69,7 +71,7 @@ def load_json(path: str) -> dict:
 
 def load_analysis_data() -> dict:
     """加载 Agent2 分析原始数据"""
-    raw_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    raw_dir = os.path.join(PROJECT_ROOT, "data", "raw")
     pattern = os.path.join(raw_dir, "分析原始数据_*.json")
     files = sorted(glob.glob(pattern), reverse=True)
     if not files:
@@ -80,7 +82,7 @@ def load_analysis_data() -> dict:
 
 def load_sector_data() -> dict:
     """加载板块强度数据（从分析报告或RPS数据中提取）"""
-    raw_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    raw_dir = os.path.join(PROJECT_ROOT, "data", "raw")
     # 尝试加载 RPS 板块数据
     pattern = os.path.join(raw_dir, "*板块*原始*.json")
     files = sorted(glob.glob(pattern), reverse=True)
@@ -98,7 +100,7 @@ def load_sector_data() -> dict:
 
 def load_risk_data() -> dict:
     """加载风控数据（含三级风控，优先用保守档）"""
-    raw_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    raw_dir = os.path.join(PROJECT_ROOT, "data", "raw")
     # 按优先级：conservative > neutral > aggressive
     for profile in ["conservative", "neutral", "aggressive"]:
         pattern = os.path.join(raw_dir, f"风控报告_*_{profile}.json")

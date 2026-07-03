@@ -41,7 +41,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, PROJECT_ROOT)
 from scripts.utils.tushare_client import pro, get_ths_index
 from scripts.utils.technical_analysis import add_all_indicators, generate_signal_summary
 
@@ -476,7 +477,7 @@ if __name__ == "__main__":
     print("=== END ===")
 
     # 保存到 data/raw
-    output_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    output_dir = os.path.join(PROJECT_ROOT, "data", "raw")
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"分析原始数据_{data['date']}.json")
     with open(output_path, "w", encoding="utf-8") as f:

@@ -23,7 +23,8 @@ import sys
 import os
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, PROJECT_ROOT)
 
 import pandas as pd
 import numpy as np
@@ -81,8 +82,8 @@ def fetch_delisted_stocks_to_db(db: DatabaseManager, max_stocks: int = 350) -> d
     try:
         cur = db.conn.execute("SELECT DISTINCT ts_code FROM daily_price")
         existing = {r[0] for r in cur.fetchall()}
-    except Exception:
-        pass
+    except Exception as e:
+        print(f'  [WARN] 查询DB已有代码失败: {e}')
 
     codes_to_fetch = [r["ts_code"] for _, r in basic_df.iterrows()
                       if r["ts_code"] not in existing]
@@ -1157,7 +1158,7 @@ if __name__ == "__main__":
 
     # 输出报告
     output_path = args.output or os.path.join(
-        os.path.dirname(__file__), "..", "..",
+        PROJECT_ROOT,
         "knowledge", "策略", "含退市股全策略回测报告.md"
     )
 

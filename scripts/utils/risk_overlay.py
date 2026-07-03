@@ -23,28 +23,7 @@ import sys, os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.tushare_client import pro
-
-
-def _get_daily_price_db_first(ts_code: str, days_back: int = 60) -> pd.DataFrame:
-    """获取日线行情（与stock_picker保持一致的DB优先读取）"""
-    from scripts.utils.db_manager import DatabaseManager
-    try:
-        _db = DatabaseManager()
-        df = _db.get_daily_price(ts_code)
-        if df is not None and not df.empty and len(df) >= 10:
-            df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
-            return df.head(days_back)
-    except Exception:
-        pass
-    # Fallback to Tushare API
-    try:
-        df = pro.daily(ts_code=ts_code)
-        if df is not None and not df.empty:
-            df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
-            return df.head(days_back)
-    except Exception:
-        pass
-    return pd.DataFrame()
+from scripts.utils.db_manager import get_daily_price_db_first
 
 
 class RiskCheck:
@@ -97,7 +76,8 @@ class VolumeRatioCheck(RiskCheck):
                 return {"penalty": penalty, "veto": False,
                         "reason": f"量比{vol_ratio:.1f}>阈值{self.max_ratio}，惩罚-{penalty:.0f}分"}
             return {"penalty": 0, "veto": False, "reason": ""}
-        except Exception:
+        except Exception as e:
+            print(f'  [WARN] risk_overlay 量比检查异常 ({ts_code}): {e}')
             return {"penalty": 0, "veto": False, "reason": "量比检查异常"}
 
 
@@ -114,7 +94,8 @@ class NegativePECheck(RiskCheck):
                 return {"penalty": 20, "veto": False,
                         "reason": f"PE={pe}<0(亏损)，惩罚-20分"}
             return {"penalty": 0, "veto": False, "reason": ""}
-        except Exception:
+        except Exception as e:
+            print(f'  [WARN] risk_overlay PE检查异常 ({ts_code}): {e}')
             return {"penalty": 0, "veto": False, "reason": "PE检查异常"}
 
 
@@ -124,7 +105,7 @@ class MacdWeakCheck(RiskCheck):
     def check(self, ts_code: str, trade_date: str, **kwargs) -> dict:
         try:
             from scripts.utils.technical_analysis import add_all_indicators
-            df = _get_daily_price_db_first(ts_code, days_back=60)
+            df = get_daily_price_db_first(ts_code, days_back=60, caller="risk_overlay")
             if df is None or df.empty or len(df) < 35:
                 return {"penalty": 0, "veto": False, "reason": "数据不足"}
             # 转为升序（technical_analysis需要升序数据）
@@ -143,7 +124,8 @@ class MacdWeakCheck(RiskCheck):
                     return {"penalty": 8, "veto": False,
                             "reason": f"MACD偏弱(diff={macd_diff:.2f})，惩罚-8分"}
             return {"penalty": 0, "veto": False, "reason": ""}
-        except Exception:
+        except Exception as e:
+            print(f'  [WARN] risk_overlay MACD检查异常 ({ts_code}): {e}')
             return {"penalty": 0, "veto": False, "reason": "MACD检查异常"}
 
 
@@ -163,7 +145,8 @@ class HighPBCheck(RiskCheck):
                 return {"penalty": 10, "veto": False,
                         "reason": f"PB={pb:.1f}>阈值{self.pb_threshold}，惩罚-10分"}
             return {"penalty": 0, "veto": False, "reason": ""}
-        except Exception:
+        except Exception as e:
+            print(f'  [WARN] risk_overlay PB检查异常 ({ts_code}): {e}')
             return {"penalty": 0, "veto": False, "reason": "PB检查异常"}
 
 
@@ -171,7 +154,7 @@ class ConsecutiveDropCheck(RiskCheck):
     """连续下跌惩罚 — 连跌3天及以上"""
     def check(self, ts_code: str, trade_date: str, **kwargs) -> dict:
         try:
-            df = _get_daily_price_db_first(ts_code, days_back=10)
+            df = get_daily_price_db_first(ts_code, days_back=10)
             if df is None or df.empty or len(df) < 5:
                 return {"penalty": 0, "veto": False, "reason": "数据不足"}
             pct_chgs = df["pct_chg"].values[:5]
@@ -188,7 +171,8 @@ class ConsecutiveDropCheck(RiskCheck):
                 return {"penalty": 10, "veto": False,
                         "reason": f"连跌{consecutive_neg}天，惩罚-10分"}
             return {"penalty": 0, "veto": False, "reason": ""}
-        except Exception:
+        except Exception as e:
+            print(f'  [WARN] risk_overlay 连跌检查异常 ({ts_code}): {e}')
             return {"penalty": 0, "veto": False, "reason": "连跌检查异常"}
 
 
@@ -241,6 +225,7 @@ class RiskOverlay:
                 else:
                     checks_passed += 1
             except Exception as e:
+                print(f'  [WARN] risk_overlay 风险检查异常 ({ts_code}, {type(check).__name__}): {e}')
                 checks_passed += 1  # 异常视为检查通过（容错）
 
         return {

@@ -59,7 +59,8 @@ import json
 import glob
 from datetime import datetime
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, PROJECT_ROOT)
 from scripts.utils.tushare_client import pro
 
 
@@ -92,7 +93,7 @@ def get_risk_profile_params(profile: str = "neutral") -> dict:
         dict: {stop_loss_offset, trailing_stop_offset, position_offset, single_offset, profile_name}
     """
     rules = load_json(
-        os.path.join(os.path.dirname(__file__), "..", "..", "data", "仓位管理规则.json")
+        os.path.join(PROJECT_ROOT, "data", "仓位管理规则.json")
     )
     tiers = rules.get("风险偏好档位", {})
 
@@ -113,26 +114,26 @@ def get_risk_profile_params(profile: str = "neutral") -> dict:
 def load_portfolio(path: str = None) -> dict:
     """加载持仓数据"""
     if path is None:
-        path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "portfolio.json")
+        path = os.path.join(PROJECT_ROOT, "data", "portfolio.json")
     return load_json(path)
 
 
 def load_stop_loss_rules() -> list:
     """加载止损规则"""
-    path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "止损规则.json")
+    path = os.path.join(PROJECT_ROOT, "data", "止损规则.json")
     rules = load_json(path)
     return rules.get("规则", [])
 
 
 def load_position_rules() -> dict:
     """加载仓位管理规则"""
-    path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "仓位管理规则.json")
+    path = os.path.join(PROJECT_ROOT, "data", "仓位管理规则.json")
     return load_json(path)
 
 
 def load_env_score_from_analysis() -> int:
     """从 Agent2 的分析结果中读取环境评分"""
-    raw_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    raw_dir = os.path.join(PROJECT_ROOT, "data", "raw")
     pattern = os.path.join(raw_dir, "分析原始数据_*.json")
     files = sorted(glob.glob(pattern), reverse=True)
     if not files:
@@ -148,7 +149,7 @@ def load_env_score_from_analysis() -> int:
 
 def load_index_analysis() -> list:
     """从 Agent2 的分析结果中加载指数均线数据"""
-    raw_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    raw_dir = os.path.join(PROJECT_ROOT, "data", "raw")
     pattern = os.path.join(raw_dir, "分析原始数据_*.json")
     files = sorted(glob.glob(pattern), reverse=True)
     if not files:
@@ -468,7 +469,7 @@ def load_trade_plan(trade_plan_path: str = None) -> dict:
         return load_json(trade_plan_path)
 
     # 自动查找最新交易计划
-    raw_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    raw_dir = os.path.join(PROJECT_ROOT, "data", "raw")
     pattern = os.path.join(raw_dir, "交易原始数据_*.json")
     files = sorted(glob.glob(pattern), reverse=True)
     if not files:
@@ -931,7 +932,7 @@ if __name__ == "__main__":
     print("=== END ===")
 
     # 保存报告
-    output_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    output_dir = os.path.join(PROJECT_ROOT, "data", "raw")
     os.makedirs(output_dir, exist_ok=True)
     today = datetime.now().strftime("%Y%m%d")
     output_path = os.path.join(output_dir, f"风控报告_{today}_{args.risk_profile}.json")

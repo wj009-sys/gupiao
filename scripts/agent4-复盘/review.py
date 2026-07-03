@@ -47,7 +47,10 @@ import re
 import glob
 from datetime import datetime
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+# ======== 路径常量 ========
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+sys.path.insert(0, PROJECT_ROOT)
 from scripts.utils.tushare_client import pro
 
 # 知识库变更日志（导入失败不中断复盘）
@@ -57,9 +60,6 @@ try:
 except Exception as e:
     print(f"  [WARN] 知识库工具导入失败: {e}")
     _has_knowledge_tools = False
-
-# ======== 路径常量 ========
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def p(path: str) -> str:
@@ -222,7 +222,7 @@ def fetch_actual_data(trade_date: str) -> dict:
 def load_stock_picker_factors(trade_date: str) -> dict:
     """从选股原始数据JSON中加载各因子独立评分"""
     factor_map = {}
-    raw_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    raw_dir = p("data/raw")
     # 匹配当天所有模式的选股原始数据
     pattern = os.path.join(raw_dir, f"选股原始数据_{trade_date}_*.json")
     files = sorted(glob.glob(pattern), reverse=True)
@@ -259,7 +259,8 @@ def load_stock_picker_factors(trade_date: str) -> dict:
                                 break
                     if result:
                         factor_map[code] = result
-        except Exception:
+        except Exception as e:
+            print(f"  [WARN] 解析选股JSON失败 {os.path.basename(fp)}: {e}")
             continue
     return factor_map
 
@@ -380,7 +381,6 @@ def load_history(trade_date: str) -> list:
                 history.append(json.load(fp))
         except Exception as e:
             print(f"  [WARN] 加载复盘记录失败: {os.path.basename(f)}: {e}")
-            pass
     return history
 
 
@@ -455,7 +455,7 @@ def extract_stock_picks(pick_text: str) -> dict:
                     float(name)
                     name = ""
                 except ValueError:
-                    pass
+                    pass  # name is not a number (e.g. score column), keep it
                 # 也检查 | 名称列 | 不是代码
                 parts = [p.strip().strip('*') for p in stripped.split('|') if p.strip()]
                 for part in parts:
@@ -480,7 +480,7 @@ def extract_stock_picks(pick_text: str) -> dict:
                             if 0 <= s <= 100:
                                 score = int(s)
                         except ValueError:
-                            pass
+                            print(f"  [WARN] 评分解析失败，股票 {code_match.group(1)} 无法解析值 '{m.group(1)}'，跳过", file=sys.stderr)
                 picks["stocks"].append({
                     "name": "",
                     "code": code_match.group(1),
@@ -990,18 +990,25 @@ def generate_review_report(trade_date: str = None) -> dict:
 
 
 def write_reflection_summary(review: dict) -> str:
-    """【TradingAgents借鉴】写入决策反思摘要到 memory/决策反思.md
+    """【TradingAgents借鉴】写入结构化决策反思到 memory/决策反思.md
 
     TradingAgents 的交易记忆机制会在每次分析后，将决策结果和反思写入持久文件，
     并在下次分析时自动注入到投资经理的上下文中。
     我们把这个机制本土化为：复盘师(Agent4)写入反思 → 投资领导(Agent7)自动加载。
 
-    格式：
-    - 简明扼要（100-200字）
-    - 包含偏差、准确率、改进方向
-    - 每天只保留最新一条（历史在复盘记录JSON中）
+    结构化内容（按优先级）：
+    1. 反思摘要（100-200字）
+    2. 仲裁项汇总（风控官vs操盘手分歧及裁定结果）
+    3. 打回重做统计（哪些Agent被打回、原因、重做结果）
+    4. 关键决策逻辑（宏观判断链+每项决策的依据和障碍）
+    5. 偏差与教训（每个偏差的原因分类+改进方向）
+    6. 次日关注事项（分级：最高/中等/持续观察）
+    7. 准确率追踪（多维度准确率对比+趋势）
+    每天只保留最新一条（历史在复盘记录JSON中）。
     """
-    memory_dir = os.path.join(os.path.dirname(__file__), "..", "..", "memory")
+    import re
+
+    memory_dir = p('memory')
     os.makedirs(memory_dir, exist_ok=True)
     memory_path = os.path.join(memory_dir, "决策反思.md")
 
@@ -1015,10 +1022,12 @@ def write_reflection_summary(review: dict) -> str:
     因子建议 = review.get("因子建议", [])
     偏差分析 = review.get("偏差分析", [])
     inputs = review.get("inputs", {})
+    leader = review.get("leader", {})
 
     # 报告完整性摘要
     missing_agents = [name for name, loaded in inputs.items() if not loaded]
     completeness = "完整" if not missing_agents else f"缺失: {', '.join(missing_agents)}"
+    agent_count = len(inputs)
 
     # 选股表现摘要
     stock_accuracy = accuracy.get("选股准确率", {})
@@ -1026,41 +1035,287 @@ def write_reflection_summary(review: dict) -> str:
     if stock_accuracy.get("total", 0) > 0:
         pick_summary = f"选股{stock_accuracy['correct']}/{stock_accuracy['total']}涨"
 
-    # 改进方向摘要
-    improvements = []
-    if 策略建议:
-        improvements.append(策略建议[0][:60])
-    if 因子建议:
-        improvements.append(因子建议[0][:60])
-    if 偏差分析:
-        improvements.append(f"偏差{len(偏差分析)}项需关注")
+    # === 构建结构化内容 ===
+    sections = []
 
-    content = f"""---
+    # --- 前导 YAML ---
+    sections.append(f"""---
 date: {date_str}
 accuracy: {综合准确率}%
 trend: {trend}
 completeness: {completeness}
+missing_agents: {', '.join(missing_agents) if missing_agents else '无'}
+agent_count: {agent_count}
 ---
 
-## 今日反思 ({date_str})
+# 决策反思 — {date_str}
 
-**准确率**: 综合 {综合准确率}% | 板块 {板块率}% | 大盘 {大盘率}%
-**趋势**: {trend}
-**选股**: {pick_summary if pick_summary else '无选股验证数据'}
-**报告**: {completeness}
+> 由复盘师(Agent4)写入，供投资领导(Agent7)次日自动加载。
+> 参考：TradingAgents 决策记忆机制 — 反思注入到 Portfolio Manager 上下文。
 
-**偏差项**: {len(偏差分析)} 项
-**改进方向**: {' | '.join(improvements) if improvements else '维持当前策略'}
-"""
+---
+
+## 一、反思摘要
+
+{_generate_reflection_blurb(review)}
+""")
+
+    # --- 仲裁项汇总 ---
+    sections.append(f"## 二、仲裁项汇总\n")
+    conflicts = leader.get("conflicts", [])
+    if conflicts:
+        sections.append("| 序号 | 冲突类型 | 涉及Agent | 仲裁结果 | 依据 |")
+        sections.append("|:---:|:--------|:----------|:--------|:-----|")
+        for i, c in enumerate(conflicts, 1):
+            ctype = c.get("type", "未知")
+            detail = c.get("detail", "")[:60]
+            parties = c.get("parties", "风控官 vs 操盘手")
+            ruling = c.get("ruling", "见详情")
+            basis = c.get("basis", "—")
+            sections.append(f"| {i} | {ctype} | {parties} | {ruling} | {basis} |")
+    else:
+        sections.append("| 序号 | 冲突类型 | 说明 |")
+        sections.append("|:---:|:--------|:-----|")
+        sections.append("| — | **无分歧** | 风控官与操盘手意见一致，无冲突需仲裁 |")
+    sections.append("")
+
+    # --- 打回重做统计 ---
+    sections.append(f"## 三、打回重做统计\n")
+    quality = leader.get("quality_review", {})
+    passed = quality.get("passed", 0)
+    needs_work = quality.get("needs_work", 0)
+    rejected = quality.get("rejected", 0)
+    total_agents = passed + needs_work + rejected
+
+    sections.append("| Agent | 打回类型 | 处理结果 |")
+    sections.append("|-------|:--------:|:--------:|")
+    agent_names_map = {
+        "agent1": "🕵️ Agent1 情报员", "情报": "🕵️ Agent1 情报员",
+        "agent2": "📊 Agent2 分析师", "分析": "📊 Agent2 分析师",
+        "agent3": "🛡️ Agent3 风控官", "风控": "🛡️ Agent3 风控官",
+        "agent4": "🔄 Agent4 复盘师", "复盘": "🔄 Agent4 复盘师",
+        "agent5": "🔍 Agent5 选股机器人", "选股": "🔍 Agent5 选股机器人",
+        "agent6": "🎯 Agent6 操盘手", "操盘": "🎯 Agent6 操盘手",
+    }
+
+    # 根据inputs中loaded的agent来决定哪些通过了审核
+    for agent_key, agent_name in agent_names_map.items():
+        loaded = inputs.get(agent_key, False) or inputs.get(
+            {"agent1": "情报", "agent2": "分析", "agent3": "风控",
+             "agent4": "复盘", "agent5": "选股", "agent6": "操盘"}.get(agent_key, ""), False)
+        if not loaded:
+            continue
+        sections.append(f"| {agent_name} | — | ✅ 通过 |")
+
+    sections.append(f"\n**审核统计**: {passed}通过 / {needs_work}需补充 / {rejected}不合格 | "
+                    f"打回率: {round((needs_work + rejected) / max(total_agents, 1) * 100)}%\n")
+
+    # --- 关键决策逻辑 ---
+    sections.append(f"## 四、关键决策逻辑\n")
+    sell_items = leader.get("sell_decisions", [])
+    buy_items = leader.get("buy_decisions", [])
+    hold_items = leader.get("hold_decisions", [])
+    total_decisions = len(sell_items) + len(buy_items) + len(hold_items)
+
+    止损数 = sum(1 for s in sell_items if "止损" in s.get("reason", ""))
+    止盈数 = sum(1 for s in sell_items if "止盈" in s.get("reason", ""))
+    减仓数 = sum(1 for s in sell_items if "减仓" in s.get("reason", ""))
+
+    sections.append("### 决策概况")
+    sections.append(f"- **总决策项**: {total_decisions} 项（卖出{len(sell_items)} / 买入{len(buy_items)} / 持有{len(hold_items)}）")
+    sections.append(f"- **卖出类型**: 止损{止损数}项 / 止盈{止盈数}项 / 减仓{减仓数}项")
+    sections.append(f"- **买入**: {'无（防守模式）' if not buy_items else f'{len(buy_items)}项'}")
+
+    # 决策项明细
+    if sell_items:
+        sections.append(f"\n### 卖出/减仓明细")
+        sections.append("| 标的 | 操作 | 盈亏 |")
+        sections.append("|:----|:----:|:----:|")
+        for s in sell_items[:10]:  # 最多10项
+            code = s.get("code", "?")
+            reason = s.get("reason", "卖出")
+            pnl = s.get("pnl", "—")
+            sections.append(f"| {code} | {reason} | {pnl} |")
+        if len(sell_items) > 10:
+            sections.append(f"| ... | 共{len(sell_items)}项 | ... |")
+
+    if hold_items:
+        sections.append(f"\n### 持有明细")
+        sections.append(f"共 {len(hold_items)} 项持有")
+
+    仓位信息 = _extract_position_info(review)
+    if 仓位信息:
+        sections.append(f"\n### 仓位管理\n{仓位信息}\n")
+    else:
+        sections.append("")
+
+    # --- 偏差与教训 ---
+    sections.append(f"## 五、偏差与教训\n")
+    if 偏差分析:
+        for i, dev in enumerate(偏差分析, 1):
+            item = dev.get("item", dev.get("description", f"偏差{i}"))
+            原因 = dev.get("可能原因", dev.get("cause", "待分析"))
+            改进 = dev.get("改进方向", dev.get("improvement", "待定"))
+            sections.append(f"### 偏差{i}: {item}")
+            sections.append(f"- **原因**: {原因}")
+            sections.append(f"- **改进**: {改进}\n")
+    else:
+        sections.append("无偏差记录。预测与实际一致，分析框架运行正常。\n")
+
+    # --- 次日关注 ---
+    sections.append(f"## 六、次日需关注事项\n")
+    次日关注 = _extract_next_day_items(review)
+    if 次日关注:
+        sections.append(次日关注)
+    else:
+        sections.append("> 暂无特定关注事项。关注大盘趋势变化和持仓止损线。\n")
+
+    # --- 准确率追踪 ---
+    sections.append(f"## 七、准确率追踪\n")
+    sections.append("| 维度 | 准确率 | 说明 |")
+    sections.append("|:----|:-----:|:-----|")
+    选股率 = accuracy.get("选股准确率", {})
+    sections.append(f"| 大盘方向 | {大盘率}% | {accuracy.get('大盘方向', {}).get('correct', 0)}/{accuracy.get('大盘方向', {}).get('total', 0)} 正确 |")
+    板块预测 = accuracy.get("板块预测", {})
+    板块已校验 = 板块预测.get("verified", 0)
+    板块总 = 板块预测.get("total", 0)
+    if 板块已校验 > 0:
+        sections.append(f"| 板块预测 | {板块率}% | {板块预测.get('correct', 0)}/{板块已校验} 正确（共{板块总}个预测，{板块预测.get('pending_review', 0)}待复核） |")
+    else:
+        sections.append(f"| 板块预测 | N/A | 板块数据不可用 |")
+    if 选股率.get("total", 0) > 0:
+        sections.append(f"| 选股推荐 | {选股率.get('rate', 'N/A')}% | {选股率.get('correct', 0)}/{选股率.get('total', 0)}上涨 |")
+    else:
+        sections.append(f"| 选股推荐 | N/A | {pick_summary if pick_summary else '无选股验证数据'} |")
+    sections.append(f"| **综合准确率** | **{综合准确率}%** | 趋势: {trend} |")
+
+    # --- 改进方向 ---
+    if 策略建议 or 因子建议:
+        sections.append(f"\n## 八、改进方向\n")
+        for s in 策略建议:
+            sections.append(f"- {s}")
+        for f in 因子建议:
+            sections.append(f"- {f}")
+        sections.append("")
+
+    # --- 知识库更新标记 ---
+    sections.append(f"## 九、知识库更新标记\n")
+    sections.append("- [x] 复盘记录 → `knowledge/复盘记录/复盘_{date_str.replace('-', '')}.json`")
+    sections.append("- [x] 决策反思 → `memory/决策反思.md`（本文件）")
+    sections.append(f"- [ ] 策略更新 → 偏差{len(偏差分析)}项，待累积数据后评估\n")
+
+    # --- 页脚 ---
+    sections.append("---\n")
+    sections.append("*本文件由复盘师(Agent4)的 `write_reflection_summary()` 自动生成并写入。*")
+    sections.append("*投资领导(Agent7)启动时通过 `memory/决策反思.md` 自动加载。*")
+    sections.append("*TradingAgents范式: 反思注入 → 昨天错误今天不犯。*\n")
+
+    content = "\n".join(sections)
 
     try:
         with open(memory_path, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"  [OK] 决策反思已写入: {memory_path}")
+        print(f"  [OK] 结构化决策反思已写入: {memory_path}")
     except Exception as e:
         print(f"  [WARN] 决策反思写入失败: {e}")
 
     return memory_path
+
+
+def _generate_reflection_blurb(review: dict) -> str:
+    """生成100-200字的反思摘要"""
+    accuracy = review.get("accuracy", {})
+    综合 = accuracy.get("综合准确率", "N/A")
+    trend = review.get("accuracy_trend", {}).get("trend", "暂无数据")
+    偏差 = review.get("偏差分析", [])
+    leader = review.get("leader", {})
+    conflicts = leader.get("conflicts", [])
+
+    parts = []
+    if isinstance(综合, (int, float)) and 综合 >= 80:
+        parts.append("整体预测准确率较高")
+    elif isinstance(综合, (int, float)) and 综合 >= 50:
+        parts.append("预测准确率中等，有改进空间")
+    else:
+        parts.append("预测准确率偏低，需重点检视分析框架")
+
+    if 偏差:
+        if len(偏差) == 1:
+            parts.append(f"发现1个偏差项需关注")
+        else:
+            parts.append(f"发现{len(偏差)}个偏差项")
+        # 提取第一个偏差的关键词
+        first_dev = 偏差[0]
+        dev_item = first_dev.get("item", first_dev.get("description", ""))
+        if dev_item:
+            parts.append(f"主要偏差: {dev_item[:40]}")
+
+    if not conflicts:
+        parts.append("风控官与操盘手意见一致")
+    else:
+        has_conflict = any(c.get("type") not in ("无分歧", "一致") for c in conflicts)
+        if has_conflict:
+            parts.append("存在Agent间分歧，需关注仲裁结果")
+
+    if not parts:
+        parts.append("分析框架运行正常，无显著偏差")
+
+    return "。\n".join(parts) + "。"
+
+
+def _extract_position_info(review: dict) -> str:
+    """从review数据中提取仓位管理摘要"""
+    leader = review.get("leader", {})
+    sell_items = leader.get("sell_decisions", [])
+    buy_items = leader.get("buy_decisions", [])
+
+    parts = []
+    if buy_items:
+        parts.append(f"- 计划买入: {len(buy_items)}项")
+    else:
+        parts.append("- 计划买入: 无（防守姿态）")
+
+    止损数 = sum(1 for s in sell_items if "止损" in s.get("reason", ""))
+    止盈数 = sum(1 for s in sell_items if "止盈" in s.get("reason", ""))
+    parts.append(f"- 计划卖出: {len(sell_items)}项（止损{止损数}/止盈{止盈数}）")
+
+    return "\n".join(parts) if parts else ""
+
+
+def _extract_next_day_items(review: dict) -> str:
+    """从偏差分析和决策数据中生成次日关注事项"""
+    items = []
+    偏差分析 = review.get("偏差分析", [])
+    leader = review.get("leader", {})
+
+    # 从偏差中提取改进项
+    for dev in 偏差分析:
+        improvement = dev.get("改进方向", dev.get("improvement", ""))
+        if improvement and improvement not in ("待定", ""):
+            items.append(("🟡", improvement[:80]))
+
+    # 检查是否有待执行的止损
+    sell_items = leader.get("sell_decisions", [])
+    止损待执行 = [s for s in sell_items if "止损" in s.get("reason", "")]
+    if 止损待执行:
+        items.append(("🔴", f"{len(止损待执行)}项止损待执行，确认是否已处理"))
+
+    # 大盘/风险提示
+    accuracy = review.get("accuracy", {})
+    综合 = accuracy.get("综合准确率", 100)
+    if isinstance(综合, (int, float)) and 综合 < 60:
+        items.append(("🟡", "准确率偏低，建议降低交易频率，等待信号更明确"))
+
+    if not items:
+        items.append(("🟢", "关注大盘趋势变化和持仓止损线"))
+        items.append(("🟢", "关注北向资金流向和板块轮动信号"))
+
+    lines = []
+    for priority, text in items:
+        emoji = {"🔴": "最高优先级", "🟡": "中等优先级", "🟢": "持续观察"}.get(priority, "")
+        lines.append(f"- {priority} **{emoji}**: {text}")
+
+    return "\n".join(lines) if lines else ""
 
 
 if __name__ == "__main__":

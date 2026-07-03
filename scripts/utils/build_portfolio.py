@@ -34,7 +34,8 @@ import os
 import sys
 import glob
 from datetime import datetime
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, PROJECT_ROOT)
 from scripts.utils.tushare_client import get_daily, get_fund_daily, pro
 
 
@@ -238,7 +239,7 @@ portfolio = {
 }
 
 # 写入文件（项目根目录 data/）
-base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+base_dir = PROJECT_ROOT
 data_dir = os.path.join(base_dir, 'data')
 out_path = os.path.join(data_dir, 'portfolio.json')
 

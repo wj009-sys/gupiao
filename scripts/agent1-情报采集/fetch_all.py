@@ -65,8 +65,8 @@ def get_last_trade_day() -> str:
             df = pro.daily(trade_date=date)
             if not df.empty:
                 return date
-        except Exception:
-            continue
+        except Exception as e:
+            print(f'  [WARN] 获取交易日失败 (offset={offset}): {e}')
     return today
 
 

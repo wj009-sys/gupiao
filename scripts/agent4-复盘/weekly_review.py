@@ -57,7 +57,7 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.tushare_client import pro
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def p(path: str) -> str:
@@ -282,8 +282,8 @@ def fetch_sector_rotation(dates: list) -> dict:
                     sector_map[name]["appearances"] += 1
                     sector_map[name]["total_pct"] += float(r[1])
                     sector_map[name]["days"].add(date_str)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f'  [WARN] 获取 {date_str} 板块数据失败: {e}')
 
     if has_data and sector_map:
         sorted_gainers = sorted(sector_map.items(), key=lambda x: x[1]["total_pct"], reverse=True)

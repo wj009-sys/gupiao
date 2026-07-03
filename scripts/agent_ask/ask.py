@@ -49,15 +49,15 @@ def _get_daily(ts_code: str, days: int = 250) -> pd.DataFrame:
         if df is not None and not df.empty and len(df) >= 10:
             df = df.sort_values("trade_date", ascending=True).reset_index(drop=True)
             return df.tail(days)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  [WARN] DB行情获取失败 ({ts_code}), 回退API: {e}")
     try:
         df = pro.daily(ts_code=ts_code)
         if df is not None and not df.empty:
             df = df.sort_values("trade_date", ascending=True).reset_index(drop=True)
             return df.tail(days)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  [WARN] API行情获取失败 ({ts_code}): {e}")
     return pd.DataFrame()
 
 
@@ -117,8 +117,8 @@ def _get_stock_name(ts_code: str) -> str:
         df = pro.stock_basic(ts_code=ts_code, fields="ts_code,name")
         if df is not None and not df.empty:
             return str(df.iloc[0].get("name", ts_code))
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  [WARN] 查询股票名称失败 ({ts_code}): {e}")
     return ts_code
 
 
@@ -632,8 +632,8 @@ class ComprehensiveStrategy(StrategyTemplate):
                 if r.get("detail"):
                     parts.append(f"【{s.name}】\n{r['detail']}")
                 all_signals.extend(r.get("signals", []))
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  [WARN] 子策略{s.name}分析失败 ({ts_code}): {e}")
 
         # 综合判断
         buy_signals = sum(1 for sig in all_signals if sig in ("buy", "strong_buy", "bullish_divergence"))

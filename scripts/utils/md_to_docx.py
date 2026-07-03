@@ -42,6 +42,9 @@ import re
 import sys
 import glob
 from datetime import datetime
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -175,7 +178,13 @@ def convert_md_to_docx(md_path, output_path=None):
     try:
         style.element.rPr.rFonts.set(qn('w:eastAsia'), _cjk_font)
     except Exception:
-        pass  # 东亚洲字体设置失败时不影响正文
+        # 东亚洲字体设置失败时不影响正文渲染，仅使用西文字体回退。
+        # 此处用宽泛的 except Exception 而非精确捕获，原因：
+        #   - 底层是 lxml 内部 XML 操作，可能的异常类型多样
+        #     (AttributeError / TypeError / XML 结构缺失等)
+        #   - 字体回退纯属非功能性美化，任何失败均不应中断文档生成
+        #   - 即使静默跳过，Word 打开时也会用默认 CJK 字体正常显示
+        pass
 
     # 段落间距
     pf = style.paragraph_format
@@ -330,7 +339,7 @@ def convert_md_to_docx(md_path, output_path=None):
 def convert_today_reports():
     """转换今日所有报告"""
     today = datetime.now().strftime("%Y-%m-%d")
-    root = os.path.join(os.path.dirname(__file__), "..", "..", "reports", "日报")
+    root = os.path.join(PROJECT_ROOT, "reports", "日报")
 
     report_patterns = [
         f"决策/投资决策_{today}.md",

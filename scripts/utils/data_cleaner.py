@@ -372,7 +372,8 @@ def _load_trading_calendar() -> set:
                 dates = data.get("dates", data) if isinstance(data, dict) else data
                 if dates and len(dates) > 0:
                     return set(dates)
-            except Exception:
+            except Exception as e:
+                print(f'  [WARN] 交易日历 {cal_path} 解析失败: {e}')
                 continue
     return set()
 

@@ -181,8 +181,8 @@ def fetch_daily_basic(codes: list, db: DatabaseManager, days_back: int = 30) -> 
                 if df is not None and not df.empty:
                     n = db.upsert_daily_basic(df)
                     stock_success += n
-            except Exception:
-                pass
+            except Exception as e:
+                print(f'  [WARN] 写入 {ts_code} daily_basic失败: {e}')
             time.sleep(0.15)  # daily_basic 限频更严格
 
         if stock_success > 0:

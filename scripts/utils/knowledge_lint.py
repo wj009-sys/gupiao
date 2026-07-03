@@ -39,11 +39,19 @@ import sys
 import json
 import re
 import glob
+import logging
 from datetime import datetime, timedelta
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] knowledge_lint: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("knowledge_lint")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def p(path: str) -> str:
@@ -82,33 +90,42 @@ def _extract_references(text: str, source_file: str, inside_knowledge: bool = Tr
     - 策略/path             相对路径引用（knowledge/ 内文件常见）
     """
     refs = []
-    # 1. [[link]] 格式
-    for m in re.finditer(r'\[\[([^\]]+?)\]\]', text):
-        refs.append({"raw": m.group(0), "target": m.group(1), "type": "wikilink"})
+    # 1. [[link]] 格式 — 解析失败时记录文件并跳过该格式，不阻断后续步骤
+    try:
+        for m in re.finditer(r'\[\[([^\]]+?)\]\]', text):
+            refs.append({"raw": m.group(0), "target": m.group(1), "type": "wikilink"})
+    except Exception as e:
+        print(f'  [WARN] wikilink解析失败 ({source_file}): {e}，跳过wikilink格式，继续解析其他格式')
     # 2. Markdown 链接 [label](path)
-    for m in re.finditer(r'\[([^\]]+?)\]\(([^\)]+)\)', text):
-        target = m.group(2).strip()
-        # 规范化路径
-        if target.startswith("../"):
-            target = target[3:]  # relative to project root
-        # 保留项目内引用
-        if target.startswith(("data/", "skills/", "knowledge/")):
-            refs.append({"raw": m.group(0), "target": target, "type": "markdown"})
-        elif inside_knowledge and target.startswith(("策略/", "复盘记录/", "CHANGES.md", "INDEX.md")):
-            # knowledge/ 内文件的相对引用
-            refs.append({"raw": m.group(0), "target": "knowledge/" + target, "type": "markdown"})
+    try:
+        for m in re.finditer(r'\[([^\]]+?)\]\(([^\)]+)\)', text):
+            target = m.group(2).strip()
+            # 规范化路径
+            if target.startswith("../"):
+                target = target[3:]  # relative to project root
+            # 保留项目内引用
+            if target.startswith(("data/", "skills/", "knowledge/")):
+                refs.append({"raw": m.group(0), "target": target, "type": "markdown"})
+            elif inside_knowledge and target.startswith(("策略/", "复盘记录/", "CHANGES.md", "INDEX.md")):
+                # knowledge/ 内文件的相对引用
+                refs.append({"raw": m.group(0), "target": "knowledge/" + target, "type": "markdown"})
+    except Exception as e:
+        print(f'  [WARN] markdown链接解析失败 ({source_file}): {e}，跳过markdown链接格式，继续解析其他格式')
     # 3. 行内 data/ 引用（不在代码块中）
-    in_code_block = False
-    for line in text.split("\n"):
-        if line.strip().startswith("```"):
-            in_code_block = not in_code_block
-            continue
-        if in_code_block:
-            continue
-        for m in re.finditer(r'(?<![\[`])((?:data|skills|knowledge)/[^\s,)\]"\'》]+)', line):
-            target = m.group(1).rstrip(".")
-            if target not in [r["target"] for r in refs]:
-                refs.append({"raw": m.group(0), "target": target, "type": "inline"})
+    try:
+        in_code_block = False
+        for line in text.split("\n"):
+            if line.strip().startswith("```"):
+                in_code_block = not in_code_block
+                continue
+            if in_code_block:
+                continue
+            for m in re.finditer(r'(?<![\[`])((?:data|skills|knowledge)/[^\s,)\]"\'》]+)', line):
+                target = m.group(1).rstrip(".")
+                if target not in [r["target"] for r in refs]:
+                    refs.append({"raw": m.group(0), "target": target, "type": "inline"})
+    except Exception as e:
+        print(f'  [WARN] 内联引用解析失败 ({source_file}): {e}，跳过内联引用格式，继续返回已解析引用')
     return refs
 
 
@@ -132,7 +149,8 @@ def _check_orphans(files: dict) -> list:
                     base, _ = os.path.splitext(target_rel)
                     all_refs.add(target_rel)
                     all_refs.add(base)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"扫描引用时出错 ({rel}): {e}", exc_info=True)
             continue
 
     # 检查是否有文件从未被引用
@@ -193,7 +211,8 @@ def _check_broken_refs(files: dict) -> list:
                             "raw": r["raw"],
                             "suggest": f"外部文件{target}不存在",
                         })
-        except Exception:
+        except Exception as e:
+            logger.warning(f"检查引用时出错 ({rel}): {e}", exc_info=True)
             continue
     return broken
 
@@ -237,8 +256,8 @@ def _check_contradictions(texts: dict) -> list:
         try:
             with open(position_rule_path, "r", encoding="utf-8") as f:
                 rules["仓位管理"] = json.load(f)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"读取仓位管理规则失败: {e}", exc_info=True)
 
     # 检查1: 仓位上限一致性
     content_择时 = texts.get("策略/择时策略.md", "")
@@ -289,6 +308,7 @@ def _check_index_consistency(files: dict) -> dict:
         with open(index_path, "r", encoding="utf-8") as f:
             content = f.read()
     except Exception as e:
+        logger.warning(f"读取INDEX.md失败: {e}", exc_info=True)
         return {"status": "error", "detail": str(e)}
 
     # 提取 INDEX.md 中引用的所有文件
@@ -348,7 +368,8 @@ def run_lint(max_stale_days: int = 90) -> dict:
             try:
                 with open(info["path"], "r", encoding="utf-8") as f:
                     texts[rel] = f.read()
-            except Exception:
+            except Exception as e:
+                logger.warning(f"读取文件失败 ({rel}): {e}", exc_info=True)
                 texts[rel] = ""
 
     report = {

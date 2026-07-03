@@ -136,7 +136,7 @@ except Exception as e:
 
 # 数据库管理器（尽力而为，导入失败降级到纯API模式）
 try:
-    from scripts.utils.db_manager import DatabaseManager
+    from scripts.utils.db_manager import DatabaseManager, get_daily_price_db_first
     _db = DatabaseManager()
 except Exception as e:
     print(f"  [WARN] 数据库连接失败，使用纯API模式: {e}")
@@ -146,41 +146,6 @@ except Exception as e:
 # ============================================================
 #  工具函数
 # ============================================================
-
-def _get_daily_price_db_first(ts_code: str, days_back: int = 60) -> pd.DataFrame:
-    """
-    获取日线行情：优先从SQLite读取，失败回退到Tushare API
-
-    Args:
-        ts_code: 股票代码
-        days_back: 取最近多少天的数据
-
-    Returns:
-        DataFrame，按 trade_date 降序（最新在前）
-    """
-    global _db
-
-    # 尝试从数据库读取
-    if _db:
-        try:
-            df = _db.get_daily_price(ts_code)
-            if df is not None and not df.empty and len(df) >= 10:
-                # 数据库返回的是升序，需要降序
-                df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
-                return df.head(days_back)
-        except Exception as e:
-            print(f"  ⚠️ 从DB获取{ts_code}行情失败: {e}")
-
-    # 回退到 Tushare API
-    try:
-        df = pro.daily(ts_code=ts_code)
-        if df is not None and not df.empty:
-            df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
-            return df.head(days_back)
-    except Exception as e:
-        print(f"  ⚠️ 从API获取{ts_code}行情失败: {e}")
-    return pd.DataFrame()
-
 
 def load_json(path: str) -> dict:
     """安全加载 JSON 文件"""
@@ -388,7 +353,7 @@ def score_stability(ts_code: str, trade_date: str, profile: dict = None) -> dict
     if profile is None:
         profile = DEFAULT_SCORING_PROFILE
     try:
-        df = _get_daily_price_db_first(ts_code, days_back=20)
+        df = get_daily_price_db_first(ts_code, days_back=20)
         basic_df = pro.daily_basic(ts_code=ts_code, trade_date=trade_date)
 
         score = 85  # 起始高分（从满分开始扣）
@@ -471,7 +436,7 @@ def score_reversal(ts_code: str, trade_date: str, profile: dict = None) -> dict:
     if profile is None:
         profile = DEFAULT_SCORING_PROFILE
     try:
-        df = _get_daily_price_db_first(ts_code, days_back=30)
+        df = get_daily_price_db_first(ts_code, days_back=30)
         if df is None or df.empty or len(df) < 15:
             return {"score": 50, "details": {"reason": "数据不足"}}
 
@@ -519,14 +484,7 @@ def score_reversal(ts_code: str, trade_date: str, profile: dict = None) -> dict:
         # === 2. 企稳确认（RSI从低位回升）===
         if len(closes) >= 14:
             try:
-                # 简单RSI计算
-                gains, losses = [], []
-                for i in range(1, min(15, len(closes))):
-                    change = closes[i-1] - closes[i]  # 升序需反转
-                    # closes是降序，所以i-1是更晚的日期
-                    # 我们要最近的14个period
-                    pass
-                # 简化：用涨跌幅做简单判断
+                # 用涨跌幅做简单判断（替代RSI计算）
                 last_3d = pct_chgs[:3]
                 if len(pct_chgs) >= 7:
                     early_3d = pct_chgs[4:7]
@@ -537,8 +495,8 @@ def score_reversal(ts_code: str, trade_date: str, profile: dict = None) -> dict:
                     elif np.mean(last_3d) < np.mean(early_3d) - 1:
                         score -= 10
                         details.append("仍在加速下跌")
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  [WARN] 后3日企稳检查异常: {e}")
 
         # === 3. 缩量企稳加分 ===
         try:
@@ -549,8 +507,8 @@ def score_reversal(ts_code: str, trade_date: str, profile: dict = None) -> dict:
                 if avg_vol_10d > 0 and avg_vol_3d < avg_vol_10d * 0.8:
                     score += 10
                     details.append("缩量企稳")
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"  [WARN] 缩量企稳检查异常: {e}")
 
         final = max(0, min(100, score))
         return {"score": round(final, 1), "details": {"reason": "; ".join(details) if details else "中性无反转信号",
@@ -656,7 +614,7 @@ def score_valuation(ts_code: str, trade_date: str) -> dict:
 def score_momentum(ts_code: str) -> dict:
     """动量因子评分（0-100）- DB优先读取"""
     try:
-        df = _get_daily_price_db_first(ts_code, days_back=60)
+        df = get_daily_price_db_first(ts_code, days_back=60)
         if df is None or df.empty or len(df) < 40:
             return {"score": 50, "details": {"reason": "行情数据不足"}}
         close_20 = df["close"].iloc[:20].values
@@ -683,7 +641,7 @@ def score_momentum(ts_code: str) -> dict:
 def score_technical(ts_code: str) -> dict:
     """技术面因子评分（0-100）- DB优先读取 + OBV量能加分"""
     try:
-        df = _get_daily_price_db_first(ts_code, days_back=30)
+        df = get_daily_price_db_first(ts_code, days_back=30)
         if df is None or df.empty or len(df) < 30:
             return {"score": 50, "details": {"reason": "技术数据不足"}}
         closes = df["close"].values
@@ -759,8 +717,8 @@ def score_technical(ts_code: str) -> dict:
                 if obv_detail:
                     detail += f" | {obv_detail}"
 
-        except Exception:
-            pass  # OBV加分失败不影响主评分
+        except Exception as e:
+            print(f"  [WARN] OBV量能加分计算失败: {e}")  # OBV加分失败不影响主评分
 
         final_score = max(0, min(100, score + vol_score + obv_bonus))
         return {"score": final_score, "details": {"summary": detail}}
@@ -784,7 +742,7 @@ def score_sentiment(ts_code: str, trade_date: str = None) -> dict:
         print(f"  ⚠️ {ts_code} 主力资金数据获取失败: {e}")
     # 兜底：用涨跌幅判断情绪（优先DB）
     try:
-        df = _get_daily_price_db_first(ts_code, days_back=5)
+        df = get_daily_price_db_first(ts_code, days_back=5)
         if df is not None and not df.empty and len(df) >= 5:
             recent = df["pct_chg"].iloc[:5].mean()
             if recent > 3:

@@ -48,7 +48,7 @@ cy = pro.index_daily(ts_code='399006.SZ', start_date='YYYYMMDD', end_date='YYYYM
 ```
 
 #### 2. 财经新闻和宏观政策
-使用 `WebFetch` 和 `tavily-search` 抓取：
+使用 `WebFetch` 和 `WebSearch` 抓取：
 - **财联社**: https://www.cls.cn/telegraph （24小时滚动快讯）
 - **东方财富要闻**: https://finance.eastmoney.com/a/czqyw.html
 - **华尔街见闻**: https://wallstreetcn.com/news/global
@@ -57,7 +57,7 @@ cy = pro.index_daily(ts_code='399006.SZ', start_date='YYYYMMDD', end_date='YYYYM
 搜索时应考虑时效性，优先获取当天的最新消息。对于每一条重要信息，追问自己：「这对A股有什么影响？利好还是利空？」
 
 #### 3. 行业/板块热点
-使用 `tavily-search` 搜索当天热点板块，或者用 Tushare 获取板块涨跌幅排名：
+使用 `WebSearch` 搜索当天热点板块，或者用 Tushare 获取板块涨跌幅排名：
 - 搜索「今日A股板块涨跌排名」
 - 搜索「资金流入板块排名」
 
@@ -97,9 +97,9 @@ limit_list = pro.limit_list(trade_date='YYYYMMDD')
 |---------|--------|-------------|
 | 大盘行情（涨跌/成交额） | 必须 | 手动运行 `fetch_all.py` 重试（输出 `data/raw/情报原始数据_*.json`）；仍失败则在报告中标注"行情数据暂缺" |
 | 涨跌家数 | 建议 | 可用前一日数据替代，标注日期 |
-| 北向资金 | 必须 | 用 `tavily-search` 搜索补充；仍无则标注"数据获取失败" |
+| 北向资金 | 必须 | 用 `WebSearch` 搜索补充；仍无则标注"数据获取失败" |
 | 财经新闻/政策 | 必须 | 至少抓取3条以上才算成功；不足3条则扩大搜索范围重试 |
-| 板块排名 | 建议 | 用 `tavily-search` 搜索板块涨跌排名替代 |
+| 板块排名 | 建议 | 用 `WebSearch` 搜索板块涨跌排名替代 |
 
 > 如果核心数据（大盘/政策）全部获取失败，**不要强行生成报告**，应告知用户数据源异常并提供排查建议。
 
@@ -258,9 +258,9 @@ limit_list = pro.limit_list(trade_date='YYYYMMDD')
 
 | 触发条件 | 一线修复 | 仍失败兜底 |
 |---------|---------|-----------|
-| `fetch_all.py` 运行报错 | 检查 TUSHARE_TOKEN 是否配置；检查网络连接 | 改用 `tavily-search` 手动搜索大盘行情和新闻；报告中标注"数据异常，建议稍后重试" |
-| `WebFetch` 抓取财联社失败 | 换用 `tavily-search` 搜索「今日A股要闻」 | 换备用站点：东方财富/和讯网/金十数据 |
-| `tavily-search` 无返回结果 | 减少限制词，改用更宽松的关键词重新搜索 | 提示用户手动补充信息 |
+| `fetch_all.py` 运行报错 | 检查 TUSHARE_TOKEN 是否配置；检查网络连接 | 改用 `WebSearch` 手动搜索大盘行情和新闻；报告中标注"数据异常，建议稍后重试" |
+| `WebFetch` 抓取财联社失败 | 换用 `WebSearch` 搜索「今日A股要闻」 | 换备用站点：东方财富/和讯网/金十数据 |
+| `WebSearch` 无返回结果 | 减少限制词，改用更宽松的关键词重新搜索 | 提示用户手动补充信息 |
 | 所有外部数据源都不可用 | 检查是否处于非交易日/节假日 | 告知用户今日无数据并结束任务，不要生成空报告 |
 | Tushare API 限频 | 等待10秒后重试 | 切换到 WebFetch 获取免费数据 |
 | 获取的板块数据为空 | 往前找1-5个交易日的数据 | 用 WebFetch 搜索板块涨跌排名补充 |
@@ -283,7 +283,7 @@ limit_list = pro.limit_list(trade_date='YYYYMMDD')
 - [ ] **CP3-持仓关联检查**：如果用户有持仓，报告中必须有与之相关的板块/个股信息
 - [ ] **CP4-置信度标注**：每条关键资讯必须标注置信度（确凿/高可信/传闻），不可混为一谈
 - [ ] **CP5-可验证性**：报告中每条信息都标注了来源（财联社/东方财富/巨潮/Tushare）
-- [ ] **CP6-多工具协同**：至少同时使用WebFetch/Tavily/Tushare中的2个工具获取同一类数据，不能仅依赖单一工具
+- [ ] **CP6-多工具协同**：至少同时使用WebFetch/WebSearch/Tushare中的2个工具获取同一类数据，不能仅依赖单一工具
 - [ ] **CP7-数据质量标注**：报告中每条数据必须标注"实时/延迟15分/盘后"，避免用户误解时效性
 
 ---
@@ -317,9 +317,8 @@ limit_list = pro.limit_list(trade_date='YYYYMMDD')
 ## 依赖的工具
 
 - `scripts/utils/tushare_client.py` — A股行情、龙虎榜、资金流向封装
-- `tavily-search` — 财经新闻搜索
+- `WebSearch` — 财经新闻搜索
 - `WebFetch` — 网页抓取
-- `scripts/utils/tushare_client.py` — Tushare 封装客户端
 - `data/portfolio.json` — 用户持仓信息
 - `data/watchlist.json` — 用户关注列表
 

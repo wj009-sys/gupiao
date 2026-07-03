@@ -3,7 +3,7 @@
 ## ⚡ 行为准则 — Karpathy LLM Wiki 工作法（2026-07-03安装）
 
 本项目遵循 **Karpathy LLM Wiki 范式**：原始资料不可变、知识编译沉淀、LLM维护知识库。
-详见 `knowledge/策略/LLM-Wiki-工作法.md`。
+详见 `knowledge/LLM-Wiki-工作法.md`（工作规范，非策略文件）。
 
 ### 核心原则（每次交互遵循）
 
@@ -40,12 +40,12 @@
 | **Schema（行为规则）** | `CLAUDE.md` + `skills/*/SKILL.md` | **共同演化**，人+LLM 持续优化 |
 
 > 整个项目本身就是 Karpathy 范式的 A 股投研特化版：
-> 7 Agent 流水线 = 自动化的 ingest → compile → verify → lint 闭环。
+> 8 Agent 流水线 = 自动化的 ingest → compile → verify → lint 闭环。
 > 每日复盘 = 内置的 lint + synthesis 机制。
 
 ## 项目目标
 
-构建A股自动化投研团队，包含7个AI Agent角色，每天自动完成情报采集→技术分析→选股推荐→风控检查→交易计划→复盘迭代的完整闭环，由投资领导统筹管理。每个Agent都经过Darwin Skill优化（评分从平均65.1提升至97.1，全部达到五星标准）。
+构建A股自动化投研团队，包含8个AI Agent角色，每天自动完成情报采集→技术分析→选股推荐→风控检查→交易计划→复盘迭代的完整闭环，由投资领导统筹管理。每个Agent都经过Darwin Skill优化（评分从平均65.1提升至97.1，全部达到五星标准）。
 
 ## 🔄 数据自动同步
 
@@ -89,15 +89,36 @@ python scripts/utils/auto_sync.py --auto-sync --max-minutes 15 --max-stocks 500
 
 ## Agent 团队
 
-| Agent | Skill | 脚本 | 达成分数 | 定时 |
-|-------|-------|------|---------|------|
-| 🕵️ Agent1 情报员 | `skills/agent1-情报员/SKILL.md` | `fetch_all.py` | **96** (Darwin五星) | 07:00 |
-| 📊 Agent2 分析师 | `skills/agent2-分析师/SKILL.md` | `analyze.py` | **97** (Darwin五星) | 08:30 |
-| 🛡️ Agent3 风控官 | `skills/agent3-风控官/SKILL.md` | `risk_check.py` | **97** (Darwin五星) | 按需 |
-| 🔄 Agent4 复盘师 | `skills/agent4-复盘师/SKILL.md` | `review.py` | **97** (Darwin五星) | 21:00 |
-| 🔍 Agent5 选股机器人 | `skills/agent5-选股机器人/SKILL.md` | `stock_picker.py` | **100** (Darwin五星) | 09:00/12:00/21:30 |
-| 🎯 Agent6 操盘手 | `skills/agent6-操盘手/SKILL.md` | `trader.py` | **97** (Darwin五星) | 按需 |
-| 🏆 Agent7 投资领导 | `skills/agent7-投资领导/SKILL.md` | `leader.py` | **96** (Darwin五星) | 按需 |
+| Agent | Skill | 脚本 | 达成分数 | 模型 | 定时 |
+|-------|-------|------|---------|------|------|
+| 🕵️ Agent1 情报员 | `skills/agent1-情报员/SKILL.md` | `fetch_all.py` | **96** (Darwin五星) | 默认 | 07:00 |
+| 📊 Agent2 分析师 | `skills/agent2-分析师/SKILL.md` | `analyze.py` | **97** (Darwin五星) | 默认 | 08:30 |
+| 🛡️ Agent3 风控官 | `skills/agent3-风控官/SKILL.md` | `risk_check.py` | **97** (Darwin五星) | 默认 | 按需 |
+| 🔄 Agent4 复盘师 | `skills/agent4-复盘师/SKILL.md` | `review.py` | **97** (Darwin五星) | **opus** | 21:00 |
+| 🔍 Agent5 选股机器人 | `skills/agent5-选股机器人/SKILL.md` | `stock_picker.py` | **100** (Darwin五星) | 默认 | 09:00/12:00/21:30 |
+| 🎯 Agent6 操盘手 | `skills/agent6-操盘手/SKILL.md` | `trader.py` | **97** (Darwin五星) | 默认 | 按需 |
+| 🏆 Agent7 投资领导 | `skills/agent7-投资领导/SKILL.md` | `leader.py` | **96** (Darwin五星) | **opus** | 按需 |
+
+| 🔮 Agent-问股 | `skills/agent-问股/SKILL.md` | `agent_ask/ask.py` | **—** (Darwin待评分) | 默认 | 按需 |
+
+### Agent 模型分配
+
+Agent 的 SKILL.md frontmatter 中通过 `model:` 字段声明所需模型。
+模型选择由调用方读取 SKILL.md 决定，仅复杂推理型 Agent 使用 Opus：
+
+| Agent | 模型 | 原因 |
+|-------|------|------|
+| Agent1 情报员 | 默认 | 结构化数据采集，不需要复杂推理 |
+| Agent2 分析师 | 默认 | 公式计算+指标生成，不需要复杂推理 |
+| Agent3 风控官 | 默认 | 规则引擎判断，不需要复杂推理 |
+| **Agent4 复盘师** | **opus** | 深度复盘分析、多Agent偏差对比、知识库合成、模式发现 |
+| Agent5 选股机器人 | 默认 | 多因子评分+排序，结构化流水线 |
+| Agent6 操盘手 | 默认 | 基于规则+约束生成交易计划，不需要复杂推理 |
+| **Agent7 投资领导** | **opus** | 质量审核（6Agent结构化评判）、冲突仲裁、最终投资决策 |
+| Agent-问股 | 默认 | 策略模板匹配+技术指标解释，不需要复杂推理 |
+
+> Agent4 和 Agent7 在各自 `skills/agent4-复盘师/SKILL.md` 和 `skills/agent7-投资领导/SKILL.md`
+> 的 frontmatter 中声明了 `model: opus`。其余 6 个 Agent 不声明 model 字段，由调用方使用默认模型。
 
 ### 优化后新增通用模块（所有Skill均含）
 
@@ -110,7 +131,7 @@ python scripts/utils/auto_sync.py --auto-sync --max-minutes 15 --max-stocks 500
 ### Agent1：情报员（信息采集）
 - **职责**：每天早7点自动抓取全网财经资讯（政策、公告、龙虎榜、资金流向）
 - **输出**：`reports/日报/情报/情报摘要_YYYY-MM-DD.md`
-- **工具**：WebFetch + Tavily Search + Tushare
+- **工具**：WebFetch + WebSearch + Tushare
 - **D3异常**：10条fallback（新增排序失败、多数据源降级、报告写入三连试）
 - **D4检查**：7个CP（数据完整性检查、多源一致性验证、持仓时效标注）
 - **D9反例**：8条（新增排序方向错误、工具单一、超长报告）
@@ -218,6 +239,7 @@ Agent3（风控官）与 Agent6（操盘手）构成「提案-审查」双轨制
              ├─ 🛡️ 风控/止损 → 派给Agent3风控官
              ├─ 🔄 复盘/总结 → 派给Agent4复盘师
              ├─ 🔍 选股/推荐 → 派给Agent5选股机器人
+             ├─ 🔮 问股/分析 → 派给Agent-问股
              ├─ 🎯 下单/交易 → 派给Agent6操盘手
              ├─ 🏆 综合/决策 → 自己做最终决策
              └─ 💬 闲聊/简单 → 直接回复
@@ -299,7 +321,10 @@ scripts/           - Python 分析脚本
   ├── agent5-选股/
   ├── agent6-操盘/
   ├── agent7-决策/
-  └── utils/       - 工具函数（Tushare客户端、技术指标库、DB管理、自动同步）
+  ├── agent_ask/       - Agent问股（自然语言策略问股）
+  └── utils/       - 工具函数（Tushare/AkShare数据源、技术指标、L2重排序、L3后置分析、风险叠加、RPS、DB管理、自动同步等）
+webui/             - Web界面（FastAPI，策略问股可视化）
+.github/workflows/  - GitHub Actions CI/CD（定时运行全Agent流水线）
 .claude/           - Claude 配置
   ├── mcp-servers/
   │   └── claw/        - 定时调度 MCP 服务器 (cron)
@@ -319,12 +344,14 @@ skills/            - 自定义 Skills
   ├── agent4-复盘师/SKILL.md + test-prompts.json
   ├── agent5-选股机器人/SKILL.md + test-prompts.json
   ├── agent6-操盘手/SKILL.md + test-prompts.json
+  ├── agent-问股/SKILL.md
   └── agent7-投资领导/SKILL.md + test-prompts.json
 ```
 
 ## 数据源
 
 - **Tushare Pro**：A股行情、财务、龙虎榜、资金流向（token通过 `.claude/settings.local.json` 自动加载，不硬编码）
+- **AkShare**：A股行情后备数据源（Tushare不可用时自动fallback），通过 `data_provider.py` 统一接口调用
 - **网页抓取**：财联社、东方财富、巨潮资讯
 
 ## 策略知识库
@@ -334,6 +361,11 @@ skills/            - 自定义 Skills
 | `knowledge/策略/选股策略.md` | 多因子选股权重、筛选参数 | Agent5 + Agent4 |
 | `knowledge/策略/择时策略.md` | 入场/出场时机、大盘联动 | Agent6 + Agent4 |
 | `knowledge/策略/交易执行规则.md` | 买卖规范、仓位分配、止盈止损规则 | Agent6 + Agent4 |
+| `knowledge/策略/ZhuLinsen三项目借鉴分析.md` | 借鉴分析+架构参考 | Agent4 |
+| `knowledge/策略/TradingAgents借鉴分析.md` | Multi-Agent架构参考 | Agent4 |
+| `knowledge/策略/MA96-RSI策略分析.md` | MA96+RSI策略分析与回测 | Agent4 |
+| `knowledge/策略/含退市股全策略回测报告.md` | 含退市股的全策略回测 | Agent4 |
+| `knowledge/LLM-Wiki-工作法.md` | 🏗️ 工作规范 — Karpathy LLM Wiki工作法（非策略，见知识库根目录） | Agent4 |
 | `data/策略规则.json` | 买入/卖出策略信号定义 | Agent4 |
 | `data/选股规则.json` | 4种选股模式独立权重配置 | Agent5 + Agent4 |
 | `data/仓位管理规则.json` | 4种市场环境仓位上限 | Agent3 + Agent4 |
@@ -383,6 +415,7 @@ skills/            - 自定义 Skills
 | `/盘中选股` | agent5-选股机器人 | 盘中异动选股（intraday模式） |
 | `/操盘` | agent6-操盘手 | 制定交易计划 |
 | `/决策` | agent7-投资领导 | 综合决策+质量审核+冲突仲裁 |
+| `/问股` | agent-问股 | 自然语言策略问股（均线/缠论/波浪/MACD等9大策略） |
 
 ---
 
@@ -445,7 +478,7 @@ cc-connect start --config cc-connect.toml
 - **Token 管理**：Tushare Token 存储在 `.claude/settings.local.json`（已在 `.gitignore` 中排除）
 - **环境变量**：所有 Token 通过 settings 的 `env` 字段注入，不在脚本中硬编码
 - **Git 清理**：已执行 `git filter-branch` 清除历史中的所有 token 痕迹
-- **批处理文件**：`run-agent*.bat` 不包含任何凭证，依赖自动加载的环境变量
+- **批处理文件**：`docs/archive/run-agent*.bat` 不包含任何凭证，依赖自动加载的环境变量
 
 ## Agent 数据脚本
 
@@ -483,6 +516,12 @@ python -X utf8 scripts/agent7-决策/leader.py
 #   3. 检查已打回的Agent是否重做（#REWORKED标记）
 #   4. 风控vs操盘冲突检测与仲裁
 #   5. 输出最终投资决策
+
+# Agent-问股 — 自然语言策略问股（9大策略模板）
+source venv/Scripts/activate
+python -X utf8 scripts/agent_ask/ask.py --code 000001.SZ --strategy 均线
+# 可选策略：均线/缠论/波浪/量价/题材/MACD/KDJ/RSI/布林/综合
+# --mode detail 输出详细分析
 ```
 
 ## 优化历史（Darwin）
@@ -496,8 +535,8 @@ python -X utf8 scripts/agent7-决策/leader.py
 | 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文4.0** — 全项目审计修复+跨SKILL引用+知识库标准化+QQ MCP+README | 15项修复+7项优化 | 90d520e |
 | 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文5.0** — SKILL标准化(22项)+Python覆盖补全(6脚本)+健康度修复(14项)+知识库升级 | +154D3 +81D4 +82D9, 150 try/except | 5 commits (7216601, f2b68ab, 73d0b8f, e470772, 6bbf73f) |
 | 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文6.0** — 全项目一致性审计+30项修复(5CRITICAL+12HIGH+13MEDIUM)+Telegram→PushPlus迁移+裸except消除 | 7 SKILL推送标准化 + 6处裸except修复 + 14处硬编码/路径修复 | e3c2ec9 |
-| 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文7.0** — 全项目全面审计修复(5CRITICAL+7HIGH+13MEDIUM+11LOW) | CLAUDE.md计数刷新+risk_check总资产Bug+stock_picker死代码+静默pass消除+硬编码env变量化+SKILL标准化+知识库权重修正+基础设施加固 | 进行中 |
-| 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文9.0** — 借鉴ZhuLinsen三项目全面架构升级(8因子体系+L1→L2→L3+LLM排序+问股系统) | L2 LLM排序+l2_rerank+agent_ask问股9策略+SKILL+env | 进行中 |
+| 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文7.0** — 全项目全面审计修复(5CRITICAL+7HIGH+13MEDIUM+11LOW) | CLAUDE.md计数刷新+risk_check总资产Bug+stock_picker死代码+静默pass消除+硬编码env变量化+SKILL标准化+知识库权重修正+基础设施加固 | 已完成 |
+| 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文9.0** — 借鉴ZhuLinsen三项目全面架构升级(8因子体系+L1→L2→L3+LLM排序+问股系统) | L2 LLM排序+l2_rerank+agent_ask问股9策略+SKILL+env | 已完成 |
 
 优化内容（第9轮-达尔文9.0）：借鉴ZhuLinsen三项目全面架构升级
 - **L1→L2→L3选股管线**：stock_picker.py重构为三级管线(L1评分→L2重排序→L3后置分析器)

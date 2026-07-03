@@ -57,7 +57,7 @@ import tempfile
 from datetime import datetime
 
 # 项目根目录
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def p(path: str) -> str:
@@ -537,6 +537,7 @@ def watch_and_send(date_str: str = None, interval: int = 5, max_wait: int = 300)
 
     last_mtime = os.path.getmtime(token_file)
     waited = 0
+    token_file_warned = False  # 避免重复告警污染轮询日志
 
     while waited < max_wait:
         time.sleep(interval)
@@ -552,7 +553,11 @@ def watch_and_send(date_str: str = None, interval: int = 5, max_wait: int = 300)
                 # 没发完继续试
                 last_mtime = current_mtime
         except (OSError, FileNotFoundError):
-            pass
+            # 轮询模式下token文件可能暂时不可用（cc-connect正在写入/重命名等）,
+            # 属正常瞬态，下次迭代会自动恢复，无需终止等待循环。
+            if not token_file_warned:
+                print(f"  ⚠️ token文件暂时不可读，继续轮询等待...")
+                token_file_warned = True
 
     print(f"  ⚠️ 等待超时（{max_wait}s），文件未发送。")
     print(f"  💡 文件保存在 reports/日报/ 目录，可随时手动发送")

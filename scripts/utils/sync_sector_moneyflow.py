@@ -78,8 +78,8 @@ def get_trading_days(since: str, until: str) -> list:
                 dates = data.get("dates", [])
                 if dates and dates[-1] >= today:
                     return [d for d in dates if since <= d <= until]
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"  [WARN] 交易日历缓存读取失败: {e}")
 
     # 从 Tushare 拉
     print("  [交易日历] 从Tushare拉取...", flush=True)

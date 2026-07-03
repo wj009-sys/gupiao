@@ -50,7 +50,9 @@ import json
 import re
 from datetime import datetime
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+# 项目根目录
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, PROJECT_ROOT)
 from scripts.utils.tushare_client import get_daily
 
 # 数据库管理器（尽力而为，导入失败不影响交易计划生成）
@@ -189,7 +191,6 @@ def generate_trade_plan() -> dict:
     warn = "[WARN]"
     fail = "[FAIL]"
 
-    root = os.path.join(os.path.dirname(__file__), "..", "..")
     today_str = datetime.now().strftime("%Y-%m-%d")
 
     result = {
@@ -206,10 +207,10 @@ def generate_trade_plan() -> dict:
     }
 
     # 1. 读取配置和上游报告
-    portfolio = load_json(os.path.join(root, "data", "portfolio.json"))
+    portfolio = load_json(os.path.join(PROJECT_ROOT, "data", "portfolio.json"))
 
     # 读取上游报告（尽可能宽容）
-    report_dir = os.path.join(root, "reports", "日报")
+    report_dir = os.path.join(PROJECT_ROOT, "reports", "日报")
     stock_picks_text = load_report(os.path.join(report_dir, "选股", f"选股建议_{today_str}.md"))
     risk_text = load_report(os.path.join(report_dir, "风控", f"风控报告_{today_str}.md"))
     analysis_text = load_report(os.path.join(report_dir, "分析", f"分析报告_{today_str}.md"))
@@ -236,9 +237,7 @@ def generate_trade_plan() -> dict:
     result["risk_level"] = risk_level
 
     # 3. 确定仓位上限（从仓位管理规则.json读取）
-    position_rules = load_json(os.path.join(
-        os.path.dirname(__file__), "..", "..", "data", "仓位管理规则.json"
-    ))
+    position_rules = load_json(os.path.join(PROJECT_ROOT, "data", "仓位管理规则.json"))
     _env_map = {
         "HIGH": "熊市/调整",
         "LOW": "牛市确认",
@@ -464,7 +463,7 @@ if __name__ == "__main__":
     print("=== END ===")
 
     # 保存
-    output_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+    output_dir = os.path.join(PROJECT_ROOT, "data", "raw")
     os.makedirs(output_dir, exist_ok=True)
     today = datetime.now().strftime("%Y%m%d")
     output_path = os.path.join(output_dir, f"交易原始数据_{today}.json")

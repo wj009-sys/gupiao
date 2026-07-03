@@ -153,8 +153,14 @@ def load_all_market_codes(db: DatabaseManager = None) -> list:
         print(f"  其中沪市: {len([c for c in codes if c.endswith('.SH')])} 只")
         print(f"  其中深市: {len([c for c in codes if c.endswith('.SZ')])} 只")
 
-        # 写入 stock_basic 表
+        # 清空旧的 stock_basic 记录（防止退市/更名股票导致代码列表过期）
         if db and db._ensure_conn():
+            try:
+                cur = db.conn.cursor()
+                cur.execute("DELETE FROM stock_basic")
+                db.conn.commit()
+            except Exception as e:
+                print(f'  [WARN] 清空stock_basic失败: {e}')
             n = db.update_stock_basic(df_filtered)
             print(f"  stock_basic 表已更新: {n} 行")
 
@@ -172,8 +178,8 @@ def load_checkpoint(data_type: str) -> set:
             with open(ckpt_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 return set(data.get("done", []))
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"    [WARN] checkpoint加载失败({data_type}): {e}")
     return set()
 
 
@@ -201,7 +207,8 @@ def get_db_existing_codes(db: DatabaseManager, table: str = "daily_price") -> se
         cur = db.conn.cursor()
         cur.execute(f"SELECT DISTINCT ts_code FROM {table}")
         return set(row[0] for row in cur.fetchall())
-    except Exception:
+    except Exception as e:
+        print(f"    [WARN] DB查询{table}已有代码失败: {e}")
         return set()
 
 
@@ -346,8 +353,8 @@ def fetch_daily_price_history(codes: list, db: DatabaseManager, incremental: boo
                 row = cur.fetchone()
                 if row and row[0]:
                     existing_dates[code] = (row[0], row[1])
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"    [WARN] 增量日期范围查询失败: {e}")
 
     start_date = "19900101"  # 足够早的日期
     end_date = datetime.now().strftime("%Y%m%d")
@@ -473,6 +480,7 @@ def fetch_adj_factor_history(codes: list, db: DatabaseManager, all_market: bool 
 
         except Exception as e:
             stats_global["adj_factor"]["error"] += 1
+            print(f"  [WARN] 写入 {code} 复权因子失败: {e}")
             if all_market:
                 ckpt_done.add(code)
 
@@ -543,8 +551,8 @@ def _fetch_daily_basic_by_date(db: DatabaseManager):
         cur.execute("SELECT COUNT(DISTINCT trade_date) FROM daily_basic")
         total_db_dates = cur.fetchone()[0]
         print(f"  数据库中: {total_db_dates} 天 (覆盖率≥2000只: {len(db_dates_full)} 天)")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"    [WARN] daily_basic已有日期查询失败: {e}")
 
     # 过滤
     dates_to_fetch = [d for d in all_dates if d not in ckpt_done_dates]
@@ -622,8 +630,8 @@ def _save_date_checkpoint(data_type: str, done_dates: set):
                 "count": len(done_dates),
                 "done": sorted(done_dates),
             }, f, ensure_ascii=False)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"    [WARN] 保存日期断点失败({data_type}): {e}")
 
 
 def _fetch_daily_basic_by_stock(codes: list, db: DatabaseManager):
@@ -658,8 +666,9 @@ def _fetch_daily_basic_by_stock(codes: list, db: DatabaseManager):
                     n = db.upsert_daily_basic(df)
                     total_rows += n
                 time.sleep(0.12)
-            except Exception:
+            except Exception as e:
                 had_error = True
+                print(f"    [WARN] 写入 {code} daily_basic数据失败 ({start}~{end}): {e}")
                 continue
 
         if total_rows > 0:
@@ -731,6 +740,7 @@ def fetch_financials_history(codes: list, db: DatabaseManager, all_market: bool 
 
         except Exception as e:
             stats_global["fina_indicator"]["error"] += 1
+            print(f"  [WARN] 写入 {code} 财务指标失败: {e}")
             if all_market:
                 ckpt_done.add(code)
 
@@ -801,6 +811,7 @@ def fetch_dividends_history(codes: list, db: DatabaseManager, all_market: bool =
 
         except Exception as e:
             stats_global["dividend"]["error"] += 1
+            print(f"  [WARN] 写入 {code} 分红数据失败: {e}")
             if all_market:
                 ckpt_done.add(code)
 
@@ -958,8 +969,8 @@ def print_summary(stats_before: dict, stats_after: dict):
         print(f"    日线行情: {dr_price[0]} ~ {dr_price[1]}")
         print(f"    复权因子: {dr_adj[0]} ~ {dr_adj[1]}")
         print(f"    每日估值: {dr_basic[0]} ~ {dr_basic[1]}")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"    [WARN] 日期范围查询失败: {e}")
 
     print(f"\n  数据库文件: data/stocks.db")
     db_size_mb = os.path.getsize(os.path.join(PROJECT_ROOT, "data", "stocks.db")) / 1024 / 1024

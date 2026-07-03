@@ -15,7 +15,7 @@ L2 管线位置：
 环境变量配置（在 .claude/settings.local.json 的 env 中设置）：
     LLM_PROVIDER="openai"               # litellm支持的provider名
     LLM_MODEL="gpt-4o-mini"              # 模型名
-    LLM_API_KEY="sk-..."                 # API Key
+    LLM_API_KEY=os.getenv('LLM_API_KEY', 'your-key-here')  # API Key
     LLM_API_BASE="https://api.openai.com/v1"  # API地址（兼容OpenAI格式）
 
 D3异常处理表：

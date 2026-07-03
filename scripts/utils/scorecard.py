@@ -25,27 +25,7 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.tushare_client import pro
-
-
-def _get_daily_price_db_first(ts_code: str, days_back: int = 60):
-    """获取日线行情（DB优先）"""
-    from scripts.utils.db_manager import DatabaseManager
-    try:
-        _db = DatabaseManager()
-        df = _db.get_daily_price(ts_code)
-        if df is not None and not df.empty and len(df) >= 10:
-            df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
-            return df.head(days_back)
-    except Exception:
-        pass
-    try:
-        df = pro.daily(ts_code=ts_code)
-        if df is not None and not df.empty:
-            df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
-            return df.head(days_back)
-    except Exception:
-        pass
-    return pd.DataFrame()
+from scripts.utils.db_manager import get_daily_price_db_first
 
 
 class ScorecardRule:
@@ -66,7 +46,7 @@ class BreakoutConfirmRule(ScorecardRule):
 
     def apply(self, ts_code: str, trade_date: str, factor_scores: dict = None) -> dict:
         try:
-            df = _get_daily_price_db_first(ts_code, days_back=30)
+            df = get_daily_price_db_first(ts_code, days_back=30, caller="scorecard")
             if df is None or df.empty or len(df) < 20:
                 return {"delta": 0, "reasons": [], "tags": []}
 
@@ -91,7 +71,8 @@ class BreakoutConfirmRule(ScorecardRule):
                     return {"delta": 3, "reasons": [f"接近20日新高({current:.2f}/{high_20d:.2f})，量能待确认"],
                             "tags": ["接近突破"]}
             return {"delta": 0, "reasons": [], "tags": []}
-        except Exception:
+        except Exception as e:
+            print(f"  [WARN] scorecard 突破确认规则失败 ({ts_code}): {e}")
             return {"delta": 0, "reasons": [], "tags": []}
 
 
@@ -101,7 +82,7 @@ class VolumeConfirmRule(ScorecardRule):
 
     def apply(self, ts_code: str, trade_date: str, factor_scores: dict = None) -> dict:
         try:
-            df = _get_daily_price_db_first(ts_code, days_back=15)
+            df = get_daily_price_db_first(ts_code, days_back=15, caller="scorecard")
             if df is None or df.empty or len(df) < 10:
                 return {"delta": 0, "reasons": [], "tags": []}
 
@@ -123,7 +104,8 @@ class VolumeConfirmRule(ScorecardRule):
                 return {"delta": 3, "reasons": [f"缩量回调(量比{recent_vol/prev_vol:.1f}x)"],
                         "tags": ["缩量回调"]}
             return {"delta": 0, "reasons": [], "tags": []}
-        except Exception:
+        except Exception as e:
+            print(f"  [WARN] scorecard 量价配合规则失败 ({ts_code}): {e}")
             return {"delta": 0, "reasons": [], "tags": []}
 
 
@@ -133,7 +115,7 @@ class MaArrangementRule(ScorecardRule):
 
     def apply(self, ts_code: str, trade_date: str, factor_scores: dict = None) -> dict:
         try:
-            df = _get_daily_price_db_first(ts_code, days_back=60)
+            df = get_daily_price_db_first(ts_code, days_back=60, caller="scorecard")
             if df is None or df.empty or len(df) < 60:
                 return {"delta": 0, "reasons": [], "tags": []}
 
@@ -154,7 +136,8 @@ class MaArrangementRule(ScorecardRule):
             if ma5 > ma20 and ma10 > ma20:
                 return {"delta": 3, "reasons": ["短期均线在MA20上方"], "tags": ["短期偏多"]}
             return {"delta": 0, "reasons": [], "tags": []}
-        except Exception:
+        except Exception as e:
+            print(f"  [WARN] scorecard 均线排列规则失败 ({ts_code}): {e}")
             return {"delta": 0, "reasons": [], "tags": []}
 
 
@@ -188,7 +171,8 @@ class SectorMomentumRule(ScorecardRule):
                 return {"delta": 2, "reasons": [f"所属板块'{matched[0]}'涨幅{sector_pct:.1f}%"],
                         "tags": ["板块联动"]}
             return {"delta": 0, "reasons": [], "tags": []}
-        except Exception:
+        except Exception as e:
+            print(f"  [WARN] scorecard 板块动量规则失败 ({ts_code}): {e}")
             return {"delta": 0, "reasons": [], "tags": []}
 
 
@@ -215,7 +199,8 @@ class FundamentalConfirmRule(ScorecardRule):
                     return {"delta": 2, "reasons": [f"估值合理(PE={pe:.1f}, PB={pb:.1f})"],
                             "tags": ["估值合理"]}
             return {"delta": 0, "reasons": [], "tags": []}
-        except Exception:
+        except Exception as e:
+            print(f"  [WARN] scorecard 基本面确认规则失败 ({ts_code}): {e}")
             return {"delta": 0, "reasons": [], "tags": []}
 
 
@@ -264,6 +249,7 @@ class Scorecard:
                 all_tags.extend(result["tags"])
             except Exception as e:
                 # 单个规则失败不影响其他规则
+                print(f"  [WARN] scorecard 规则 {rule.name} 执行失败 ({ts_code}): {e}")
                 continue
 
         # 置信度判断
@@ -310,7 +296,8 @@ class Scorecard:
                                        base_score=base_score)
                 result["ts_code"] = ts_code
                 results.append(result)
-            except Exception:
+            except Exception as e:
+                print(f"  [WARN] scorecard evaluate_batch 单票评估失败 ({c.get('ts_code', c.get('code', 'unknown'))}): {e}")
                 results.append({
                     "ts_code": c.get("ts_code", ""),
                     "adjusted_score": c.get("total_score", 50),
