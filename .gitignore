@@ -43,3 +43,6 @@ data/checkpoints/
 
 # 交易日历缓存（自动生成，如不再需版本控制：git rm --cached data/trading_calendar.json）
 # data/trading_calendar.json 目前仍被 git 跟踪，完全忽略前需 git rm --cached
+
+# WebUI运行日志
+logs/*.log
