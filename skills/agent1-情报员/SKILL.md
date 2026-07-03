@@ -33,12 +33,12 @@ data/策略规则.json       → 交易策略（辅助理解信息重要性）
 使用以下工具并行获取信息（尽量同时发起请求以提高效率）：
 
 #### 1. 大盘行情（Tushare）
-调用 `tushare-data` skill 或 Python 脚本获取：
+调用 `scripts/utils/tushare_client.py` Python 脚本获取：
 - 上证指数、深证成指、创业板指 的昨日收盘价、涨跌幅
 - 成交额、涨跌家数
 
 ```python
-# 通过 tushare-data skill 获取
+# 通过 tushare_client.py 获取
 # 或直接调用 scripts/utils/tushare_client.py
 from scripts.utils import tushare_client
 pro = tushare_client.pro
@@ -310,13 +310,13 @@ limit_list = pro.limit_list(trade_date='YYYYMMDD')
 - `/情报员` — 立即执行一次完整情报采集
 - `/情报员 紧急` — 快速模式，只抓取最重要的3-5条信息
 - `/情报员 龙虎榜` — 只查询龙虎榜
-- 在 CLAUDE.md 中配置 cron：`0 7 * * 1-5` 自动执行
+- 在 CLAUDE.md 中配置 cron：`7 7 * * 1-5` 自动执行
 
 ---
 
 ## 依赖的工具
 
-- `tushare-data` — A股行情、龙虎榜、资金流向
+- `scripts/utils/tushare_client.py` — A股行情、龙虎榜、资金流向封装
 - `tavily-search` — 财经新闻搜索
 - `WebFetch` — 网页抓取
 - `scripts/utils/tushare_client.py` — Tushare 封装客户端

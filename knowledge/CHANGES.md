@@ -9,6 +9,38 @@
 
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
+| 2026-07-04 | 📝 架构 | data/选股规则.json | 升级5因子→8因子体系+新增scoring_profile评分曲线配置(借鉴AlphaSift) |
+| 2026-07-04 | 📝 架构 | scripts/agent5-选股/stock_picker.py | 新增流动性/稳定性/反转3因子评分+非线性评分曲线函数+8因子权重计算 |
+| 2026-07-04 | 📝 架构 | scripts/agent5-选股/stock_picker.py | L1→L2→L3管线重构: L1评分→L2重排序→L3后置分析器 |
+| 2026-07-04 | 📝 架构 | scripts/utils/scorecard.py | 新增L3 Scorecard后置分析器: 突破/量价/均线/板块/基本面5项规则 |
+| 2026-07-04 | 📝 架构 | scripts/utils/risk_overlay.py | 新增风险叠加层(借鉴AlphaSift): 涨跌/量比/PE/MACD/PB/连跌6项独立惩罚 |
+| 2026-07-04 | 📝 架构 | scripts/utils/data_provider.py | 新增多数据源Provider层: Tushare+AkShare自动fallback |
+| 2026-07-04 | 📝 架构 | .github/workflows/00-daily-analysis.yml | 新增GitHub Actions零成本部署(借鉴daily_stock_analysis) |
+| 2026-07-04 | 📝 配置 | data/选股规则.json | 新增scoring_profile+8因子权重+热点板块关键词外部化 |
+| 2026-07-04 | 📝 知识 | knowledge/策略/选股策略.md | 升级到8因子体系描述+新增评分曲线配置+风险叠加层说明 |
+| 2026-07-04 | 📝 架构 | scripts/utils/l2_rerank.py | L2 LLM相对排序引擎: LLM/规则混合排序+自动降级(借鉴AlphaSift) |
+| 2026-07-04 | 📝 架构 | scripts/agent_ask/ask.py | Agent策略问股系统: 9个策略模板(均线/缠论/波浪/MACD/量价/RSI/布林/KDJ/综合) |
+| 2026-07-04 | 📝 架构 | skills/agent-问股/SKILL.md | 问股Agent技能: 自然语言问股触发词+D3/D4/D9 |
+| 2026-07-04 | 📝 配置 | .env.example | 新增LLM配置项(LLM_PROVIDER/MODEL/API_KEY/API_BASE) |
+| 2026-07-04 | 📝 配置修复 | skills/agent2-分析师/SKILL.md | tavily-search→WebSearch+cron同步CLAUDE.md |
+| 2026-07-04 | 📝 配置修复 | skills/agent1-情报员/SKILL.md | tushare-data引用移除+cron同步CLAUDE.md |
+| 2026-07-04 | 📝 配置修复 | skills/agent7-投资领导/SKILL.md | 步骤编号重复修复(第四/五/六/七步重新编号) |
+| 2026-07-04 | 📝 配置修复 | .mcp.json | 替换为./，兼容Claude Code MCP runner |
+| 2026-07-04 | 🔧 新增 | webui/ | WebUI管理界面: FastAPI后端+5路由+6页面+Bootstrap5+HTMX+Chart.js(借鉴daily_stock_analysis) |
+| 2026-07-04 | 📝 代码修复 | scripts/agent6-操盘/trader.py | 2处静默pass消除+迭代修改列表修复+正则增强+无用import移除 |
+| 2026-07-04 | 📝 代码修复 | scripts/agent2-技术分析/analyze.py | 3处静默pass改为WARN+get_ths_index异常输出+market_summary防None |
+| 2026-07-04 | 📝 代码修复 | scripts/agent3-风控/risk_check.py | load_json JSONDecodeError保护+2处静默pass消除+死代码删除 |
+| 2026-07-04 | 📝 代码修复 | scripts/agent5-选股/stock_picker.py | 行业集中度改用实际industry字段+新增get_stock_industry函数 |
+| 2026-07-04 | 📝 代码修复 | scripts/agent4-复盘/review.py | 准确率trend key兼容+env_score correct修复+无提示except警告 |
+| 2026-07-04 | 📝 代码修复 | scripts/agent7-决策/leader.py | load_json/load_report异常保护+冗余import移除 |
+| 2026-07-04 | 📝 代码修复 | scripts/agent7-决策/debate.py | 达尔文8.0: debate.py新增D3/D4/D9完整覆盖+load_json try/except |
+| 2026-07-04 | 📝 架构升级 | SQLite决策审计日志 | db_manager.py新增decision_log表和log_decision()方法，leader.py每次决策自动记录 |
+| 2026-07-04 | 📝 架构升级 | BullBear对抗辩论 | 新增scripts/agent7-决策/debate.py多空对抗辩论模块，leader.py自动调用 |
+| 2026-07-04 | 📝 架构升级 | 决策记忆注入 | review.py写入memory/决策反思.md供Agent7次日自动加载，TradingAgents记忆机制本土化 |
+| 2026-07-04 | 📝 架构升级 | 三级风控委员会 | risk_check.py支持--risk-profile三档位(激进/中性/保守)，仓位管理规则.json止损规则.json增加对应配置 |
+| 2026-07-04 | 📝 新知 | TradingAgents借鉴分析.md | TradingAgents架构深度分析，7项可借鉴改进+P0/P1/P2分级方案 |
+| 2026-07-04 | 📝 新知 | TradingAgents借鉴分析.md | TradingAgents架构深度分析，7项可借鉴改进+P0/P1/P2分级方案 |
+| 2026-07-04 | 📝 复盘 | 复盘记录/复盘_20260703.json | 日常复盘：偏差分析 + 策略建议 + 准确率趋势 |
 | 2026-07-04 | 📝 📝回测 | 含退市股全策略回测报告.md | 全策略含退市股回测报告 |
 | 2026-07-04 | 📝 📝回测 | 含退市股全策略回测报告.md | 全策略含退市股回测报告 |
 | 2026-07-03 | 📝 研究 | 策略/MA96-RSI策略分析.md | MA96+RSI(14)策略深度分析与回测：96源于5分钟K线，日线建议改用MA120 |

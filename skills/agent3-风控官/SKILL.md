@@ -62,14 +62,24 @@ python -X utf8 scripts/agent3-风控/risk_check.py
 - `--portfolio`：指定持仓JSON路径（默认 `data/portfolio.json`）
 - `--env-score`：大盘环境评分（0-100），不传则从分析原始数据自动读取
 - `--trade-plan`：交易计划原始数据JSON路径（审查操盘手用）
+- `--risk-profile`：风控档位（aggressive/neutral/conservative），默认neutral
+  - **aggressive**（激进）：总仓位+10%，单票+5%，止损放宽至-10%
+  - **neutral**（中性）：标准参数，止损-7%（默认，向后兼容）
+  - **conservative**（保守）：总仓位-10%，单票-5%，止损缩紧至-5%
+
+> **三级风控委员会**（TradingAgents借鉴）：投资领导可依次运行3个档位，综合3份报告决策。
+> 主运行为 `neutral`（默认），复检时补充 `conservative` 和 `aggressive`。
 
 示例：
 ```bash
-# 指定持仓文件和环境评分
+# 标准风控（中性）
 python -X utf8 scripts/agent3-风控/risk_check.py --portfolio data/portfolio.json --env-score 70
 
-# 审查操盘手交易计划
-python -X utf8 scripts/agent3-风控/risk_check.py --portfolio data/portfolio.json --trade-plan data/raw/交易原始数据_20260627.json
+# 激进风控（宽松）
+python -X utf8 scripts/agent3-风控/risk_check.py --risk-profile aggressive
+
+# 保守风控（严格）
+python -X utf8 scripts/agent3-风控/risk_check.py --risk-profile conservative
 ```
 
 ### 第三步：人工复核关键数据

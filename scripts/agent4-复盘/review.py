@@ -45,7 +45,7 @@ import sys
 import json
 import re
 import glob
-from datetime import datetime, timedelta
+from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.tushare_client import pro
@@ -358,7 +358,10 @@ def compare_predictions(predictions: dict, actual: dict, trade_date: str) -> dic
             actual_score = 25
         review["env_score"]["actual"] = actual_score
         if predictions.get("env_score"):
-            review["env_score"]["偏差"] = actual_score - predictions["env_score"]
+            deviation = actual_score - predictions["env_score"]
+            review["env_score"]["偏差"] = deviation
+            # 环境评分正确性：偏差在±20内视为基本正确
+            review["env_score"]["correct"] = abs(deviation) <= 20
             # 环境评分是中期趋势评估，单日数据只能反映短期
             # 偏差仅供参考，不作为正确/错误判定
             review["env_score"]["note"] = "预测为中期趋势评分，实际为单日情绪评分，两者维度不同"
@@ -375,7 +378,8 @@ def load_history(trade_date: str) -> list:
         try:
             with open(f, "r", encoding="utf-8") as fp:
                 history.append(json.load(fp))
-        except Exception:
+        except Exception as e:
+            print(f"  [WARN] 加载复盘记录失败: {os.path.basename(f)}: {e}")
             pass
     return history
 
@@ -388,9 +392,12 @@ def calculate_accuracy_trend(history: list) -> dict:
     scores = []
     for h in history:
         acc = h.get("accuracy", {})
-        板块准确率 = acc.get("sector_accuracy_rate")
-        if 板块准确率 is not None:
-            scores.append(板块准确率)
+        # 兼容中英文key：板块预测/板块准确率/sector_accuracy_rate
+        sector_rate = acc.get("板块预测", {}).get("rate") if isinstance(acc.get("板块预测"), dict) else (
+            acc.get("板块准确率") or acc.get("sector_accuracy_rate")
+        )
+        if sector_rate is not None:
+            scores.append(sector_rate)
 
     if not scores:
         return {"total_days": len(history), "avg_accuracy": 0, "trend": "暂无数据"}
@@ -973,7 +980,87 @@ def generate_review_report(trade_date: str = None) -> dict:
         except Exception as e:
             print(f"  [WARN] 知识库 lint 检查失败: {e}")
 
+    # 10. 【TradingAgents借鉴】写入决策反思摘要（供Agent7次日自动加载）
+    try:
+        write_reflection_summary(review)
+    except Exception as e:
+        print(f"  [WARN] 决策反思写入失败: {e}")
+
     return review
+
+
+def write_reflection_summary(review: dict) -> str:
+    """【TradingAgents借鉴】写入决策反思摘要到 memory/决策反思.md
+
+    TradingAgents 的交易记忆机制会在每次分析后，将决策结果和反思写入持久文件，
+    并在下次分析时自动注入到投资经理的上下文中。
+    我们把这个机制本土化为：复盘师(Agent4)写入反思 → 投资领导(Agent7)自动加载。
+
+    格式：
+    - 简明扼要（100-200字）
+    - 包含偏差、准确率、改进方向
+    - 每天只保留最新一条（历史在复盘记录JSON中）
+    """
+    memory_dir = os.path.join(os.path.dirname(__file__), "..", "..", "memory")
+    os.makedirs(memory_dir, exist_ok=True)
+    memory_path = os.path.join(memory_dir, "决策反思.md")
+
+    date_str = review.get("date", datetime.now().strftime("%Y-%m-%d"))
+    accuracy = review.get("accuracy", {})
+    综合准确率 = accuracy.get("综合准确率", "N/A")
+    板块率 = accuracy.get("板块预测", {}).get("rate", "N/A")
+    大盘率 = accuracy.get("大盘方向", {}).get("rate", "N/A")
+    trend = review.get("accuracy_trend", {}).get("trend", "暂无数据")
+    策略建议 = review.get("策略建议", [])
+    因子建议 = review.get("因子建议", [])
+    偏差分析 = review.get("偏差分析", [])
+    inputs = review.get("inputs", {})
+
+    # 报告完整性摘要
+    missing_agents = [name for name, loaded in inputs.items() if not loaded]
+    completeness = "完整" if not missing_agents else f"缺失: {', '.join(missing_agents)}"
+
+    # 选股表现摘要
+    stock_accuracy = accuracy.get("选股准确率", {})
+    pick_summary = ""
+    if stock_accuracy.get("total", 0) > 0:
+        pick_summary = f"选股{stock_accuracy['correct']}/{stock_accuracy['total']}涨"
+
+    # 改进方向摘要
+    improvements = []
+    if 策略建议:
+        improvements.append(策略建议[0][:60])
+    if 因子建议:
+        improvements.append(因子建议[0][:60])
+    if 偏差分析:
+        improvements.append(f"偏差{len(偏差分析)}项需关注")
+
+    content = f"""---
+date: {date_str}
+accuracy: {综合准确率}%
+trend: {trend}
+completeness: {completeness}
+---
+
+## 今日反思 ({date_str})
+
+**准确率**: 综合 {综合准确率}% | 板块 {板块率}% | 大盘 {大盘率}%
+**趋势**: {trend}
+**选股**: {pick_summary if pick_summary else '无选股验证数据'}
+**报告**: {completeness}
+
+**偏差项**: {len(偏差分析)} 项
+**改进方向**: {' | '.join(improvements) if improvements else '维持当前策略'}
+"""
+
+    try:
+        with open(memory_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"  [OK] 决策反思已写入: {memory_path}")
+    except Exception as e:
+        print(f"  [WARN] 决策反思写入失败: {e}")
+
+    return memory_path
 
 
 if __name__ == "__main__":

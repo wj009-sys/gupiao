@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}数据库信息{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header"><i class="bi bi-database me-1"></i>数据库详情</div>
+    <div class="card-body">
+        {% if db_info.exists %}
+        <p>大小: {{ db_info.size_mb }} MB</p>
+        <p>表数量: {{ db_info.tables|length }}</p>
+        <table class="table">
+            <thead>
+                <tr><th>表名</th><th>行数</th></tr>
+            </thead>
+            <tbody>
+                {% for tbl, cnt in db_info.table_info.items() %}
+                <tr><td>{{ tbl }}</td><td>{{ cnt }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>数据库不存在</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

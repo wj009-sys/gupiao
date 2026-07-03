@@ -285,6 +285,23 @@ CREATE_TABLES_SQL = [
         PRIMARY KEY (trade_date, exchange)
     )
     """,
+
+    # 12. decision_log — 决策审计日志（TradingAgents借鉴自SQLite持久化）
+    """
+    CREATE TABLE IF NOT EXISTS decision_log (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        log_date    TEXT NOT NULL,
+        decision_type TEXT NOT NULL,
+        action      TEXT NOT NULL,
+        summary     TEXT,
+        reasoning   TEXT,
+        risk_level  TEXT,
+        conflict_count INTEGER DEFAULT 0,
+        rework_count   INTEGER DEFAULT 0,
+        sources     TEXT,
+        created_at  TEXT DEFAULT (datetime('now','localtime'))
+    )
+    """,
 ]
 
 CREATE_INDEXES_SQL = [
@@ -304,6 +321,8 @@ CREATE_INDEXES_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_adj_date ON adj_factor(trade_date)",
     "CREATE INDEX IF NOT EXISTS idx_moneyflow_mkt_date ON moneyflow_mkt(trade_date)",
     "CREATE INDEX IF NOT EXISTS idx_margin_date ON margin(trade_date)",
+    "CREATE INDEX IF NOT EXISTS idx_decision_date ON decision_log(log_date)",
+    "CREATE INDEX IF NOT EXISTS idx_decision_type ON decision_log(decision_type)",
 ]
 
 
@@ -1499,6 +1518,64 @@ class DatabaseManager:
             return pd.DataFrame()
 
     # ============================================================
+    #  决策审计日志（TradingAgents借鉴）
+    # ============================================================
+
+    def log_decision(self, log_date: str, decision_type: str, action: str,
+                     summary: str = "", reasoning: str = "",
+                     risk_level: str = "LOW",
+                     conflict_count: int = 0, rework_count: int = 0,
+                     sources: str = "") -> bool:
+        """写入一条决策审计日志
+
+        TradingAgents 使用 SQLite 持久化每笔交易决策的全链条推理过程，
+        实现完全白盒的审计跟踪。我们将其扩展为记录投资领导每次最终决策。
+
+        Args:
+            log_date: 决策日期 YYYYMMDD
+            decision_type: 决策类型 (trade/hold/risk_adjust/rework)
+            action: 最终行动描述
+            summary: 决策摘要
+            reasoning: 推理过程简述
+            risk_level: 风险等级 (LOW/MEDIUM/HIGH)
+            conflict_count: 冲突项数量
+            rework_count: 打回重做项数量
+            sources: 决策依据来源
+        Returns:
+            bool: 是否成功
+        """
+        if not self._ensure_conn():
+            return False
+        try:
+            self.conn.execute("""
+                INSERT INTO decision_log
+                    (log_date, decision_type, action, summary, reasoning,
+                     risk_level, conflict_count, rework_count, sources)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (log_date, decision_type, action, summary, reasoning,
+                  risk_level, conflict_count, rework_count, sources))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB] log_decision 失败: {e}")
+            return False
+
+    def get_decision_history(self, days: int = 30) -> pd.DataFrame:
+        """获取最近N天决策历史"""
+        if not self._ensure_conn():
+            return pd.DataFrame()
+        try:
+            return pd.read_sql_query(
+                """SELECT * FROM decision_log
+                   WHERE log_date >= date('now', '-' || ? || ' days', 'localtime')
+                   ORDER BY created_at DESC""",
+                self.conn, params=[str(days)]
+            )
+        except Exception as e:
+            print(f"[DB] get_decision_history 失败: {e}")
+            return pd.DataFrame()
+
+    # ============================================================
     #  统计与维护方法
     # ============================================================
 
@@ -1511,7 +1588,7 @@ class DatabaseManager:
             "stock_basic", "daily_price", "daily_basic", "fina_indicator",
             "dividend", "adj_factor", "daily_indicator", "moneyflow_hsgt",
             "ths_daily", "moneyflow_mkt", "margin",
-            "portfolio_snapshot", "watchlist", "report_log"
+            "portfolio_snapshot", "watchlist", "report_log", "decision_log"
         ]
         stats = {}
         try:

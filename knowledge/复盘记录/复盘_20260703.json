@@ -1,6 +1,6 @@
 {
   "date": "2026-07-03",
-  "timestamp": "2026-07-03 22:39",
+  "timestamp": "2026-07-04 00:56",
   "inputs": {
     "情报": true,
     "分析": true,
@@ -364,7 +364,7 @@
     }
   },
   "accuracy_trend": {
-    "total_days": 3,
+    "total_days": 4,
     "avg_accuracy": 0,
     "trend": "暂无数据"
   }

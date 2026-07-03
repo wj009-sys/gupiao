@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}报告浏览 — 股票投研管理界面{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="mb-1" style="color:#c8d6e5;"><i class="bi bi-file-text me-2" style="color:#4fc3f7;"></i>报告浏览</h3>
+        <p class="text-secondary mb-0" style="font-size:0.85rem;">浏览所有 Agent 生成的分析报告</p>
+    </div>
+</div>
+
+<!-- 筛选 -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form class="row g-3 align-items-end" method="GET" action="/reports">
+            <div class="col-md-4">
+                <label class="form-label" style="font-size:0.85rem;color:#8899aa;">交易日期</label>
+                <select name="date" class="form-select" onchange="this.form.submit()">
+                    <option value="">全部日期</option>
+                    {% for d in dates %}
+                    <option value="{{ d }}" {% if d == selected_date %}selected{% endif %}>{{ d }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label" style="font-size:0.85rem;color:#8899aa;">Agent</label>
+                <select name="agent" class="form-select" onchange="this.form.submit()">
+                    <option value="">全部 Agent</option>
+                    {% for key, cfg in agent_types.items() %}
+                    <option value="{{ key }}" {% if key == selected_agent %}selected{% endif %}>{{ cfg.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-primary btn-sm w-100">
+                    <i class="bi bi-funnel me-1"></i>筛选
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 报告列表 -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-list-ul me-1"></i>报告列表</span>
+        <span class="text-secondary" style="font-size:0.8rem;">共 {{ reports|length }} 份</span>
+    </div>
+    <div class="card-body p-0">
+        {% if reports %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>日期</th>
+                        <th>Agent</th>
+                        <th>文件名</th>
+                        <th>大小</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in reports %}
+                    <tr>
+                        <td><span class="badge bg-dark">{{ r.date }}</span></td>
+                        <td><span style="font-size:1.1rem;">{{ r.agent_icon }}</span> {{ r.agent_label }}</td>
+                        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ r.filename }}</td>
+                        <td>{% if r.size < 1024 %}{{ r.size }}B{% else %}{{ (r.size/1024)|round(1) }}KB{% endif %}</td>
+                        <td>
+                            <a href="/reports/view?path={{ r.rel_path|urlencode }}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-eye"></i> 查看
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-5 text-center text-secondary">
+            <i class="bi bi-inbox" style="font-size:3rem;display:block;margin-bottom:1rem;"></i>
+            <p>未找到匹配的报告</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

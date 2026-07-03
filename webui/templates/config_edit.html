@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}编辑配置 — {{ current_config.name if current_config else config_path }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb" style="background:transparent;padding:0;">
+        <li class="breadcrumb-item"><a href="/config">配置管理</a></li>
+        <li class="breadcrumb-item active" style="color:#8899aa;">{{ current_config.name if current_config else config_path }}</li>
+    </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h5 style="color:#c8d6e5;margin:0;">
+            <i class="bi bi-pencil-square me-2" style="color:#4fc3f7;"></i>
+            {{ current_config.name if current_config else '编辑配置' }}
+        </h5>
+        {% if current_config %}
+        <p class="text-secondary mb-0" style="font-size:0.8rem;">{{ current_config.desc }}</p>
+        {% endif %}
+    </div>
+    <div>
+        <a href="/config" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> 返回
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between">
+        <span><i class="bi bi-code-slash me-1"></i>{{ config_path }}</span>
+        <button class="btn btn-sm btn-success" onclick="saveConfig()">
+            <i class="bi bi-floppy me-1"></i>保存
+        </button>
+    </div>
+    <div class="card-body p-0">
+        <textarea id="configEditor" class="form-control" style="font-family:'Cascadia Code','Fira Code',monospace;font-size:0.8rem;min-height:500px;border:0;border-radius:0;background:#0a0e17;" spellcheck="false">{{ content }}</textarea>
+    </div>
+</div>
+
+<p class="text-secondary mt-2" style="font-size:0.8rem;">
+    <i class="bi bi-info-circle me-1"></i>修改 JSON 配置后保存，如果格式错误会提示。建议保存前先验证 JSON 格式。
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let hasChanges = false;
+const editor = document.getElementById('configEditor');
+editor.addEventListener('input', () => { hasChanges = true; });
+
+window.addEventListener('beforeunload', function(e) {
+    if (hasChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
+
+function saveConfig() {
+    const content = editor.value;
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>保存中...';
+
+    // 前端 JSON 校验
+    try {
+        JSON.parse(content);
+    } catch(e) {
+        showToast(`JSON 格式错误: ${e.message}`, 'danger');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-floppy me-1"></i>保存';
+        return;
+    }
+
+    fetch('/config/save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `path=${encodeURIComponent('{{ config_path }}')}&content=${encodeURIComponent(content)}`
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showToast('配置保存成功！', 'success');
+            hasChanges = false;
+        } else {
+            showToast(`保存失败: ${data.error}`, 'danger');
+        }
+    })
+    .catch(e => showToast(`请求失败: ${e}`, 'danger'))
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-floppy me-1"></i>保存';
+    });
+}
+</script>
+{% endblock %}

@@ -51,7 +51,7 @@ import re
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from scripts.utils.tushare_client import pro, get_daily
+from scripts.utils.tushare_client import get_daily
 
 # 数据库管理器（尽力而为，导入失败不影响交易计划生成）
 try:
@@ -92,7 +92,9 @@ def extract_top_picks(intelligence_text: str) -> list:
     picks = []
     # 匹配股票代码模式（6位数字+市场后缀）
     codes = re.findall(r'\b(\d{6}\.(SZ|SH))\b', intelligence_text)
-    names = re.findall(r'\*\*(.+?)\((\d{6}\.(SZ|SH))\)\*\*', intelligence_text)
+    # Also try markdown table format
+    names = re.findall(r'\*\*(.+?)\((\d{6}\.(?:SZ|SH))\)\*\*', intelligence_text)
+    names = names or re.findall(r'\|\s*\d+\s*\|\s*(\d{6}\.(?:SZ|SH))\s*\|\s*\*\*(.+?)\*\*', intelligence_text)
 
     for name, code in names:
         picks.append({"name": name, "code": code})
@@ -108,7 +110,7 @@ def extract_top_picks(intelligence_text: str) -> list:
     return picks
 
 
-def get_stock_real_price(ts_code: str) -> dict:
+def get_stock_real_price(ts_code: str):
     """获取个股实时/最新行情"""
     try:
         df = get_daily(ts_code, f"{datetime.now().year}0101", datetime.now().strftime("%Y%m%d"))
@@ -124,8 +126,8 @@ def get_stock_real_price(ts_code: str) -> dict:
                 "volume": float(last.get("vol", 0)),
                 "trade_date": last.get("trade_date", ""),
             }
-    except Exception:
-        pass
+    except Exception as e:
+        print(f'[WARN] 获取行情失败({ts_code}): {e}')
     return None
 
 
@@ -164,7 +166,7 @@ def get_limit_prices(ts_code: str, current_price: float) -> dict:
     }
 
 
-def fetch_technical_levels(ts_code: str) -> dict:
+def fetch_technical_levels(ts_code: str):
     """获取技术支撑/压力位"""
     try:
         df = get_daily(ts_code, f"{datetime.now().year}0101", datetime.now().strftime("%Y%m%d"))
@@ -175,8 +177,8 @@ def fetch_technical_levels(ts_code: str) -> dict:
         closes = df["close"].values[:60]
         if len(closes) >= 10:
             return {"support": round(min(closes[:10]), 2), "resistance": round(max(closes[:10]), 2)}
-    except Exception:
-        pass
+    except Exception as e:
+        print(f'[WARN] 获取技术位失败({ts_code}): {e}')
     return {"support": None, "resistance": None}
 
 
@@ -387,12 +389,12 @@ def generate_trade_plan() -> dict:
             })
 
     # 卖出校验：验证卖出清单中的每只股票确实在持仓中
-    for s in result["sell_plan"]:
-        matched = [h for h in holdings if h.get("代码") == s.get("code")]
-        if not matched:
-            result["warnings"].append(f"卖出股票{s.get('code')}不在持仓中，已从卖出清单移除")
-            print(f"  [WARN] 卖出股票{s.get('code')}不在持仓中，已移除")
-            result["sell_plan"].remove(s)
+    before = len(result["sell_plan"])
+    result["sell_plan"] = [s for s in result["sell_plan"] if any(h.get("代码") == s.get("code") for h in holdings)]
+    removed = before - len(result["sell_plan"])
+    if removed > 0:
+        result["warnings"].append(f"有{removed}只卖出股票不在持仓中，已从卖出清单移除")
+        print(f"  [WARN] 有{removed}只卖出股票不在持仓中，已移除")
 
     # 7. 仓位汇总
     total_after_buy = current_position_pct + sum(

@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}仪表盘 — 股票投研管理界面{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="mb-1" style="color:#c8d6e5;"><i class="bi bi-speedometer2 me-2" style="color:#4fc3f7;"></i>仪表盘</h3>
+        <p class="text-secondary mb-0" style="font-size:0.85rem;">
+            <i class="bi bi-calendar3 me-1"></i> 最新报告: <strong>{{ latest_date }}</strong>
+            · 共 {{ total_reports }} 份报告 · {{ total_dates }} 个交易日
+        </p>
+    </div>
+    <div>
+        <button class="btn btn-primary btn-sm" onclick="location.href='/agents'">
+            <i class="bi bi-play-fill me-1"></i>运行 Agent
+        </button>
+    </div>
+</div>
+
+<!-- 统计卡片 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body text-center py-4">
+                <div class="stat-value">{{ latest_reports|length }}</div>
+                <div class="stat-label">今日报告</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body text-center py-4">
+                <div class="stat-value">{{ total_reports }}</div>
+                <div class="stat-label">累计报告</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body text-center py-4">
+                <div class="stat-value">{{ total_dates }}</div>
+                <div class="stat-label">交易日数</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body text-center py-4">
+                <div class="stat-value" style="color:{% if db_info.exists %}#4caf50{% else %}#f44336{% endif %}">
+                    {% if db_info.exists %}{{ db_info.size_mb }}MB{% else %}❌{% endif %}
+                </div>
+                <div class="stat-label">数据库</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- 最新报告列表 -->
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-file-text me-1"></i>最新报告 — {{ latest_date }}
+                {% if latest_date != '暂无' %}
+                <a href="/reports?date={{ latest_date }}" class="float-end text-info" style="font-size:0.8rem;">查看全部 →</a>
+                {% endif %}
+            </div>
+            <div class="card-body p-0">
+                {% if latest_reports %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Agent</th>
+                                <th>报告</th>
+                                <th>大小</th>
+                                <th>更新时间</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in latest_reports %}
+                            <tr>
+                                <td><span style="font-size:1.2rem;">{{ r.agent_icon }}</span> {{ r.agent_label }}</td>
+                                <td>{{ r.filename }}</td>
+                                <td>{% if r.size < 1024 %}{{ r.size }}B{% else %}{{ (r.size/1024)|round(1) }}KB{% endif %}</td>
+                                <td style="font-size:0.8rem;color:#8899aa;">{{ r.mtime.strftime('%H:%M') }}</td>
+                                <td>
+                                    <a href="/reports/view?path={{ r.rel_path|urlencode }}" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-4 text-center text-secondary">
+                    <i class="bi bi-inbox" style="font-size:2rem;display:block;margin-bottom:0.5rem;"></i>
+                    暂无报告，请先运行 Agent
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Agent 状态 -->
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-cpu me-1"></i>Agent 状态
+                <a href="/agents" class="float-end text-info" style="font-size:0.8rem;">管理 →</a>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Agent</th>
+                            <th>状态</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for a in agent_statuses %}
+                        <tr>
+                            <td>{{ a.label }}</td>
+                            <td>
+                                <span class="ping-dot {{ a.status }}"></span>
+                                <span class="status-badge border border-{% if a.status=='running' %}warning{% elif a.status=='success' %}success{% elif a.status=='failed' %}danger{% else %}secondary{% endif %} text-{% if a.status=='running' %}warning{% elif a.status=='success' %}success{% elif a.status=='failed' %}danger{% else %}secondary{% endif %}">
+                                    {% if a.status == 'running' %}运行中
+                                    {% elif a.status == 'success' %}✅ 成功
+                                    {% elif a.status == 'failed' %}❌ 失败
+                                    {% else %}空闲
+                                    {% endif %}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 环境状态 -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-shield-check me-1"></i>环境状态
+            </div>
+            <div class="card-body">
+                {% for key, val in env_info.items() %}
+                <div class="d-flex justify-content-between mb-2" style="font-size:0.85rem;">
+                    <span style="color:#8899aa;">{{ key }}</span>
+                    <span>
+                        {% if val == True %}
+                        <span class="text-success"><i class="bi bi-check-circle-fill"></i> 已配置</span>
+                        {% elif val == False %}
+                        <span class="text-danger"><i class="bi bi-x-circle-fill"></i> 未配置</span>
+                        {% elif val == '未配置' %}
+                        <span class="text-secondary">{{ val }}</span>
+                        {% else %}
+                        <span>{{ val }}</span>
+                        {% endif %}
+                    </span>
+                </div>
+                {% endfor %}
+                {% if db_info.exists %}
+                <div class="d-flex justify-content-between mb-2" style="font-size:0.85rem;">
+                    <span style="color:#8899aa;">数据库表</span>
+                    <span>{{ db_info.tables|length }} 张表</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 交易日历 -->
+        {% if dates %}
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-calendar-week me-1"></i>最近交易日
+            </div>
+            <div class="card-body p-2">
+                {% for d in dates[:7] %}
+                <a href="/reports?date={{ d }}" class="btn btn-sm btn-outline-secondary m-1 {% if d==latest_date %}btn-info text-dark{% endif %}">
+                    {{ d }}
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

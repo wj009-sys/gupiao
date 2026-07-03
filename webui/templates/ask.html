@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}策略问股 — 股票投研管理界面{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="mb-1" style="color:#c8d6e5;"><i class="bi bi-question-circle me-2" style="color:#4fc3f7;"></i>策略问股</h3>
+        <p class="text-secondary mb-0" style="font-size:0.85rem;">
+            支持9种策略模板的自然语言问股分析
+        </p>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- 输入区域 -->
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-input-cursor me-1"></i>查询参数</div>
+            <div class="card-body">
+                <form id="askForm">
+                    <!-- 股票代码/名称 -->
+                    <div class="mb-3">
+                        <label class="form-label" style="font-size:0.85rem;color:#8899aa;">股票代码 / 名称</label>
+                        <div class="position-relative">
+                            <input type="text" class="form-control" id="stockCode" name="code"
+                                   placeholder="如 600519 或 茅台" autocomplete="off"
+                                   hx-get="/ask/codes" hx-trigger="keyup changed delay:300ms"
+                                   hx-target="#codeSuggestions" hx-params="q" hx-indicator="#codeSpinner">
+                            <span id="codeSpinner" class="htmx-indicator position-absolute end-0 top-50 translate-middle-y me-2">
+                                <span class="spinner-border spinner-border-sm"></span>
+                            </span>
+                        </div>
+                        <div id="codeSuggestions" class="mt-1"></div>
+                        <script>
+                        document.addEventListener('htmx:beforeSwap', function(e) {
+                            if (e.detail.target.id === 'codeSuggestions' && e.detail.xhr) {
+                                const resp = JSON.parse(e.detail.xhr.responseText);
+                                const container = document.getElementById('codeSuggestions');
+                                if (resp.results && resp.results.length) {
+                                    let html = '<div class="list-group" style="max-height:200px;overflow-y:auto;">';
+                                    resp.results.forEach(r => {
+                                        html += `<button type="button" class="list-group-item list-group-item-action" style="font-size:0.85rem;background:#0d1321;border-color:#2a3040;color:#c8d6e5;padding:0.4rem 0.8rem;" onclick="selectCode('${r.code}','${r.name}')">${r.code} — ${r.name}</button>`;
+                                    });
+                                    html += '</div>';
+                                    container.innerHTML = html;
+                                } else {
+                                    container.innerHTML = '';
+                                }
+                            }
+                        });
+                        function selectCode(code, name) {
+                            document.getElementById('stockCode').value = code;
+                            document.getElementById('codeSuggestions').innerHTML = '';
+                        }
+                        </script>
+                    </div>
+
+                    <!-- 策略选择 -->
+                    <div class="mb-3">
+                        <label class="form-label" style="font-size:0.85rem;color:#8899aa;">策略模板</label>
+                        <select class="form-select" id="strategy" name="strategy">
+                            {% for s in strategies %}
+                            <option value="{{ s.key }}" {% if s.key=='综合' %}selected{% endif %}>
+                                {{ s.label }} — {{ s.desc }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- 模式 -->
+                    <div class="mb-3">
+                        <label class="form-label" style="font-size:0.85rem;color:#8899aa;">输出模式</label>
+                        <div class="d-flex gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="mode" value="brief" id="modeBrief">
+                                <label class="form-check-label" for="modeBrief" style="font-size:0.85rem;">简报</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="mode" value="standard" id="modeStd" checked>
+                                <label class="form-check-label" for="modeStd" style="font-size:0.85rem;">标准</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="mode" value="detail" id="modeDetail">
+                                <label class="form-check-label" for="modeDetail" style="font-size:0.85rem;">详细</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100" id="askBtn">
+                        <i class="bi bi-search me-1"></i>开始分析
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 策略说明 -->
+        <div class="card mt-3">
+            <div class="card-header"><i class="bi bi-info-circle me-1"></i>策略模板说明</div>
+            <div class="card-body p-2">
+                <table class="table table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th>策略</th>
+                            <th>适用场景</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>📈 均线</td><td style="font-size:0.8rem;">趋势跟踪、金叉死叉</td></tr>
+                        <tr><td>🌀 缠论</td><td style="font-size:0.8rem;">走势结构分析</td></tr>
+                        <tr><td>🌊 波浪理论</td><td style="font-size:0.8rem;">波段位置判断</td></tr>
+                        <tr><td>💹 MACD背离</td><td style="font-size:0.8rem;">顶底背离识别</td></tr>
+                        <tr><td>📊 量价分析</td><td style="font-size:0.8rem;">量价关系验证</td></tr>
+                        <tr><td>🔥 RSI强度</td><td style="font-size:0.8rem;">超买超卖判断</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 分析结果 -->
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between">
+                <span><i class="bi bi-graph-up me-1"></i>分析结果</span>
+                <span id="resultMeta" style="font-size:0.8rem;color:#8899aa;"></span>
+            </div>
+            <div class="card-body">
+                <div id="askResult" class="ask-result text-secondary">
+                    <div class="text-center py-5">
+                        <i class="bi bi-search" style="font-size:3rem;display:block;margin-bottom:1rem;color:#2a3040;"></i>
+                        <p>输入股票代码和策略开始分析</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('askForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const code = document.getElementById('stockCode').value.trim();
+    if (!code) { showToast('请输入股票代码', 'warning'); return; }
+
+    const strategy = document.getElementById('strategy').value;
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    const btn = document.getElementById('askBtn');
+    const resultDiv = document.getElementById('askResult');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>分析中...';
+    resultDiv.innerHTML = '<div class="text-center py-5"><span class="spinner-border text-info mb-3" style="width:3rem;height:3rem;"></span><p class="text-secondary mt-2">正在分析，请稍候...</p></div>';
+
+    fetch('/ask/analyze', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `code=${encodeURIComponent(code)}&strategy=${encodeURIComponent(strategy)}&mode=${encodeURIComponent(mode)}`
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            resultDiv.innerHTML = `<pre style="margin:0;white-space:pre-wrap;font-family:inherit;">${escapeHtml(data.output)}</pre>`;
+            document.getElementById('resultMeta').textContent = `${data.code} · ${data.strategy} · ${data.mode}`;
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger mb-0"><i class="bi bi-exclamation-triangle"></i> ${escapeHtml(data.output)}</div>`;
+        }
+    })
+    .catch(e => {
+        resultDiv.innerHTML = `<div class="alert alert-danger mb-0">请求失败: ${e.message}</div>`;
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-search me-1"></i>开始分析';
+    });
+});
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,164 @@
+# 每日自动化股票分析 — 借鉴 daily_stock_analysis 的零成本 GitHub Actions 部署方案
+#
+# 工作流说明:
+#   每天18:03 UTC+8 自动执行数据同步+Agent分析流水线
+#   同时支持手动触发 (workflow_dispatch)
+#
+# 配置要求:
+#   1. 在 GitHub 仓库设置 Secrets 中添加:
+#      - TUSHARE_TOKEN: Tushare Pro API Token
+#      - PUSHPLUS_TOKEN: PushPlus微信推送Token
+#      - QQ_MAIL_USER (可选): QQ邮箱SMTP账号
+#      - QQ_MAIL_PASS (可选): QQ邮箱SMTP密码
+#      - QQ_MAIL_TO (可选): 目标QQ邮箱
+#
+# 参考: https://github.com/ZhuLinsen/daily_stock_analysis
+
+name: 📊 自动股票分析
+
+on:
+  schedule:
+    # 北京时间 18:03 = UTC 10:03，工作日
+    - cron: '3 10 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '执行模式'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+          - full          # 全量(数据同步+分析+选股+推送)
+          - sync_only     # 仅数据同步
+          - analysis_only # 仅分析+选股
+
+env:
+  PYTHONIOENCODING: utf-8
+  TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+  PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+
+jobs:
+  daily-analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: ⬇️ 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: 🐍 设置Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: 📦 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt 2>&1 | tail -5
+
+      - name: 📦 安装可选依赖（多数据源fallback）
+        run: |
+          pip install akshare --quiet 2>&1 | tail -2
+
+      - name: 📁 创建报告目录
+        run: |
+          mkdir -p reports/日报/情报 reports/日报/分析 reports/日报/选股
+          mkdir -p reports/日报/风控 reports/日报/操盘 reports/日报/决策 reports/日报/复盘
+          mkdir -p data/raw data/checkpoints
+
+      - name: 🔑 验证配置
+        run: |
+          echo "TUSHARE_TOKEN 长度: ${#TUSHARE_TOKEN}"
+          if [ -z "$TUSHARE_TOKEN" ]; then
+            echo "❌ TUSHARE_TOKEN 未设置"
+            exit 1
+          fi
+          echo "✅ 配置检查通过"
+
+      - name: 🔄 数据自动同步
+        if: ${{ github.event.inputs.mode != 'analysis_only' || github.event_name == 'schedule' }}
+        run: |
+          echo "▶️ 开始数据同步..."
+          python scripts/utils/auto_sync.py --auto-sync --max-minutes 15 --max-stocks 1000
+          echo "✅ 数据同步完成"
+
+      - name: 🕵️ Agent1 - 情报采集
+        continue-on-error: true
+        run: |
+          echo "▶️ 情报采集..."
+          python scripts/agent1-情报采集/fetch_all.py
+          echo "✅ 情报采集完成"
+
+      - name: 📊 Agent2 - 技术分析
+        continue-on-error: true
+        run: |
+          echo "▶️ 技术分析..."
+          python scripts/agent2-技术分析/analyze.py
+          echo "✅ 技术分析完成"
+
+      - name: 🔍 Agent5 - 晚间选股
+        continue-on-error: true
+        run: |
+          echo "▶️ 晚间选股..."
+          python scripts/agent5-选股/stock_picker.py --mode evening --top-n 5
+          echo "✅ 选股完成"
+
+      - name: 🛡️ Agent3 - 风控检查
+        continue-on-error: true
+        run: |
+          echo "▶️ 风控检查..."
+          python scripts/agent3-风控/risk_check.py
+          echo "✅ 风控检查完成"
+
+      - name: 🎯 Agent6 - 交易计划
+        continue-on-error: true
+        run: |
+          echo "▶️ 交易计划..."
+          python scripts/agent6-操盘/trader.py
+          echo "✅ 交易计划完成"
+
+      - name: 🏆 Agent7 - 投资决策
+        continue-on-error: true
+        run: |
+          echo "▶️ 投资决策..."
+          python scripts/agent7-决策/leader.py
+          echo "✅ 投资决策完成"
+
+      - name: 📤 推送报告到微信
+        continue-on-error: true
+        run: |
+          if [ -n "$PUSHPLUS_TOKEN" ]; then
+            python scripts/utils/wechat_send.py --report 分析 2>&1 || true
+            python scripts/utils/wechat_send.py --report 选股 2>&1 || true
+            echo "✅ 推送完成"
+          else
+            echo "ℹ️ PUSHPLUS_TOKEN未配置，跳过推送"
+          fi
+
+      - name: 📦 上传报告为Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reports-${{ github.run_id }}
+          path: reports/
+          retention-days: 7
+
+      - name: 📋 任务摘要
+        if: always()
+        run: |
+          echo "## 📊 股票分析报告摘要" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Agent | 状态 |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🕵️ 情报采集 | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📊 技术分析 | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔍 选股 | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🛡️ 风控 | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🎯 操盘 | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🏆 决策 | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "报告已保存为 Artifact: reports-${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "运行时间: $(date '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY

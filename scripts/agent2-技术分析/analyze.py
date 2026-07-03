@@ -136,7 +136,8 @@ def analyze_sectors(end_date: str, top_n: int = 30) -> pd.DataFrame:
         df = get_ths_index(daily=True)
         if df.empty:
             print(f"  [WARN] 板块数据为空（可能非交易日或API不可用）")
-    except Exception:
+    except Exception as e:
+        print(f'  [WARN] get_ths_index异常: {e}')
         return pd.DataFrame()
 
     if df.empty:
@@ -176,8 +177,8 @@ def analyze_watchlist_stocks(stock_codes: list, end_date: str) -> list:
                     if "vol" in df_db.columns:
                         df_db = df_db.rename(columns={"vol": "volume"})
                     _db.upsert_daily_price(df_db, asset_type='E')
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f'  [WARN] DB行情写入失败 ({code}): {e}')
 
             # 检查是否有复权因子，有则使用前复权价格
             use_adj = _db and _db.has_adj_factor(code) if _db else False
@@ -213,8 +214,8 @@ def analyze_watchlist_stocks(stock_codes: list, end_date: str) -> list:
             if _db:
                 try:
                     _db.upsert_daily_indicator(df_ta)
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f'  [WARN] DB指标写入失败 ({code}): {e}')
 
             last = df.iloc[-1]
             close_price = float(df_ta.iloc[-1]["close"]) if df_ta is not None and not df_ta.empty else float(last["close"])
@@ -339,8 +340,9 @@ def generate_analysis(end_date: str = None) -> dict:
         print(f"  [FAIL] 板块分析: {e}")
 
     # 3. 市场总结
-    if result["indices"]:
-        avg_pct = np.mean([i.get("pct_chg", 0) for i in result["indices"] if "pct_chg" in i])
+    valid_indices = [i for i in result.get('indices', []) if isinstance(i, dict) and i.get('pct_chg') is not None]
+    if valid_indices:
+        avg_pct = np.mean([i["pct_chg"] for i in valid_indices])
         if avg_pct < -1:
             result["market_summary"] = "市场整体偏弱"
         elif avg_pct > 1:
@@ -458,8 +460,8 @@ def generate_analysis(end_date: str = None) -> dict:
             status = "ok" if not result.get("errors") else "error"
             _db.save_report_log(end_date, "agent2", status,
                                error_msg="; ".join(result["errors"]) if result.get("errors") else None)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f'  [WARN] 报告日志写入失败: {e}')
 
     return result
 

@@ -35,6 +35,9 @@ D3异常处理表：
 | 质量审核中reports不存在 | 标记为NOT_EXECUTED | 跳过该Agent审核 |
 | 读取报告时报编码错误 | 用UTF-8 BOM再试1次 | 返回空字符串 |
 | JSON序列化含不可序列化类型 | 用default=str处理 | 输出human-readable错误信息 |
+| 【新增】决策反思文件缺失（首次运行）| 静默跳过，不加载记忆 | 继续正常决策流程 |
+| 【新增】Bull/Bear辩论模块导入失败 | 用importlib动态加载替代直接import | 跳过辩论，继续基于规则决策 |
+| 【新增】SQLite决策日志写入失败 | 打印警告，不阻塞决策流程 | 决策照常输出，日志丢失不影响交易 |
 
 D4 CHECKPOINT:
 - CP1-报告完整性检查：所有报告加载完成后，确认已加载数量
@@ -42,6 +45,9 @@ D4 CHECKPOINT:
 - CP3-仲裁规则优先级：HIGH风险时风控一票否决优先于其他规则
 - CP4-重做跟踪验证：REWORKED标记必须作为重做证据
 - CP5-信息不足阻断：团队就绪度<50%时禁止新交易
+- CP6-【新增】决策记忆已加载：执行前确认memory/决策反思.md已读取并注入上下文
+- CP7-【新增】辩论结果已考量：最终决策应反映Bull/Bear辩论的倾向
+- CP8-【新增】决策日志已写入：每次最终决策都必须记录到SQLite
 """
 
 import os
@@ -49,23 +55,70 @@ import sys
 import json
 import re
 import glob
+import importlib.util
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+# ============================================================
+# 【TradingAgents借鉴】加载决策记忆反思（由Agent4复盘师写入）
+# ============================================================
+
+
+def load_decision_reflection() -> str:
+    """加载复盘师的决策反思摘要
+
+    路径: memory/决策反思.md
+    由 agent4-复盘/review.py 的 write_reflection_summary() 在每晚复盘时写入。
+    投资领导在每天启动时自动加载作为"昨日的教训"。
+
+    TradingAgents 的 trading_memory.md 机制：
+    - 每次分析前注入 Prior Prediction + Reflection
+    - 让 LLM 意识到自己之前哪里判断错了
+    - 避免重复犯错
+    """
+    memory_path = os.path.join(os.path.dirname(__file__), "..", "..", "memory", "决策反思.md")
+    if not os.path.exists(memory_path):
+        return ""
+    try:
+        with open(memory_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return content
+    except Exception as e:
+        print(f"[WARN] 加载决策反思失败: {e}")
+        return ""
+
 
 def load_json(path: str) -> dict:
+    """安全加载JSON文件，失败时返回空dict"""
     if not os.path.exists(path):
         return {}
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError, Exception) as e:
+        print(f"  [WARN] JSON解析失败 ({os.path.basename(path)}): {e}")
+        return {}
 
 
 def load_report(path: str) -> str:
+    """安全加载报告文件，支持BOM回退"""
     if not os.path.exists(path):
         return ""
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except UnicodeDecodeError:
+        # D3回退：尝试BOM编码
+        try:
+            with open(path, "r", encoding="utf-8-sig") as f:
+                return f.read()
+        except Exception as e:
+            print(f"  [WARN] 报告读取失败(UTF-8 BOM回退): {os.path.basename(path)}: {e}")
+            return ""
+    except Exception as e:
+        print(f"  [WARN] 报告读取失败 ({os.path.basename(path)}): {e}")
+        return ""
 
 
 def check_agent_status(report_dir: str, today_str: str) -> dict:
@@ -173,7 +226,7 @@ def load_risk_raw_data() -> dict:
     try:
         with open(files[0], "r", encoding="utf-8") as f:
             return json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError, Exception) as e:
+    except Exception as e:
         print(f"[WARN] 加载风控原始数据失败: {e}")
         return {}
 
@@ -188,7 +241,7 @@ def load_trade_raw_data() -> dict:
     try:
         with open(files[0], "r", encoding="utf-8") as f:
             return json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError, Exception) as e:
+    except Exception as e:
         print(f"[WARN] 加载交易原始数据失败: {e}")
         return {}
 
@@ -692,6 +745,59 @@ def make_decision() -> dict:
             f"今日缺失: {', '.join(readiness['missing_agents'])}。"
             "建议复盘师关注这些Agent未运行对决策质量的影响。"
         )
+
+    # 10. 【TradingAgents借鉴】注入决策记忆反思（由复盘师写入）
+    reflection = load_decision_reflection()
+    if reflection:
+        result["decision_reflection"] = reflection
+        print(f"  {ok} 已加载决策反思记忆（Agent4复盘师提供）")
+
+    # 10b. 【TradingAgents借鉴】Bull/Bear 对抗辩论
+    try:
+        debate_path = os.path.join(os.path.dirname(__file__), "debate.py")
+        spec = importlib.util.spec_from_file_location("debate", debate_path)
+        debate_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(debate_mod)
+        debate_result = debate_mod.run_market_debate()
+        result["debate"] = debate_result
+        print(f"  {ok} 多空辩论完成: {debate_result['verdict']}")
+    except Exception as e:
+        print(f"  {warn} 多空辩论失败: {e}")
+        result["debate"] = {"verdict": "辩论不可用", "action": "继续基于规则决策"}
+
+    # 11. 【TradingAgents借鉴】记录决策审计日志到SQLite
+    try:
+        from scripts.utils.db_manager import DatabaseManager
+        db = DatabaseManager()
+        today_raw = datetime.now().strftime("%Y%m%d")
+        # 确定决策类型
+        action = result.get("final_plan", {}).get("action", "观望")
+        action_lower = action.lower()
+        if "不交易" in action_lower or "观望" in action_lower:
+            dtype = "hold"
+        elif "止损" in action_lower or "减仓" in action_lower:
+            dtype = "risk_adjust"
+        elif "止盈" in action_lower or "交易" in action_lower or "买入" in action_lower:
+            dtype = "trade"
+        else:
+            dtype = "other"
+        # 统计
+        rejected = len(result.get("rework_orders", []))
+        conflicts = len(result.get("conflicts", [])) + len(result.get("arbitrations", []))
+        db.log_decision(
+            log_date=today_raw,
+            decision_type=dtype,
+            action=action,
+            summary=result.get("market_assessment", ""),
+            reasoning="; ".join(result.get("veto_notes", [])),
+            risk_level="HIGH" if any("否决" in n for n in result.get("veto_notes", [])) else "MEDIUM" if conflicts > 0 else "LOW",
+            conflict_count=conflicts,
+            rework_count=rejected,
+            sources=f"团队就绪度: {readiness['readiness_pct']}%",
+        )
+        print(f"  {ok} 决策日志已记录到SQLite")
+    except Exception as e:
+        print(f"  [WARN] 决策日志写入失败: {e}")
 
     return result
 

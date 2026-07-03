@@ -1,0 +1,30 @@
+import json
+
+findings = [
+    {"file": "scripts/agent4-复盘/review.py", "severity": "CRITICAL", "issue": "calculate_accuracy_trend (L391) reads key 'sector_accuracy_rate' but saved JSON uses Chinese key '板块预测'. Trend always returns avg=0.", "line": 391, "fix": "Change L391 to acc.get('板块预测', {}).get('rate') or normalize keys on save/load."},
+    {"file": "scripts/agent4-复盘/review.py", "severity": "CRITICAL", "issue": "compare_predictions never sets 'correct' key on env_score. L920 check env.get('correct') is always None -> is False -> False. Env score bias analysis is dead code.", "line": 920, "fix": "Set review['env_score']['correct'] in compare_predictions based on threshold, or remove the dead condition and always log."},
+    {"file": "scripts/agent4-复盘/weekly_review.py", "severity": "CRITICAL", "issue": "All 6 D4 CHECKPOINTs in docstring (L32-37) marked [ ] with zero code verification. No trading-day/sector-date/sentiment/percentage/consistency/section checks.", "line": 32, "fix": "Implement code-level verification for all 6 CPs: >=3 days, trade_date range, up+down+flat==total, percentage normalization, return consistency, 8 sections."},
+    {"file": "scripts/agent4-复盘/review.py", "severity": "HIGH", "issue": "Bare except Exception: pass in load_history (L379). Silently swallows JSON/file errors on corrupt history. No warning printed.", "line": 379, "fix": "Replace with: except Exception as e: print(f'WARN: failed to load {f}: {e}')"},
+    {"file": "scripts/agent4-复盘/review.py", "severity": "HIGH", "issue": "D9 anti-pattern #2 violated: bias analysis uses placeholder values '待分析'/'待定' instead of tracing root cause (Feynman three-layer).", "line": 928, "fix": "Implement root cause tracing with specific reasons; fallback to placeholder only if genuinely unknown."},
+    {"file": "scripts/agent4-复盘/review.py", "severity": "HIGH", "issue": "D4 CP3 declared as '连续3日以上偏差才建议调整' but factor adjustment code (L866-872) uses only single-day data. No history check.", "line": 866, "fix": "Before suggesting factor adjustments, read at least 3 prior days of history to confirm continuity."},
+    {"file": "scripts/agent4-复盘/review.py", "severity": "HIGH", "issue": "Hardcoded relative path for data/raw on L226: os.path.join(dirname, ../.., data, raw). Should use p() utility.", "line": 226, "fix": "Replace with p('data/raw')"},
+    {"file": "scripts/agent4-复盘/review.py", "severity": "HIGH", "issue": "Hardcoded relative path for memory/ on L997: os.path.join(dirname, ../.., memory). Should use p() utility.", "line": 997, "fix": "Replace with p('memory')"},
+    {"file": "scripts/agent4-复盘/review.py", "severity": "HIGH", "issue": "D4 CP2 declared as '检查mtime或写入内容' but update_knowledge writes with no verification. Assumes success.", "line": 683, "fix": "After write, verify file exists and check os.path.getmtime() has updated. Print warning if not."},
+    {"file": "scripts/agent4-复盘/weekly_review.py", "severity": "HIGH", "issue": "Bare except Exception: pass in fetch_sector_rotation (L286) violates own D9 #6. Silently swallows all API errors. No diagnostic.", "line": 286, "fix": "Replace with: except Exception as e: print(f'WARN: sector data for {date_str}: {e}')"},
+    {"file": "scripts/agent4-复盘/review.py", "severity": "MEDIUM", "issue": "Imports private function _scan_files from knowledge_lint (L708). Underscore-prefixed APIs are internal.", "line": 708, "fix": "Add _scan_files to the public imports at L55, or wrap usage in try/except with fallback."},
+    {"file": "scripts/agent4-复盘/review.py", "severity": "MEDIUM", "issue": "except Exception: continue in load_stock_picker_factors (L263). Silently skips failed JSON. No warning.", "line": 263, "fix": "Add print warning: print(f'WARN: failed to parse {fp}: {e}')"},
+    {"file": "scripts/agent4-复盘/review.py", "severity": "MEDIUM", "issue": "Duplicate keyword '美联储' in keyword list (L521). Same string appears twice.", "line": 521, "fix": "Remove duplicate '美联储' entry."},
+    {"file": "scripts/agent4-复盘/weekly_review.py", "severity": "MEDIUM", "issue": "Duplicate keyword '美联储' in keyword list (L521). Same string appears twice.", "line": 521, "fix": "Remove duplicate '美联储' entry."},
+    {"file": "scripts/agent4-复盘/weekly_review.py", "severity": "MEDIUM", "issue": "sys.path double-insert in save_report (L954, L964). Path pollution inside function body.", "line": 954, "fix": "Move sys.path.insert to module level once, or use scope-limited import."},
+    {"file": "scripts/agent4-复盘/review.py", "severity": "LOW", "issue": "Unused import: timedelta imported on L48 but never referenced anywhere in the file.", "line": 48, "fix": "Remove timedelta from import: from datetime import datetime"},
+    {"file": "scripts/agent4-复盘/weekly_review.py", "severity": "LOW", "issue": "D3 docstring uses non-standard --- separator format instead of pipe table used elsewhere.", "line": 19, "fix": "Convert D3 table to standard pipe-aligned format for consistency."},
+    {"file": "scripts/agent4-复盘/weekly_review.py", "severity": "LOW", "issue": "Hardcoded date '半年末(6/30)' in generate_outlook (L687). Will be stale after June 2026.", "line": 687, "fix": "Derive dynamically: check current month, generate appropriate reference."},
+    {"file": "scripts/agent4-复盘/review.py", "severity": "LOW", "issue": "Likely invalid Unicode range in regex L503: [U+4E00 - U+0FFF] is descending/empty. May error or match nothing.", "line": 503, "fix": "Fix range to proper CJK range [U+4E00 - U+9FFF]."},
+    {"file": "scripts/agent4-复盘/weekly_review.py", "severity": "LOW", "issue": "fetch_market_sentiment (L378): float() on mean() may raise ValueError if filtered DataFrame is empty (NaN).", "line": 378, "fix": "Use float(df[condition]['pct_chg'].mean() or 0) or check filtered df is non-empty before mean()."},
+]
+
+result = {"findings": findings, "files_checked": 2, "issues_count": len(findings)}
+with open("C:\\Users\\65004\\Desktop\\小白\\股票投资\\scripts\\agent4-复盘\\_audit_result.json", "w", encoding="utf-8") as f:
+    json.dump(result, f, ensure_ascii=True, indent=2)
+print("OK")
+

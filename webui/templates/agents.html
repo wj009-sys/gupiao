@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Agent控制 — 股票投研管理界面{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="mb-1" style="color:#c8d6e5;"><i class="bi bi-cpu me-2" style="color:#4fc3f7;"></i>Agent 控制台</h3>
+        <p class="text-secondary mb-0" style="font-size:0.85rem;">管理7个投研Agent的运行、查看状态和输出</p>
+    </div>
+    <div>
+        <button class="btn btn-success btn-sm me-1" onclick="runPipeline()">
+            <i class="bi bi-play-circle me-1"></i>运行全流水线
+        </button>
+        <button class="btn btn-info btn-sm" onclick="refreshStatus()">
+            <i class="bi bi-arrow-clockwise me-1"></i>刷新状态
+        </button>
+    </div>
+</div>
+
+<!-- Agent 卡片 -->
+<div class="row g-3" id="agentGrid">
+    {% for a in agents %}
+    <div class="col-md-6 col-lg-4">
+        <div class="card h-100" id="card-{{ a.key }}">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>{{ a.label }}</span>
+                <span id="status-{{ a.key }}">
+                    <span class="ping-dot {{ a.status }}"></span>
+                    <span class="status-badge border border-{% if a.status=='running' %}warning{% elif a.status=='success' %}success{% elif a.status=='failed' %}danger{% else %}secondary{% endif %} text-{% if a.status=='running' %}warning{% elif a.status=='success' %}success{% elif a.status=='failed' %}danger{% else %}secondary{% endif %}" id="badge-{{ a.key }}">
+                        {% if a.status == 'running' %}⚡ 运行中
+                        {% elif a.status == 'success' %}✅ 成功
+                        {% elif a.status == 'failed' %}❌ 失败
+                        {% else %}⏸️ 空闲{% endif %}
+                    </span>
+                </span>
+            </div>
+            <div class="card-body">
+                <p style="font-size:0.85rem;color:#8899aa;min-height:2.5em;">{{ a.desc }}</p>
+
+                <!-- 运行时参数 -->
+                <div class="mb-2">
+                    <input type="text" class="form-control form-control-sm" id="args-{{ a.key }}"
+                           placeholder="额外参数（如 --mode evening --top-n 5）" style="font-size:0.8rem;">
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary btn-sm flex-fill" onclick="runAgent('{{ a.key }}')">
+                        <i class="bi bi-play-fill me-1"></i>运行
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="viewOutput('{{ a.key }}')"
+                            {% if a.status == 'idle' %}disabled{% endif %}>
+                        <i class="bi bi-terminal"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-footer bg-transparent border-top-0 pt-0" style="padding:0 1.2rem 0.8rem;">
+                <div id="output-preview-{{ a.key }}" style="font-size:0.75rem;color:#556677;max-height:60px;overflow:hidden;">
+                    {% if a.started %}
+                    <i class="bi bi-clock me-1"></i>{{ a.started.strftime('%H:%M:%S') }}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- 批量运行 -->
+<div class="card mt-4">
+    <div class="card-header">
+        <i class="bi bi-diagram-3 me-1"></i>批量运行
+    </div>
+    <div class="card-body">
+        <div class="row g-2">
+            {% for a in agents %}
+            <div class="col-md-3">
+                <div class="form-check">
+                    <input class="form-check-input batch-agent" type="checkbox" value="{{ a.key }}" id="batch-{{ a.key }}">
+                    <label class="form-check-label" for="batch-{{ a.key }}" style="font-size:0.85rem;">
+                        {{ a.label }}
+                    </label>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <button class="btn btn-primary mt-3" onclick="runBatch()">
+            <i class="bi bi-play-fill me-1"></i>运行选中
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let statusInterval = null;
+
+function runAgent(key) {
+    const args = document.getElementById(`args-${key}`).value;
+    const btn = event.target.closest('button');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>启动中...';
+
+    fetch(`/agents/run/${key}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `args=${encodeURIComponent(args)}`
+    })
+    .then(r => r.json())
+    .then(data => {
+        showToast(data.message || data.error, data.error ? 'danger' : 'success');
+        startPolling();
+    })
+    .finally(() => { btn.disabled = false; btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>运行'; });
+}
+
+function runPipeline() {
+    if (!confirm('确定运行全部7个Agent的完整流水线？')) return;
+    fetch('/agents/run-pipeline', {method:'POST'})
+    .then(r => r.json())
+    .then(data => {
+        showToast('流水线已启动，共 ' + data.pipeline.length + ' 个Agent', 'info');
+        startPolling();
+    });
+}
+
+function runBatch() {
+    const checked = Array.from(document.querySelectorAll('.batch-agent:checked')).map(cb => cb.value);
+    if (!checked.length) { showToast('请选择至少一个 Agent', 'warning'); return; }
+    fetch('/agents/run-batch', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({agents: checked})
+    })
+    .then(r => r.json())
+    .then(data => {
+        showToast(`已启动 ${checked.length} 个Agent`, 'success');
+        startPolling();
+    });
+}
+
+function refreshStatus() {
+    fetch('/agents/status-all')
+    .then(r => r.json())
+    .then(data => {
+        data.agents.forEach(a => {
+            const badge = document.getElementById(`badge-${a.key}`);
+            const dot = document.querySelector(`#status-${a.key} .ping-dot`);
+            if (badge) {
+                badge.className = `status-badge border border-${a.status === 'running' ? 'warning' : a.status === 'success' ? 'success' : a.status === 'failed' ? 'danger' : 'secondary'} text-${a.status === 'running' ? 'warning' : a.status === 'success' ? 'success' : a.status === 'failed' ? 'danger' : 'secondary'}`;
+                badge.textContent = a.status === 'running' ? '⚡ 运行中' : a.status === 'success' ? '✅ 成功' : a.status === 'failed' ? '❌ 失败' : '⏸️ 空闲';
+            }
+            if (dot) {
+                dot.className = `ping-dot ${a.status}`;
+            }
+        });
+    });
+}
+
+function startPolling() {
+    if (statusInterval) clearInterval(statusInterval);
+    statusInterval = setInterval(refreshStatus, 3000);
+    setTimeout(() => { if(statusInterval) { clearInterval(statusInterval); statusInterval = null; }}, 120000);
+}
+
+function viewOutput(key) {
+    window.open(`/agents/output-view/${key}`, '_blank', 'width=800,height=600');
+}
+</script>
+{% endblock %}

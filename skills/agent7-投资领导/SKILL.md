@@ -43,16 +43,59 @@ cat data/portfolio.json
 cat data/止损规则.json
 ```
 
-### 第二步：运行决策脚本（获取结构化分析）
+### 第二步：加载昨日反思记忆
+
+> **TradingAgents借鉴**：每次决策前加载复盘师的反思摘要，避免重复犯错。
+
+```bash
+# 读取记忆文件（由复盘师Agent4在每晚复盘时写入）
+cat memory/决策反思.md 2>/dev/null || echo "尚无决策记忆"
+```
+
+阅读反思摘要时关注：
+1. **昨日的偏差** — 如果昨天判断错了方向，今天要特别注意反向信号
+2. **准确率趋势** — 连续下降说明当前策略框架可能失效
+3. **缺失的Agent** — 部分Agent缺失会影响决策完整性
+
+### 第三步：运行决策脚本（含Bull/Bear辩论）
 
 ```bash
 source venv/Scripts/activate
 python -X utf8 scripts/agent7-决策/leader.py
 ```
 
+脚本自动执行：
+1. ✅ 加载决策记忆反思（Agent4复盘师写入）
+2. ✅ Bull/Bear多空辩论（TradingAgents对抗辩论机制）
+   - Bull Researcher：从技术指标/板块轮动/资金流向中提取看多论据
+   - Bear Researcher：从风控信号/均线破位/资金流出中提取看空论据
+   - Research Manager：加权计分合成，输出偏多/偏空/势均力敌判定
+3. ✅ 检测Agent间冲突 + 风控vs操盘自动仲裁
+4. ✅ 质量审核与打回重做
+5. ✅ 写入决策日志到SQLite `decision_log`表（全白盒审计追踪）
+6. ✅ 输出最终决策方案
+
 脚本输出到 `data/raw/决策原始数据_YYYYMMDD.json`。
 
-### 第三步：质量审核与打回重做（核心职责）
+### 第四步：三级风控委员会审查（可选增强）
+
+> **TradingAgents借鉴**：三个独立风险分析师（激进/中性/保守）从不同角度审查交易计划。
+
+如果需要更全面的风控评估，可以分别运行三个档位：
+
+```bash
+# 运行三级风控审查
+python -X utf8 scripts/agent3-风控/risk_check.py --risk-profile aggressive --env-score <分数>
+python -X utf8 scripts/agent3-风控/risk_check.py --risk-profile neutral --env-score <分数>
+python -X utf8 scripts/agent3-风控/risk_check.py --risk-profile conservative --env-score <分数>
+```
+
+综合三份报告：
+- 三档一致通过 → ✅ 放心执行
+- 激进/中性通过、保守否决 → 🟡 折中执行（仓位减半）
+- 激进通过、中性/保守否决 → 🔴 听从保守意见，不执行
+
+### 第五步：质量审核与打回重做（核心职责）
 
 这是你最关键的职责——审核每个Agent的输出质量，不合格的打回重做。每个Agent有专属的审核标准：
 
@@ -137,7 +180,7 @@ python -X utf8 scripts/agent2-技术分析/analyze.py YYYYMMDD
 
 > ⚠️ **重做标记规则**：Agent在完成重做后，必须在报告末尾添加一行 `#REWORKED` 标记，否则系统会认为尚未重做。这个标记让 leader.py 脚本能自动判断是否已重做。
 
-### 第四步：冲突仲裁
+### 第六步：冲突仲裁
 
 风控官的操盘审查报告会标注出所有与操盘手的意见分歧。以下是你的仲裁原则：
 
@@ -166,7 +209,7 @@ python -X utf8 scripts/agent2-技术分析/analyze.py YYYYMMDD
 | 风控建议部分止盈 vs 操盘继续持有 | **折中：部分止盈**。盈利+10%~+15%时止盈1/3，其余继续 |
 | 风控建议减仓 vs 操盘建议卖出 | **一致方向，正常执行**。两者都同意卖出，确定最优卖出方式 |
 
-### 第五步：质量审核与打回跟踪
+### 第七步：质量审核与打回跟踪
 
 对名下所有Agent（Agent1-6）的输出进行结构化质量审核：
 
@@ -193,7 +236,7 @@ python -X utf8 scripts/agent2-技术分析/analyze.py YYYYMMDD
 - 重做后重新审核，不降低标准
 - 关键决策（买入/卖出/风控）不允许跳过审核
 
-### 第六步：输出最终决策报告
+### 第八步：输出最终决策报告
 
 🔴 **CHECKPOINT：在输出最终决策报告前，确认所有Agent输出已审核完毕（如有不合格已打回标记#REWORKED）、风控vs操盘分歧已逐项裁定、否决项已从执行清单移除、决策结论明确可执行。**
 
@@ -354,7 +397,7 @@ python -X utf8 scripts/agent2-技术分析/analyze.py YYYYMMDD
 
 ---
 
-### 第七步：推送通知到手机
+### 第九步：推送通知到手机
 
 投资决策通过 PushPlus 推送到手机微信（主通道）：
 

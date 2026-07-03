@@ -40,7 +40,81 @@ D9工作反例：
 - 不要用动量因子冒充成长因子——两因子独立计算
 - 不要忽略OBV的累积特性——OBV绝对值无意义，只看方向和交叉信号
 - 不要只看OBV不看价格——OBV必须与价格走势结合判断（顶背离/底背离）
+- 不要用线性评分替代非线性曲线——许多因子（换手率/量比）的最佳区间是中间值而非越大越好
+- 不要孤立评估单因子——同一风险维度需叠加惩罚而非忽略（如同时高动量+高换手→双重追高风险）
 """
+
+# ============================================================
+#  评分曲线配置（借鉴AlphaSift scoring_profile）
+#  配置数据从 data/选股规则.json 的 scoring_profile 加载
+# ============================================================
+
+DEFAULT_SCORING_PROFILE = {
+    "momentum_chase_start_pct": 12.0,        # 涨幅超12%开始惩罚追高
+    "activity_ideal_volume_ratio": 1.8,       # 理想量比1.8
+    "activity_ideal_turnover_rate": 5.0,      # 理想换手率5%
+    "reversal_ideal_change_pct": -3.0,        # 偏好-3%的回撤修复
+    "stability_hot_change_pct": 9.0,          # 超9%开始惩罚过热
+    "stability_extreme_volume_ratio": 5.0,    # 量比>5视为极端
+    "theme_heat_overheat_score": 80.0,        # 主题热度超80惩罚
+    "theme_heat_persistence_min_score": 60.0,  # 主题持续性最低分
+    "liquidity_min_amount": 5000.0,            # 最小日成交额(万元)
+    "reversal_max_decline_pct": -15.0,         # 最大可接受回撤幅度
+}
+
+def _load_scoring_profile(config: dict) -> dict:
+    """从配置加载评分曲线参数，缺失项用默认值"""
+    rules = config.get("rules", {})
+    profile = rules.get("scoring_profile", {})
+    merged = DEFAULT_SCORING_PROFILE.copy()
+    merged.update(profile)
+    return merged
+
+def _penalty_for_overheating(value: float, threshold: float, max_penalty: float = 20) -> float:
+    """
+    非线性过热惩罚函数（借鉴AlphaSift评分曲线）
+
+    当 value > threshold 时，惩罚随超出比例非线性增加。
+    penalty = min(max_penalty, (value / threshold - 1) * max_penalty * 1.5)
+
+    Args:
+        value: 当前值
+        threshold: 阈值
+        max_penalty: 最大惩罚分
+    Returns:
+        惩罚分（0 ~ max_penalty）
+    """
+    if value <= threshold:
+        return 0.0
+    excess_ratio = value / threshold - 1
+    penalty = min(max_penalty, excess_ratio * max_penalty * 1.5)
+    return max(0, penalty)
+
+def _score_ideal_middle(value: float, ideal: float, max_score: float = 100,
+                        tolerance: float = 0.3, penalty: float = 10) -> float:
+    """
+    理想中间值评分函数：偏离ideal时降分（非对称钟形曲线）
+
+    用于量比/换手率等"太高不好, 太低也不好"的因子。
+    以 ideal 为中心，± tolerance 范围内满分，超出后线性降分。
+
+    Args:
+        value: 当前值
+        ideal: 理想中心值
+        max_score: 满分
+        tolerance: 容忍范围（相对于ideal的比例）
+        penalty: 每超 tolerance 一档的降分
+    Returns:
+        评分
+    """
+    if value <= 0:
+        return max_score * 0.3  # 零值只给30%
+    deviation = abs(value - ideal) / ideal
+    if deviation <= tolerance:
+        return max_score
+    tiers = int((deviation - tolerance) / tolerance) + 1
+    score = max_score - tiers * penalty
+    return max(max_score * 0.3, min(max_score, score))
 import pandas as pd
 import numpy as np
 
@@ -160,19 +234,48 @@ def is_suspended(ts_code: str, trade_date: str) -> bool:
     return False
 
 
-def get_hot_sectors(intelligence_text: str) -> list:
-    """从情报摘要中提取热点板块方向"""
-    sectors = [
-        "半导体", "芯片", "新能源", "光伏", "锂电池", "人工智能", "AI",
-        "消费电子", "医药", "医疗", "金融", "券商", "银行", "保险",
-        "房地产", "基建", "军工", "通信", "5G", "机器人", "低空经济",
-        "无人驾驶", "量子计算", "数据要素", "信创", "鸿蒙",
-    ]
+def get_stock_industry(ts_code: str) -> str:
+    """查询股票所属行业（从DB或Tushare获取）"""
+    try:
+        df = pro.stock_basic(ts_code=ts_code, fields='ts_code,industry')
+        if df is not None and not df.empty:
+            ind = df.iloc[0].get('industry', '')
+            return ind if ind else '未知'
+    except Exception as e:
+        print(f"  [WARN] 查询行业失败({ts_code}): {e}")
+    return '未知'
+
+
+def get_hot_sectors(intelligence_text: str, config: dict = None) -> list:
+    """
+    从情报摘要中提取热点板块方向
+
+    关键词列表从 data/选股规则.json 的 "热点板块关键词" 加载，
+    如未配置则使用内置默认关键词。
+    借鉴 AlphaSift 的 theme_heat 热度追踪机制。
+    """
+    # 从配置加载（优先）
+    if config:
+        rules = config.get("rules", {})
+        kw_config = rules.get("热点板块关键词", {})
+        sectors = kw_config.get("关键词", [])
+        default_hot = kw_config.get("默认热点", ["人工智能", "半导体", "新能源"])
+    else:
+        sectors = [
+            "半导体", "芯片", "新能源", "光伏", "锂电池", "人工智能", "AI",
+            "消费电子", "医药", "医疗", "金融", "券商", "银行", "保险",
+            "房地产", "基建", "军工", "通信", "5G", "机器人", "低空经济",
+            "无人驾驶", "量子计算", "数据要素", "信创", "鸿蒙",
+        ]
+        default_hot = ["人工智能", "半导体", "新能源"]
+
     hot = []
     if intelligence_text:
         for s in sectors:
             if s in intelligence_text:
                 hot.append(s)
+    if not hot:
+        return default_hot
     return hot
 
 
@@ -224,6 +327,237 @@ def load_config(root: str = None) -> dict:
 # ============================================================
 #  公共评分函数（所有模式共用）
 # ============================================================
+
+# ============================================================
+#  新增: AlphaSift 式因子 (流动性/稳定性/反转)
+# ============================================================
+
+def score_liquidity(ts_code: str, trade_date: str, profile: dict = None) -> dict:
+    """
+    流动性因子评分（0-100）— 借鉴AlphaSift factor_liquidity_score
+
+    基于日成交额和换手率，使用非线性评分曲线：
+    - 成交额越高越好（但用log平滑）
+    - 换手率用理想中间值函数（太高=投机, 太低=僵尸）
+    """
+    if profile is None:
+        profile = DEFAULT_SCORING_PROFILE
+    try:
+        df = pro.daily_basic(ts_code=ts_code, trade_date=trade_date)
+        if df is None or df.empty:
+            return {"score": 50, "details": {"reason": "无流动性数据，给中性分"}}
+
+        row = df.iloc[0]
+        amount = float(row.get("amount", 0)) / 10000  # 转为万元
+        turnover = float(row.get("turnover_rate", 0))
+
+        # 成交额评分：log平滑（避免超大市值主导）
+        min_amount = profile.get("liquidity_min_amount", 5000.0)
+        if amount >= min_amount:
+            # log(amount/min_amount) / log(100) * 50 + 50
+            # 成交额达到min_amount给50分，100倍min_amount给100分
+            amount_score = 50 + min(50, np.log2(amount / min_amount) / np.log2(100) * 50)
+        else:
+            amount_score = max(0, 50 * (amount / min_amount))
+
+        # 换手率评分：理想中间值
+        ideal_turnover = profile.get("activity_ideal_turnover_rate", 5.0)
+        turnover_score = _score_ideal_middle(turnover, ideal_turnover,
+                                             max_score=100, tolerance=0.5, penalty=15)
+
+        # 综合流动性分（成交额权重60% + 换手率权重40%）
+        liquidity_score = amount_score * 0.6 + turnover_score * 0.4
+        liquidity_score = max(0, min(100, liquidity_score))
+
+        detail = f"成交额={amount:.0f}万(分{amount_score:.0f}) 换手率={turnover:.1f}%(分{turnover_score:.0f})"
+        return {"score": round(liquidity_score, 1), "details": {"reason": detail,
+                 "amount": round(amount, 0), "turnover_rate": round(turnover, 2)}}
+    except Exception as e:
+        return {"score": 50, "details": {"reason": f"流动性评分异常: {e}"}}
+
+
+def score_stability(ts_code: str, trade_date: str, profile: dict = None) -> dict:
+    """
+    稳定性因子评分（0-100）— 借鉴AlphaSift factor_stability_score
+
+    惩罚极端波动和异常换手（过热惩罚）：
+    - 单日涨跌幅过大 → 惩罚
+    - 换手率过高（投机过重）→ 惩罚
+    - 负PE → 惩罚
+    """
+    if profile is None:
+        profile = DEFAULT_SCORING_PROFILE
+    try:
+        df = _get_daily_price_db_first(ts_code, days_back=20)
+        basic_df = pro.daily_basic(ts_code=ts_code, trade_date=trade_date)
+
+        score = 85  # 起始高分（从满分开始扣）
+        details = []
+        penalties = []
+
+        # === 1. 价格波动惩罚 ===
+        if df is not None and not df.empty and len(df) >= 10:
+            pct_chgs = df["pct_chg"].values[:10]
+            max_up = max(pct_chgs) if len(pct_chgs) > 0 else 0
+            max_down = abs(min(pct_chgs)) if len(pct_chgs) > 0 else 0
+            hot_threshold = profile.get("stability_hot_change_pct", 9.0)
+
+            # 单日过大涨幅惩罚
+            if max_up > hot_threshold:
+                p = _penalty_for_overheating(max_up, hot_threshold, max_penalty=20)
+                penalties.append(p)
+                details.append(f"单日最大涨幅{max_up:.1f}%>阈值{hot_threshold}%，惩罚-{p:.0f}分")
+
+            # 单日过大跌幅惩罚
+            if max_down > hot_threshold:
+                p = _penalty_for_overheating(max_down, hot_threshold, max_penalty=15)
+                penalties.append(p)
+                details.append(f"单日最大跌幅{max_down:.1f}%>阈值{hot_threshold}%，惩罚-{p:.0f}分")
+
+            # 波动率惩罚（ATR/价格比例）
+            closes = df["close"].values[:10]
+            if len(closes) >= 5:
+                atr = np.std(np.diff(closes))
+                atr_ratio = atr / (np.mean(closes) + 1e-10)
+                if atr_ratio > 0.05:  # 日波动>5%
+                    vol_penalty = min(15, (atr_ratio - 0.05) * 200)
+                    penalties.append(vol_penalty)
+                    details.append(f"波动率{atr_ratio:.1%}>5%，惩罚-{vol_penalty:.0f}分")
+
+        # === 2. 换手率过热惩罚 ===
+        extreme_vol_ratio = profile.get("stability_extreme_volume_ratio", 5.0)
+        if basic_df is not None and not basic_df.empty:
+            row = basic_df.iloc[0]
+            turnover = float(row.get("turnover_rate", 0))
+            if turnover > extreme_vol_ratio:
+                p = _penalty_for_overheating(turnover, extreme_vol_ratio, max_penalty=15)
+                penalties.append(p)
+                details.append(f"换手率{turnover:.1f}%>极端阈值{extreme_vol_ratio}%，惩罚-{p:.0f}分")
+
+            # === 3. 负PE惩罚 ===
+            pe = row.get("pe")
+            if pe is not None and pe < 0:
+                penalties.append(20)
+                details.append(f"PE={pe}<0(亏损)，惩罚-20分")
+
+        # === 4. 量比异常惩罚 ===
+        if basic_df is not None and not basic_df.empty:
+            vol_ratio = float(row.get("volume_ratio", 1)) if "volume_ratio" in basic_df.columns else 1
+            if vol_ratio > extreme_vol_ratio + 2:
+                p = min(10, (vol_ratio - extreme_vol_ratio - 2) * 5)
+                penalties.append(p)
+                details.append(f"量比{vol_ratio:.1f}异常高，惩罚-{p:.0f}分")
+
+        # 应用惩罚
+        total_penalty = sum(penalties)
+        final_score = max(0, min(100, score - total_penalty))
+
+        detail_str = " | ".join(details) if details else "波动正常，无过热惩罚"
+        return {"score": round(final_score, 1), "details": {"reason": detail_str,
+                "penalties": round(total_penalty, 1), "factor_count": len(penalties)}}
+    except Exception as e:
+        return {"score": 65, "details": {"reason": f"稳定性评分异常，给中性偏正分: {e}"}}
+
+
+def score_reversal(ts_code: str, trade_date: str, profile: dict = None) -> dict:
+    """
+    反转因子评分（0-100）— 借鉴AlphaSift factor_reversal_score
+
+    寻找控制回撤后的修复机会：
+    - 短期回撤幅度适中（-3%~-8%为最佳反转区域）
+    - 回撤后出现企稳信号（RSI回升/缩量)
+    - 回撤过大(-15%以下)则不参与
+    """
+    if profile is None:
+        profile = DEFAULT_SCORING_PROFILE
+    try:
+        df = _get_daily_price_db_first(ts_code, days_back=30)
+        if df is None or df.empty or len(df) < 15:
+            return {"score": 50, "details": {"reason": "数据不足"}}
+
+        pct_chgs = df["pct_chg"].values
+        closes = df["close"].values
+
+        # 近10日累计涨跌幅
+        recent_ret_10d = (closes[0] - closes[min(9, len(closes)-1)]) / closes[min(9, len(closes)-1)] * 100
+
+        # 近5日最大回撤
+        if len(pct_chgs) >= 5:
+            max_drawdown_5d = min(pct_chgs[:5])
+        else:
+            max_drawdown_5d = min(pct_chgs)
+
+        score = 50
+        details = []
+
+        ideal_change = profile.get("reversal_ideal_change_pct", -3.0)
+        max_decline = profile.get("reversal_max_decline_pct", -15.0)
+
+        # === 1. 回撤幅度评分 ===
+        if max_drawdown_5d <= max_decline:
+            # 回撤太大，不参与反转
+            score = 20
+            details.append(f"近5日最大回撤{max_drawdown_5d:.1f}%>阈值{abs(max_decline)}%，不参与")
+        elif max_drawdown_5d <= ideal_change:
+            # 回撤适中，有反转潜力
+            # ideal_change = -3%, 越接近-3%分越高
+            ratio = max_drawdown_5d / ideal_change  # e.g. -6%/-3% = 2
+            if ratio <= 2:  # 回撤在-3%~-6%
+                score = 75
+                details.append(f"回撤{max_drawdown_5d:.1f}%适中，反转潜力高")
+            elif ratio <= 3:
+                score = 60
+                details.append(f"回撤{max_drawdown_5d:.1f}%偏大，关注企稳信号")
+            else:
+                score = 40
+                details.append(f"回撤{max_drawdown_5d:.1f}%过大，谨慎参与")
+        else:
+            # 回撤很小或是正收益
+            score = 40
+            details.append(f"近5日最大回撤仅{max_drawdown_5d:.1f}%，无明显反转机会")
+
+        # === 2. 企稳确认（RSI从低位回升）===
+        if len(closes) >= 14:
+            try:
+                # 简单RSI计算
+                gains, losses = [], []
+                for i in range(1, min(15, len(closes))):
+                    change = closes[i-1] - closes[i]  # 升序需反转
+                    # closes是降序，所以i-1是更晚的日期
+                    # 我们要最近的14个period
+                    pass
+                # 简化：用涨跌幅做简单判断
+                last_3d = pct_chgs[:3]
+                if len(pct_chgs) >= 7:
+                    early_3d = pct_chgs[4:7]
+                    # 如果前跌后涨，企稳信号
+                    if np.mean(early_3d) < -1 and np.mean(last_3d) > -0.5:
+                        score += 15
+                        details.append("后3日企稳(前跌后稳)")
+                    elif np.mean(last_3d) < np.mean(early_3d) - 1:
+                        score -= 10
+                        details.append("仍在加速下跌")
+            except Exception:
+                pass
+
+        # === 3. 缩量企稳加分 ===
+        try:
+            volumes = df["vol"].values if "vol" in df.columns else df["volume"].values if "volume" in df.columns else None
+            if volumes is not None and len(volumes) >= 10:
+                avg_vol_10d = np.mean(volumes[5:10])  # 10日均量
+                avg_vol_3d = np.mean(volumes[:3])     # 近3日均量
+                if avg_vol_10d > 0 and avg_vol_3d < avg_vol_10d * 0.8:
+                    score += 10
+                    details.append("缩量企稳")
+        except Exception:
+            pass
+
+        final = max(0, min(100, score))
+        return {"score": round(final, 1), "details": {"reason": "; ".join(details) if details else "中性无反转信号",
+                 "max_drawdown_5d": round(max_drawdown_5d, 1), "recent_ret_10d": round(recent_ret_10d, 1)}}
+    except Exception as e:
+        return {"score": 50, "details": {"reason": f"反转评分异常: {e}"}}
+
 
 def score_valuation(ts_code: str, trade_date: str) -> dict:
     """估值因子评分（0-100）- DB优先读取"""
@@ -793,7 +1127,7 @@ def pre_market_picks(top_n: int, config: dict, today: str) -> dict:
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
 
     # 热点板块（情报+分析）
-    hot_sectors = get_hot_sectors(config["intelligence"])
+    hot_sectors = get_hot_sectors(config["intelligence"], config)
     if not hot_sectors:
         hot_sectors = ["人工智能", "半导体", "新能源"]
     result["hot_sectors"] = hot_sectors
@@ -826,12 +1160,16 @@ def pre_market_picks(top_n: int, config: dict, today: str) -> dict:
     result["candidates_screened"] = len(candidates)
     print(f"  {ok} 候选池: {len(candidates)} 只")
 
-    # 模式权重（早盘侧重动量+情绪）
+    # 评分曲线配置（AlphaSift式非线性曲线）
+    profile = _load_scoring_profile(config)
+
+    # 模式权重（8因子体系，含流动性/稳定性/反转）
     weights = config.get("rules", {}).get("模式权重", {}).get("pre_market", {}).get("因子权重", {
-        "估值": 15, "成长": 15, "动量": 30, "情绪": 20, "技术面": 20,
+        "估值": 12, "成长": 12, "动量": 20, "情绪": 15, "技术面": 12,
+        "流动性": 10, "稳定性": 9, "反转": 10,
     })
 
-    # 评分（早盘用昨日数据）
+    # 评分（早盘用昨日数据，8因子体系）
     scored = []
     for ts_code in candidates:
         if is_st_stock(ts_code):
@@ -849,15 +1187,23 @@ def pre_market_picks(top_n: int, config: dict, today: str) -> dict:
             momentum = score_momentum(ts_code)
             technical = score_technical(ts_code)
             sentiment = score_sentiment(ts_code, yesterday)
+            liquidity = score_liquidity(ts_code, yesterday, profile)
+            stability = score_stability(ts_code, yesterday, profile)
+            reversal = score_reversal(ts_code, yesterday, profile)
 
             factor_scores = {"估值": valuation["score"], "成长": growth["score"],
                              "动量": momentum["score"], "技术面": technical["score"],
-                             "情绪": sentiment["score"]}
+                             "情绪": sentiment["score"],
+                             "流动性": liquidity["score"], "稳定性": stability["score"],
+                             "反转": reversal["score"]}
             strong_factors = sum(1 for v in factor_scores.values() if v >= 60)
 
-            total = (valuation["score"] * weights.get("估值", 15) + growth["score"] * weights.get("成长", 15)
-                     + momentum["score"] * weights.get("动量", 30) + technical["score"] * weights.get("技术面", 20)
-                     + sentiment["score"] * weights.get("情绪", 20)) / 100
+            total = (valuation["score"] * weights.get("估值", 12) + growth["score"] * weights.get("成长", 12)
+                     + momentum["score"] * weights.get("动量", 20) + technical["score"] * weights.get("技术面", 12)
+                     + sentiment["score"] * weights.get("情绪", 15)
+                     + liquidity["score"] * weights.get("流动性", 10)
+                     + stability["score"] * weights.get("稳定性", 9)
+                     + reversal["score"] * weights.get("反转", 10)) / 100
 
             scored.append({
                 "ts_code": ts_code,
@@ -866,7 +1212,9 @@ def pre_market_picks(top_n: int, config: dict, today: str) -> dict:
                 "factors": factor_scores,
                 "factor_details": {"估值": valuation["details"], "成长": growth["details"],
                                    "动量": momentum["details"], "技术面": technical["details"],
-                                   "情绪": sentiment["details"]},
+                                   "情绪": sentiment["details"],
+                                   "流动性": liquidity["details"], "稳定性": stability["details"],
+                                   "反转": reversal["details"]},
             })
             print(f"  {ok} {ts_code}: {total:.1f}分")
         except Exception as e:
@@ -906,8 +1254,9 @@ def pre_market_picks(top_n: int, config: dict, today: str) -> dict:
             s["suggested_stop_loss"] = None
 
     for i, s in enumerate(result["ranked_stocks"], 1):
+        f = s['factors']
         print(f"  {i}. {s['ts_code']} — {s['total_score']}分")
-        print(f"     估值:{s['factors']['估值']} 成长:{s['factors']['成长']} 动量:{s['factors']['动量']} 技术:{s['factors']['技术面']} 情绪:{s['factors']['情绪']} 强因子:{s['strong_factors']}/5")
+        print(f"     估{f['估值']} 成{f['成长']} 动{f['动量']} 技{f['技术面']} 情{f['情绪']} 流{f.get('流动性',0)} 稳{f.get('稳定性',0)} 反{f.get('反转',0)} 强:{s['strong_factors']}/8")
 
     return result
 
@@ -983,9 +1332,11 @@ def intraday_picks(top_n: int, config: dict, today: str) -> dict:
     result["candidates_screened"] = len(candidates)
     print(f"  {ok} 候选池: {len(candidates)} 只")
 
-    # 4. 盘中评分（侧重情绪/资金流）
+    # 4. 盘中评分（侧重情绪/资金流，8因子体系）
+    profile = _load_scoring_profile(config)
     weights = config.get("rules", {}).get("模式权重", {}).get("intraday", {}).get("因子权重", {
-        "估值": 0, "成长": 10, "动量": 25, "情绪": 45, "技术面": 20,
+        "估值": 0, "成长": 5, "动量": 20, "情绪": 30, "技术面": 15,
+        "流动性": 10, "稳定性": 10, "反转": 10,
     })
 
     scored = []
@@ -1001,15 +1352,23 @@ def intraday_picks(top_n: int, config: dict, today: str) -> dict:
             momentum = score_momentum(ts_code)
             technical = score_technical(ts_code)
             sentiment = score_sentiment(ts_code, yesterday_ymd)
+            liquidity = score_liquidity(ts_code, yesterday_ymd, profile)
+            stability = score_stability(ts_code, yesterday_ymd, profile)
+            reversal = score_reversal(ts_code, yesterday_ymd, profile)
 
             factor_scores = {"估值": valuation["score"], "成长": growth["score"],
                              "动量": momentum["score"], "技术面": technical["score"],
-                             "情绪": sentiment["score"]}
+                             "情绪": sentiment["score"],
+                             "流动性": liquidity["score"], "稳定性": stability["score"],
+                             "反转": reversal["score"]}
             strong_factors = sum(1 for v in factor_scores.values() if v >= 60)
 
-            total = (valuation["score"] * weights.get("估值", 10) + growth["score"] * weights.get("成长", 10)
-                     + momentum["score"] * weights.get("动量", 25) + technical["score"] * weights.get("技术面", 20)
-                     + sentiment["score"] * weights.get("情绪", 35)) / 100
+            total = (valuation["score"] * weights.get("估值", 0) + growth["score"] * weights.get("成长", 5)
+                     + momentum["score"] * weights.get("动量", 20) + technical["score"] * weights.get("技术面", 15)
+                     + sentiment["score"] * weights.get("情绪", 30)
+                     + liquidity["score"] * weights.get("流动性", 10)
+                     + stability["score"] * weights.get("稳定性", 10)
+                     + reversal["score"] * weights.get("反转", 10)) / 100
 
             scored.append({
                 "ts_code": ts_code,
@@ -1018,7 +1377,9 @@ def intraday_picks(top_n: int, config: dict, today: str) -> dict:
                 "factors": factor_scores,
                 "factor_details": {"估值": valuation["details"], "成长": growth["details"],
                                    "动量": momentum["details"], "技术面": technical["details"],
-                                   "情绪": sentiment["details"]},
+                                   "情绪": sentiment["details"],
+                                   "流动性": liquidity["details"], "稳定性": stability["details"],
+                                   "反转": reversal["details"]},
             })
         except Exception as e:
             print(f"  {warn} {ts_code} 评分失败: {e}")
@@ -1136,9 +1497,11 @@ def noon_picks(top_n: int, config: dict, today: str) -> dict:
     result["candidates_screened"] = len(candidates)
     print(f"  {ok} 候选池: {len(candidates)} 只")
 
-    # 午盘权重（侧重情绪/资金流+动量）
+    # 午盘权重（8因子体系，侧重情绪/资金流+动量）
+    profile = _load_scoring_profile(config)
     weights = config.get("rules", {}).get("模式权重", {}).get("noon", {}).get("因子权重", {
-        "估值": 15, "成长": 15, "动量": 20, "情绪": 30, "技术面": 20,
+        "估值": 12, "成长": 12, "动量": 15, "情绪": 20, "技术面": 12,
+        "流动性": 10, "稳定性": 9, "反转": 10,
     })
 
     scored = []
@@ -1152,15 +1515,23 @@ def noon_picks(top_n: int, config: dict, today: str) -> dict:
             momentum = score_momentum(ts_code)
             technical = score_technical(ts_code)
             sentiment = score_sentiment(ts_code, ymd)
+            liquidity = score_liquidity(ts_code, ymd, profile)
+            stability = score_stability(ts_code, ymd, profile)
+            reversal = score_reversal(ts_code, ymd, profile)
 
             factor_scores = {"估值": valuation["score"], "成长": growth["score"],
                              "动量": momentum["score"], "技术面": technical["score"],
-                             "情绪": sentiment["score"]}
+                             "情绪": sentiment["score"],
+                             "流动性": liquidity["score"], "稳定性": stability["score"],
+                             "反转": reversal["score"]}
             strong_factors = sum(1 for v in factor_scores.values() if v >= 60)
 
-            total = (valuation["score"] * weights.get("估值", 15) + growth["score"] * weights.get("成长", 15)
-                     + momentum["score"] * weights.get("动量", 20) + technical["score"] * weights.get("技术面", 20)
-                     + sentiment["score"] * weights.get("情绪", 30)) / 100
+            total = (valuation["score"] * weights.get("估值", 12) + growth["score"] * weights.get("成长", 12)
+                     + momentum["score"] * weights.get("动量", 15) + technical["score"] * weights.get("技术面", 12)
+                     + sentiment["score"] * weights.get("情绪", 20)
+                     + liquidity["score"] * weights.get("流动性", 10)
+                     + stability["score"] * weights.get("稳定性", 9)
+                     + reversal["score"] * weights.get("反转", 10)) / 100
 
             scored.append({
                 "ts_code": ts_code,
@@ -1169,7 +1540,9 @@ def noon_picks(top_n: int, config: dict, today: str) -> dict:
                 "factors": factor_scores,
                 "factor_details": {"估值": valuation["details"], "成长": growth["details"],
                                    "动量": momentum["details"], "技术面": technical["details"],
-                                   "情绪": sentiment["details"]},
+                                   "情绪": sentiment["details"],
+                                   "流动性": liquidity["details"], "稳定性": stability["details"],
+                                   "反转": reversal["details"]},
             })
         except Exception as e:
             print(f"  {warn} {ts_code} 评分失败: {e}")
@@ -1245,7 +1618,7 @@ def evening_picks(top_n: int, config: dict, today: str) -> dict:
             print(f"  {ok} 复盘偏差分析: {len(deviation_lines)} 条参考")
 
     # 热点板块
-    hot_sectors = get_hot_sectors(config["intelligence"])
+    hot_sectors = get_hot_sectors(config["intelligence"], config)
     if not hot_sectors:
         hot_sectors = ["人工智能", "半导体", "新能源"]
     result["hot_sectors"] = hot_sectors
@@ -1272,10 +1645,12 @@ def evening_picks(top_n: int, config: dict, today: str) -> dict:
     result["candidates_screened"] = len(candidates)
     print(f"  {ok} 候选池: {len(candidates)} 只")
 
-    # 完整评分（使用今日数据）
+    # 完整评分（使用今日数据，8因子体系）
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
-    weights = config.get("rules", {}).get("因子权重", {
-        "估值": 25, "成长": 20, "动量": 20, "情绪": 15, "技术面": 20,
+    profile = _load_scoring_profile(config)
+    weights = config.get("rules", {}).get("模式权重", {}).get("evening", {}).get("因子权重", {
+        "估值": 18, "成长": 15, "动量": 12, "情绪": 10, "技术面": 12,
+        "流动性": 12, "稳定性": 10, "反转": 11,
     })
 
     scored = []
@@ -1296,15 +1671,23 @@ def evening_picks(top_n: int, config: dict, today: str) -> dict:
             momentum = score_momentum(ts_code)
             technical = score_technical(ts_code)
             sentiment = score_sentiment(ts_code, yesterday)
+            liquidity = score_liquidity(ts_code, yesterday, profile)
+            stability = score_stability(ts_code, yesterday, profile)
+            reversal = score_reversal(ts_code, yesterday, profile)
 
             factor_scores = {"估值": valuation["score"], "成长": growth["score"],
                              "动量": momentum["score"], "技术面": technical["score"],
-                             "情绪": sentiment["score"]}
+                             "情绪": sentiment["score"],
+                             "流动性": liquidity["score"], "稳定性": stability["score"],
+                             "反转": reversal["score"]}
             strong_factors = sum(1 for v in factor_scores.values() if v >= 60)
 
-            total = (valuation["score"] * weights.get("估值", 25) + growth["score"] * weights.get("成长", 20)
-                     + momentum["score"] * weights.get("动量", 20) + technical["score"] * weights.get("技术面", 20)
-                     + sentiment["score"] * weights.get("情绪", 15)) / 100
+            total = (valuation["score"] * weights.get("估值", 18) + growth["score"] * weights.get("成长", 15)
+                     + momentum["score"] * weights.get("动量", 12) + technical["score"] * weights.get("技术面", 12)
+                     + sentiment["score"] * weights.get("情绪", 10)
+                     + liquidity["score"] * weights.get("流动性", 12)
+                     + stability["score"] * weights.get("稳定性", 10)
+                     + reversal["score"] * weights.get("反转", 11)) / 100
 
             scored.append({
                 "ts_code": ts_code,
@@ -1313,7 +1696,9 @@ def evening_picks(top_n: int, config: dict, today: str) -> dict:
                 "factors": factor_scores,
                 "factor_details": {"估值": valuation["details"], "成长": growth["details"],
                                    "动量": momentum["details"], "技术面": technical["details"],
-                                   "情绪": sentiment["details"]},
+                                   "情绪": sentiment["details"],
+                                   "流动性": liquidity["details"], "稳定性": stability["details"],
+                                   "反转": reversal["details"]},
             })
         except Exception as e:
             print(f"  {warn} {ts_code} 评分失败: {e}")
@@ -1326,15 +1711,16 @@ def evening_picks(top_n: int, config: dict, today: str) -> dict:
     top_stocks = scored[:top_n]
     result["ranked_stocks"] = top_stocks
 
-    # 行业集中度检查
+    # 行业集中度检查（按实际行业字段，非代码前缀）
     sector_counts = {}
     for s in scored:
-        prefix = s["ts_code"][:3]
-        sector_counts[prefix] = sector_counts.get(prefix, 0) + 1
+        ind = get_stock_industry(s["ts_code"])
+        s["industry"] = ind
+        sector_counts[ind] = sector_counts.get(ind, 0) + 1
     total_stocks = max(len(scored), 1)
-    for prefix, count in sector_counts.items():
+    for ind_name, count in sector_counts.items():
         pct = round(count / total_stocks * 100, 1)
-        result["sector_concentration"][f"{prefix}xxx"] = {"count": count, "pct": pct, "over_limit": pct > 40}
+        result["sector_concentration"][ind_name] = {"count": count, "pct": pct, "over_limit": pct > 40}
     if any(c["over_limit"] for c in result["sector_concentration"].values()):
         result["warnings"].append("行业集中度超40%限制")
         print(f"  {warn} 行业集中度超40%")
@@ -1360,8 +1746,9 @@ def evening_picks(top_n: int, config: dict, today: str) -> dict:
     print(f"  晚间选股 Top {top_n}")
     print(f"  {'='*40}")
     for i, s in enumerate(top_stocks, 1):
-        print(f"  {i}. {s['ts_code']} — {s['total_score']}分 (强因子:{s.get('strong_factors', 0)}/5)")
-        print(f"     估值:{s['factors']['估值']} 成长:{s['factors']['成长']} 动量:{s['factors']['动量']} 技术:{s['factors']['技术面']} 情绪:{s['factors']['情绪']}")
+        f = s['factors']
+        print(f"  {i}. {s['ts_code']} — {s['total_score']}分 (强因子:{s.get('strong_factors', 0)}/8)")
+        print(f"     估{f['估值']} 成{f['成长']} 动{f['动量']} 技{f['技术面']} 情{f['情绪']} 流{f.get('流动性',0)} 稳{f.get('稳定性',0)} 反{f.get('反转',0)}")
 
     if result.get("st_filtered"):
         print(f"\n  {warn} ST过滤: {len(result['st_filtered'])} 只")
@@ -1508,10 +1895,12 @@ def deep_scan_picks(top_n: int, config: dict, today: str) -> dict:
         result["errors"].append("无可用候选")
         return result
 
-    # 4. 多因子评分（晚间权重）
+    # 4. 多因子评分（晚间权重，8因子体系）
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
-    weights = config.get("rules", {}).get("因子权重", {
-        "估值": 25, "成长": 20, "动量": 20, "情绪": 15, "技术面": 20,
+    profile = _load_scoring_profile(config)
+    weights = config.get("rules", {}).get("模式权重", {}).get("evening", {}).get("因子权重", {
+        "估值": 18, "成长": 15, "动量": 12, "情绪": 10, "技术面": 12,
+        "流动性": 12, "稳定性": 10, "反转": 11,
     })
 
     scored = []
@@ -1527,17 +1916,25 @@ def deep_scan_picks(top_n: int, config: dict, today: str) -> dict:
             momentum = score_momentum(ts_code)
             technical = score_technical(ts_code)
             sentiment = score_sentiment(ts_code, yesterday)
+            liquidity = score_liquidity(ts_code, yesterday, profile)
+            stability = score_stability(ts_code, yesterday, profile)
+            reversal = score_reversal(ts_code, yesterday, profile)
 
             factor_scores = {"估值": valuation["score"], "成长": growth["score"],
                              "动量": momentum["score"], "技术面": technical["score"],
-                             "情绪": sentiment["score"]}
+                             "情绪": sentiment["score"],
+                             "流动性": liquidity["score"], "稳定性": stability["score"],
+                             "反转": reversal["score"]}
             strong_factors = sum(1 for v in factor_scores.values() if v >= 60)
 
-            total_score = (valuation["score"] * weights.get("估值", 25)
-                          + growth["score"] * weights.get("成长", 20)
-                          + momentum["score"] * weights.get("动量", 20)
-                          + technical["score"] * weights.get("技术面", 20)
-                          + sentiment["score"] * weights.get("情绪", 15)) / 100
+            total_score = (valuation["score"] * weights.get("估值", 18)
+                          + growth["score"] * weights.get("成长", 15)
+                          + momentum["score"] * weights.get("动量", 12)
+                          + technical["score"] * weights.get("技术面", 12)
+                          + sentiment["score"] * weights.get("情绪", 10)
+                          + liquidity["score"] * weights.get("流动性", 12)
+                          + stability["score"] * weights.get("稳定性", 10)
+                          + reversal["score"] * weights.get("反转", 11)) / 100
 
             scored.append({
                 "ts_code": ts_code,
@@ -1547,7 +1944,9 @@ def deep_scan_picks(top_n: int, config: dict, today: str) -> dict:
                 "factors": factor_scores,
                 "factor_details": {"估值": valuation["details"], "成长": growth["details"],
                                    "动量": momentum["details"], "技术面": technical["details"],
-                                   "情绪": sentiment["details"]},
+                                   "情绪": sentiment["details"],
+                                   "流动性": liquidity["details"], "稳定性": stability["details"],
+                                   "反转": reversal["details"]},
             })
         except Exception as e:
             result["errors"].append(f"{ts_code} 评分异常: {e}")
@@ -1559,15 +1958,16 @@ def deep_scan_picks(top_n: int, config: dict, today: str) -> dict:
     result["ranked_stocks"] = top_stocks
     result["scan_summary"]["total_scored"] = len(scored)
 
-    # 6. 行业集中度检查
+    # 6. 行业集中度检查（按实际行业字段，非代码前缀）
     sector_counts = {}
     for s in scored:
-        prefix = s["ts_code"][:3]
-        sector_counts[prefix] = sector_counts.get(prefix, 0) + 1
+        ind = get_stock_industry(s["ts_code"])
+        s["industry"] = ind
+        sector_counts[ind] = sector_counts.get(ind, 0) + 1
     total_s = max(len(scored), 1)
-    for prefix, count in sector_counts.items():
+    for ind_name, count in sector_counts.items():
         pct = round(count / total_s * 100, 1)
-        result["sector_concentration"][f"{prefix}xxx"] = {"count": count, "pct": pct, "over_limit": pct > 40}
+        result["sector_concentration"][ind_name] = {"count": count, "pct": pct, "over_limit": pct > 40}
     if any(c["over_limit"] for c in result["sector_concentration"].values()):
         result["warnings"].append("行业集中度超40%限制")
         print(f"  {warn} 行业集中度超40%")
@@ -1594,8 +1994,9 @@ def deep_scan_picks(top_n: int, config: dict, today: str) -> dict:
     print(f"  {'='*50}")
     for i, s in enumerate(top_stocks, 1):
         name_str = f" ({s.get('name', '')})" if s.get('name') else ""
-        print(f"  {i}. {s['ts_code']}{name_str} — {s['total_score']}分 (强因子:{s.get('strong_factors', 0)}/5)")
-        print(f"     估值:{s['factors']['估值']} 成长:{s['factors']['成长']} 动量:{s['factors']['动量']} 技术:{s['factors']['技术面']} 情绪:{s['factors']['情绪']}")
+        f = s['factors']
+        print(f"  {i}. {s['ts_code']}{name_str} — {s['total_score']}分 (强因子:{s.get('strong_factors', 0)}/8)")
+        print(f"     估{f['估值']} 成{f['成长']} 动{f['动量']} 技{f['技术面']} 情{f['情绪']} 流{f.get('流动性',0)} 稳{f.get('稳定性',0)} 反{f.get('反转',0)}")
 
     return result
 
@@ -1604,11 +2005,169 @@ def deep_scan_picks(top_n: int, config: dict, today: str) -> dict:
 #  主入口
 # ============================================================
 
+# ============================================================
+#  L1→L2→L3 选股管线（借鉴AlphaSift三级筛选架构）
+#
+#  管线流程:
+#    L1: 8因子全量评分 + 硬筛条件（在模式函数中完成）
+#    L2: 重排序（可选LLM/规则混合，当前为规则启发式）
+#    L3: 后置分析器（Scorecard + Risk Overlay）
+# ============================================================
+
+# __pipeline_cache: L3各模块的延迟导入缓存
+__pipeline_cache = {}
+
+
+def _get_scorecard():
+    """延迟导入 Scorecard"""
+    if "scorecard" not in __pipeline_cache:
+        from scripts.utils.scorecard import Scorecard
+        __pipeline_cache["scorecard"] = Scorecard()
+    return __pipeline_cache["scorecard"]
+
+
+def _get_risk_overlay(profile: dict = None):
+    """延迟导入 RiskOverlay"""
+    key = f"risk_overlay_{id(profile) if profile else 'default'}"
+    if key not in __pipeline_cache:
+        from scripts.utils.risk_overlay import RiskOverlay
+        __pipeline_cache[key] = RiskOverlay(profile=profile)
+    return __pipeline_cache[key]
+
+
+def _l2_rerank(scored: list, trade_date: str = None) -> list:
+    """
+    L2 层：重排序（无需LLM的规则启发式）
+
+    当前实现基于强因子数量和稳定性做二次加权排序。
+    未来可升级为LLM相对排序（当配置了LLM API后）。
+
+    规则：
+    - 基础分 = total_score * 0.8
+    - 强因子(>=60)加分：每多一个强因子+5分（最多+20分）
+    - 稳定性惩罚：稳定性<40分时，总分额外扣10%（不稳定的票降级）
+    """
+    if not scored:
+        return scored
+
+    for s in scored:
+        factors = s.get("factors", {})
+        stability = factors.get("稳定性", 50)
+        strong_count = s.get("strong_factors", 0)
+
+        # 强因子加分
+        bonus = min(20, strong_count * 5)
+
+        # 稳定性惩罚
+        if stability < 40:
+            stability_penalty = s["total_score"] * 0.1
+        else:
+            stability_penalty = 0
+
+        # L2 调整分（保留原分作为参考）
+        s["_l2_adjustment"] = round(bonus - stability_penalty, 1)
+        s["total_score_l2"] = round(s["total_score"] + s["_l2_adjustment"], 1)
+
+    # 按L2调整后排
+    scored.sort(key=lambda x: x.get("total_score_l2", x["total_score"]), reverse=True)
+    return scored
+
+
+def _l3_post_analysis(ranked_stocks: list, today: str, profile: dict = None,
+                      mode: str = "evening") -> list:
+    """
+    L3 层：后置分析器（Scorecard + Risk Overlay）
+
+    对 Top N 候选进行最终审核：
+    1. Scorecard：本地规则加减分（突破/量价/均线/板块/基本面）
+    2. Risk Overlay：独立风险惩罚/否决
+
+    Args:
+        ranked_stocks: L2排序后的候选列表
+        today: 交易日YYYYMMDD
+        profile: 评分曲线配置
+        mode: 选股模式
+
+    Returns:
+        增强后的候选列表（增加scorecard/risk_overlay字段）
+    """
+    if not ranked_stocks:
+        return ranked_stocks
+
+    ok, warn = "[OK]", "[WARN]"
+    print(f"\n  {'='*40}")
+    print(f"  L3 后置分析器: Scorecard + Risk Overlay")
+    print(f"  {'='*40}")
+
+    # L3a: Scorecard 评估
+    scorecard = _get_scorecard()
+    card_results = scorecard.evaluate_batch(ranked_stocks, today)
+
+    # L3b: Risk Overlay 风险叠加
+    risk_overlay = _get_risk_overlay(profile)
+
+    enhanced = []
+    for i, s in enumerate(ranked_stocks):
+        ts_code = s["ts_code"]
+
+        # 合并Scorecard结果
+        card = card_results[i] if i < len(card_results) else {"delta": 0, "reasons": [], "tags": [], "confidence": "低"}
+
+        # Risk Overlay
+        risk_result = risk_overlay.apply_to_stock(ts_code, today, s["total_score"])
+
+        # 否决处理
+        if risk_result["veto"]:
+            s["_vetoed"] = True
+            s["_veto_reasons"] = risk_result["reasons"]
+            print(f"  {warn} {ts_code} 被风险叠加层否决: {'; '.join(risk_result['reasons'][:2])}")
+            continue
+
+        # 最终分数 = L1分数 + Scorecard调整 - Risk惩罚
+        scorecard_delta = card.get("delta", 0)
+        risk_penalty = risk_result.get("penalty_applied", 0)
+
+        # 确保L3分数不超过100
+        final_score = max(0, min(100, s["total_score"] + scorecard_delta - risk_penalty))
+
+        s["_scorecard"] = {
+            "delta": scorecard_delta,
+            "reasons": card.get("reasons", []),
+            "tags": card.get("tags", []),
+            "confidence": card.get("confidence", "低"),
+        }
+        s["_risk_overlay"] = {
+            "penalty": risk_penalty,
+            "veto": False,
+            "reasons": risk_result.get("reasons", []),
+        }
+        s["total_score_l3"] = round(final_score, 1)
+
+        # 更新打印：列出scorecard加分和风险惩罚
+        print(f"  {ok} {ts_code}: L1={s['total_score']} L3={final_score} (card={scorecard_delta:+.0f} risk=-{risk_penalty:.0f})")
+
+        enhanced.append(s)
+
+    # 按L3最终分排序
+    enhanced.sort(key=lambda x: x.get("total_score_l3", x["total_score"]), reverse=True)
+
+    print(f"  L3完成: {len(enhanced)}/{len(ranked_stocks)} 通过风险审核")
+    return enhanced
+
+
 def generate_stock_picks(top_n: int = 5, mode: str = "evening", deep_scan: bool = False) -> dict:
-    """主函数：按模式分发选股"""
+    """
+    主函数：L1→L2→L3 选股管线
+
+    管线流程：
+    1. L1: 8因子全量评分（按模式分发到具体函数）
+    2. L2: 规则启发式重排序
+    3. L3: Scorecard + Risk Overlay 后置分析
+    """
     root = os.path.join(os.path.dirname(__file__), "..", "..")
     config = load_config(root)
     today = datetime.now().strftime("%Y%m%d")
+    profile = _load_scoring_profile(config)
 
     mode_map = {
         "pre_market": pre_market_picks,
@@ -1622,12 +2181,79 @@ def generate_stock_picks(top_n: int = 5, mode: str = "evening", deep_scan: bool 
     else:
         func = mode_map.get(mode, evening_picks)
 
+    # === L1: 因子评分（模式函数） ===
     result = func(top_n, config, today)
 
     # 统一标记
     result["mode"] = mode
     if deep_scan:
         result["mode"] = "deep_scan"
+
+    # 获取评分过的候选
+    ranked = result.get("ranked_stocks", [])
+
+    if not ranked:
+        print("  [WARN] 无候选股票，跳过L2/L3管线")
+        result["pipeline"] = {"L1": "completed", "L2": "skipped", "L3": "skipped"}
+        return result
+
+    # === L2: LLM相对排序 / 规则启发式（自动降级） ===
+    try:
+        from scripts.utils.l2_rerank import rank_with_llm_or_fallback as l2_rank_fn
+        from scripts.utils.l2_rerank import is_llm_available
+        use_llm_l2 = True
+        l2_mode = "LLM相对排序" if is_llm_available() else "规则启发式(LLM未配置)"
+    except Exception:
+        l2_rank_fn = _l2_rerank
+        use_llm_l2 = False
+        l2_mode = "内联规则启发式"
+
+    print(f"\n  {'='*40}")
+    print(f"  L2: {l2_mode}")
+    print(f"  {'='*40}")
+
+    if use_llm_l2:
+        try:
+            ranked = l2_rank_fn(ranked, today, mode=mode)
+        except Exception as e:
+            print(f"  [WARN] L2 LLM排序失败: {e}，降级到规则排序")
+            ranked = _l2_rerank(ranked, today)
+    else:
+        ranked = l2_rank_fn(ranked, today)
+    result["ranked_stocks"] = ranked[:top_n]  # L2后重新截断
+    result["_l2_applied"] = True
+
+    # === L3: 后置分析器 ===
+    l3_enhanced = _l3_post_analysis(ranked[:top_n], today, profile, mode=mode)
+    result["ranked_stocks"] = l3_enhanced
+
+    # 记录被否决的候选
+    vetoed = [s for s in ranked if s.get("_vetoed")]
+    if vetoed:
+        result["_vetoed_stocks"] = vetoed
+
+    result["pipeline"] = {
+        "L1": "completed",
+        "L2": "completed",
+        "L3": "completed",
+        "final_count": len(l3_enhanced),
+        "vetoed_count": len(vetoed),
+    }
+
+    # L3后打印最终排名
+    if l3_enhanced:
+        print(f"\n  {'='*40}")
+        print(f"  L3 最终排名 Top {min(top_n, len(l3_enhanced))}")
+        print(f"  {'='*40}")
+        for i, s in enumerate(l3_enhanced, 1):
+            f = s['factors']
+            l3 = s.get("total_score_l3", s["total_score"])
+            sc_tags = s.get("_scorecard", {}).get("tags", [])
+            tag_str = f" [{','.join(sc_tags)}]" if sc_tags else ""
+            print(f"  {i}. {s['ts_code']} — L3={l3} (L1={s['total_score']}){tag_str}")
+        if vetoed:
+            print(f"\n  ⛔ 风险否决: {len(vetoed)} 只")
+
     return result
 
 

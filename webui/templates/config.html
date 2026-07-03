@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}配置管理 — 股票投研管理界面{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="mb-1" style="color:#c8d6e5;"><i class="bi bi-gear me-2" style="color:#4fc3f7;"></i>配置管理</h3>
+        <p class="text-secondary mb-0" style="font-size:0.85rem;">管理项目配置文件、查看数据库和环境状态</p>
+    </div>
+</div>
+
+{% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<div class="row g-4">
+    <!-- 配置文件列表 -->
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-file-earmark-code me-1"></i>配置文件</div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>名称</th>
+                            <th>大小</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in configs %}
+                        <tr>
+                            <td>
+                                <strong>{{ c.name }}</strong>
+                                <div style="font-size:0.75rem;color:#8899aa;">{{ c.desc }}</div>
+                            </td>
+                            <td>
+                                {% if c.exists %}
+                                {% if c.size < 1024 %}{{ c.size }}B{% else %}{{ (c.size/1024)|round(1) }}KB{% endif %}
+                                {% else %}
+                                <span class="text-danger">不存在</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if c.exists %}
+                                <a href="/config/edit?path={{ c.path|urlencode }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-pencil"></i> 编辑
+                                </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 信息面板 -->
+    <div class="col-lg-6">
+        <!-- 数据库 -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-database me-1"></i>数据库 <span class="text-secondary">stocks.db</span></div>
+            <div class="card-body">
+                {% if db_info.exists %}
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <div class="stat-value" style="font-size:1.2rem;">{{ db_info.size_mb }} MB</div>
+                        <div class="stat-label">大小</div>
+                    </div>
+                    <div class="col-6">
+                        <div class="stat-value" style="font-size:1.2rem;">{{ db_info.tables|length }}</div>
+                        <div class="stat-label">数据表</div>
+                    </div>
+                </div>
+                <table class="table table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th>表名</th>
+                            <th>行数</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tbl, cnt in db_info.table_info.items() %}
+                        {% if cnt >= 0 %}
+                        <tr>
+                            <td style="font-size:0.8rem;">{{ tbl }}</td>
+                            <td style="font-size:0.8rem;">{{ cnt }}</td>
+                        </tr>
+                        {% endif %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-secondary mb-0">数据库文件不存在</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 环境变量 -->
+        <div class="card mt-3">
+            <div class="card-header"><i class="bi bi-shield-check me-1"></i>环境变量</div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th>变量</th>
+                            <th>状态</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for key, val in env_info.items() %}
+                        <tr>
+                            <td style="font-size:0.85rem;">{{ key }}</td>
+                            <td>
+                                {% if val == True %}
+                                <span class="text-success"><i class="bi bi-check-circle-fill"></i> 已配置</span>
+                                {% elif val == False %}
+                                <span class="text-danger"><i class="bi bi-x-circle-fill"></i> 未配置</span>
+                                {% else %}
+                                <span class="text-secondary">{{ val }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

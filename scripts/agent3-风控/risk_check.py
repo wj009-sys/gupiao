@@ -7,16 +7,19 @@ Agent3 风控官 - 风险管理核心脚本
 3. 根据大盘环境评估当前风险等级
 4. 检查每笔持仓是否触发止损
 5. 检查总仓位和单票仓位是否超限
-6. 【新增】审查操盘手交易计划（买入/卖出清单风险评估）
-7. 【新增】持仓加减仓建议（与操盘手的持仓管理建议对比）
-8. 【新增】输出与操盘手的冲突项（供投资领导仲裁）
-9. 输出风控报告结构化数据
+6. 审查操盘手交易计划（买入/卖出清单风险评估）
+7. 持仓加减仓建议（与操盘手的持仓管理建议对比）
+8. 输出与操盘手的冲突项（供投资领导仲裁）
+9. 【TradingAgents借鉴】三级风控委员会：支持 --risk-profile aggressive|neutral|conservative
+   三个风险偏好档位独立运行，综合评估风险
+10. 输出风控报告结构化数据
 
 用法：
     source venv/Scripts/activate
-    python -X utf8 scripts/agent3-风控/risk_check.py [--portfolio data/portfolio.json] [--env-score 70] [--trade-plan data/raw/交易原始数据_YYYYMMDD.json]
+    python -X utf8 scripts/agent3-风控/risk_check.py [--portfolio data/portfolio.json] [--env-score 70] [--trade-plan data/raw/交易原始数据_YYYYMMDD.json] [--risk-profile neutral]
 
 如果不传环境评分，则从 data/raw/分析原始数据_*.json 中自动读取
+不传 --risk-profile 默认为 neutral（向后兼容）
 
 D9反例（工作反例）：
 1. 不要盲从操盘手意见——风控是独立审查，不是走过场
@@ -24,6 +27,8 @@ D9反例（工作反例）：
 3. 不要分歧不上报——风控和操盘手意见不合时必须上报投资领导仲裁
 4. 不要只用一条规则判断——风控是多维度综合评估
 5. 不要给模糊的风控等级——必须明确LOW/MEDIUM/HIGH/CRITICAL
+6. 不要单一风控偏好——三级风控委员会应覆盖激进/中性/保守三个视角
+   单一视角容易受最近行情影响（大涨时偏松、大跌时偏严）
 
 D3异常处理表：
 | 触发条件 | 一线修复 | 仍失败兜底 |
@@ -33,6 +38,7 @@ D3异常处理表：
 | 止损规则文件缺失 | 使用默认止损规则（固定-7%/移动-5%） | 输出警告，保守止损 |
 | 分析原始数据为空（环境评分） | 使用默认评分50（中等） | 风控基于持仓数据独立判断 |
 | 操盘计划缺失（trade_plan为空） | 跳过操盘计划审查章节 | 仅输出持仓风控部分 |
+| 风险偏好档位参数无效 | 回退到neutral | 输出警告，使用中性参数 |
 | 持仓总资产字段名不统一（总资产vs总资产_含现金） | 按优先级依次尝试4个字段名 | 用持仓市值之和代替，标注"估算" |
 | 涨跌停价格获取失败 | 用±10%/±20%规则估算 | 标记为"价格区间估算" |
 | 移动止损计算缺少历史最高价 | 用当日开盘价或昨日收盘价代替 | 降级为固定止损-7% |
@@ -44,6 +50,7 @@ D4 CHECKPOINT:
 - CP4-买入止损校验：操盘建议买入的止损位是否合理
 - CP5-冲突标记：风控与操盘意见不一致时标记冲突
 - CP6-冲突上报：标记为冲突的项必须进入仲裁流程
+- CP7-风险偏好适配：active档位的偏移量已正确应用到仓位/止损阈值中
 """
 
 import os
@@ -57,11 +64,50 @@ from scripts.utils.tushare_client import pro
 
 
 def load_json(path: str) -> dict:
-    """安全加载 JSON 文件"""
+    """安全加载 JSON 文件，失败时返回空dict"""
     if not os.path.exists(path):
         return {}
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, Exception) as e:
+        print(f"  [WARN] JSON解析失败 ({os.path.basename(path)}): {e}")
+        return {}
+
+
+# ============================================================
+# 【TradingAgents借鉴】三级风控委员会 — 风险偏好参数
+# ============================================================
+
+
+def get_risk_profile_params(profile: str = "neutral") -> dict:
+    """获取指定风险偏好的参数偏移量
+
+    三级风控委员会设计（源自 TradingAgents）：
+    - Aggressive (激进)  : 宽松风控，适合牛市确认或激进策略
+    - Neutral (中性)     : 标准风控，原始参数
+    - Conservative (保守): 严格风控，适合熊市/震荡防守
+
+    返回:
+        dict: {stop_loss_offset, trailing_stop_offset, position_offset, single_offset, profile_name}
+    """
+    rules = load_json(
+        os.path.join(os.path.dirname(__file__), "..", "..", "data", "仓位管理规则.json")
+    )
+    tiers = rules.get("风险偏好档位", {})
+
+    profile_key = profile if profile in tiers else "neutral"
+    params = tiers.get(profile_key, {})
+
+    return {
+        "profile": profile_key,
+        "profile_name": params.get("名称", "中性型"),
+        "stop_loss_offset": params.get("止损偏移", 0),
+        "trailing_stop_offset": params.get("移动止损偏移", 0),
+        "position_offset": params.get("仓位偏移", 0),
+        "single_offset": params.get("单票偏移", 0),
+        "description": params.get("描述", "标准风控"),
+    }
 
 
 def load_portfolio(path: str = None) -> dict:
@@ -133,12 +179,34 @@ def fetch_stock_price(ts_code: str) -> dict:
             }
     except (Exception) as e:
         print(f"[WARN] 获取{ts_code}行情失败: {e}")
-        pass
-    return None
+        return None
 
 
-def determine_market_environment(env_score: int, index_data: dict = None) -> dict:
-    """根据环境评分判断市场状态"""
+def determine_market_environment(env_score: int, index_data: dict = None,
+                                 profile_params: dict = None) -> dict:
+    """根据环境评分判断市场状态，支持三级风控（风险偏好偏移量）"""
+    if profile_params is None:
+        profile_params = get_risk_profile_params("neutral")
+
+    pos_offset = profile_params.get("position_offset", 0)
+    single_offset = profile_params.get("single_offset", 0)
+
+    base = _base_market_environment(env_score, index_data)
+
+    # 应用风险偏好偏移量
+    if base["level"] != "extreme":
+        base["max_position"] = max(0, base["max_position"] + pos_offset)
+        base["max_single"] = max(0, base["max_single"] + single_offset)
+
+    # 标注风控档位
+    base["risk_profile"] = profile_params.get("profile", "neutral")
+    base["risk_profile_name"] = profile_params.get("profile_name", "中性型")
+
+    return base
+
+
+def _base_market_environment(env_score: int, index_data: dict = None) -> dict:
+    """原始市场环境判断（不含风险偏好偏移，供 determine_market_environment 调用）"""
     if env_score is None and index_data is None:
         return {"level": "unknown", "name": "未知", "max_position": 80, "max_single": 20}
 
@@ -170,8 +238,19 @@ def determine_market_environment(env_score: int, index_data: dict = None) -> dic
     return {"level": "range", "name": "震荡市", "max_position": 80, "max_single": 20}
 
 
-def check_stop_loss(holding: dict, current_price: float, pct_chg: float, ts_code: str = None) -> list:
-    """对单个持仓检查是否触发止损"""
+def check_stop_loss(holding: dict, current_price: float, pct_chg: float,
+                    ts_code: str = None, profile_params: dict = None) -> list:
+    """对单个持仓检查是否触发止损
+
+    支持三级风控（TradingAgents借鉴）：
+    - 激进档: 固定止损-10%, 移动止盈回撤-8%
+    - 中性档: 固定止损-7%, 移动止盈回撤-5% (默认)
+    - 保守档: 固定止损-5%, 移动止盈回撤-3%
+    """
+    if profile_params is None:
+        profile_params = get_risk_profile_params("neutral")
+    stop_offset = profile_params.get("stop_loss_offset", 0)
+    trail_offset = profile_params.get("trailing_stop_offset", 0)
     alerts = []
     cost = holding.get("成本价") or 0
     name = holding.get("名称", "未知")
@@ -199,19 +278,21 @@ def check_stop_loss(holding: dict, current_price: float, pct_chg: float, ts_code
                 highest_price = max(high_prices)
     except (Exception) as e:
         print(f"[WARN] 获取{ts_code}历史最高价失败: {e}")
-        pass
+        highest_price = 0
 
     # 从高点回撤比例
     drawdown_pct = (current_price - highest_price) / highest_price * 100 if highest_price > 0 else 0
 
-    # 1. 固定比例止损（-7%）
+    # 1. 固定比例止损（根据风险偏好档位调整）
     rules = load_stop_loss_rules()
     for rule in rules:
         rule_type = rule.get("类型", "")
         params = rule.get("参数", {})
 
         if rule_type == "固定比例止损":
-            threshold = params.get("比例", -7)
+            # 基础阈值 + 风险偏好偏移量
+            base_threshold = params.get("比例", -7)
+            threshold = base_threshold + stop_offset  # stop_offset: 激进=-3(→-10), 中性=0(→-7), 保守=+2(→-5)
             if pnl_pct <= threshold:
                 alerts.append({
                     "level": "CRITICAL",
@@ -224,7 +305,8 @@ def check_stop_loss(holding: dict, current_price: float, pct_chg: float, ts_code
                 })
 
         elif rule_type == "移动止损":
-            retreat = params.get("回撤比例", -5)
+            base_retreat = params.get("回撤比例", -5)
+            retreat = base_retreat + trail_offset  # trail_offset: 激进=-3(→-8), 中性=0(→-5), 保守=+2(→-3)
             # 如果盈利状态下从最高点回撤超过阈值
             if pnl_pct > 0 and drawdown_pct <= retreat:
                 alerts.append({
@@ -653,16 +735,30 @@ def detect_trade_conflicts(
 # ============================================================
 
 
-def generate_risk_report(portfolio_path: str = None, env_score: int = None, trade_plan_path: str = None) -> dict:
-    """主函数：生成完整风控报告"""
-    print("[风控官] 开始风险评估...")
+def generate_risk_report(portfolio_path: str = None, env_score: int = None,
+                          trade_plan_path: str = None, risk_profile: str = "neutral") -> dict:
+    """主函数：生成完整风控报告
+
+    支持三级风控委员会（TradingAgents借鉴）：
+    - risk_profile="aggressive": 激进型，宽松风控
+    - risk_profile="neutral": 中性型，标准风控（默认）
+    - risk_profile="conservative": 保守型，严格风控
+
+    投资领导（Agent7）可依次运行三个档位，综合3份报告做最终决策。
+    """
+    print(f"[风控官] 开始风险评估 (风控档位: {risk_profile})...")
+
+    # 加载风险偏好参数
+    profile_params = get_risk_profile_params(risk_profile)
+    profile_name = profile_params.get("profile_name", "中性型")
+    print(f"  [风控档位] {profile_name} — {profile_params.get('description', '')}")
     ok = "[OK]"
     warn = "[WARN]"
     fail = "[FAIL]"
 
     report = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "environment": {"score": env_score, "assessment": "未知", "max_position": 80, "max_single": 20},
+        "environment": {"score": env_score, "assessment": "未知", "max_position": 80, "max_single": 20, "risk_profile": risk_profile, "risk_profile_name": profile_name},
         "portfolio_summary": {"total_asset": 0, "total_position": 0, "holding_count": 0},
         "alerts": [],
         "risk_level": "LOW",
@@ -676,22 +772,22 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None, trad
     report["portfolio_summary"]["total_asset"] = _get_total_asset(portfolio)
     report["portfolio_summary"]["holding_count"] = len([h for h in holdings if h.get("代码") != "000000"])
 
-    market_rules = load_position_rules()
-
     # 2. 如果没有传入环境评分，尝试从分析报告中读取
     if env_score is None:
         env_score = load_env_score_from_analysis()
         print(f"  {ok} 从分析报告读取环境评分: {env_score}")
 
-    # 3. 确定市场环境
-    market_env = determine_market_environment(env_score)
+    # 3. 确定市场环境（含风险偏好偏移量）
+    market_env = determine_market_environment(env_score, profile_params=profile_params)
     report["environment"] = {
         "score": env_score,
         "assessment": market_env["name"],
         "max_position": market_env["max_position"],
         "max_single": market_env["max_single"],
+        "risk_profile": risk_profile,
+        "risk_profile_name": profile_name,
     }
-    print(f"  {ok} 市场环境: {market_env['name']} (上限: {market_env['max_position']}%)")
+    print(f"  {ok} 市场环境: {market_env['name']} (上限: {market_env['max_position']}%, 风控档位: {profile_name})")
 
     # 4. 大盘环境检查（含指数均线联动止损）
     try:
@@ -721,7 +817,7 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None, trad
                 holding["当前价"] = current_price
 
                 # 止损检查（传入ts_code用于获取历史最高价）
-                stop_loss_alerts = check_stop_loss(holding, current_price, pct_chg, ts_code=code)
+                stop_loss_alerts = check_stop_loss(holding, current_price, pct_chg, ts_code=code, profile_params=profile_params)
                 report["alerts"].extend(stop_loss_alerts)
                 for a in stop_loss_alerts:
                     print(f"  [{a['level']}] {a['type']} {a['asset']}: {a['message']}")
@@ -824,9 +920,11 @@ if __name__ == "__main__":
     parser.add_argument("--portfolio", default=None, help="持仓JSON路径")
     parser.add_argument("--env-score", type=int, default=None, help="大盘环境评分(0-100)")
     parser.add_argument("--trade-plan", dest="trade_plan", default=None, help="交易计划原始数据JSON路径")
+    parser.add_argument("--risk-profile", default="neutral", choices=["aggressive", "neutral", "conservative"],
+                        help="风控档位: aggressive(激进)/neutral(中性)/conservative(保守)")
     args = parser.parse_args()
 
-    report = generate_risk_report(args.portfolio, args.env_score, args.trade_plan)
+    report = generate_risk_report(args.portfolio, args.env_score, args.trade_plan, args.risk_profile)
 
     print("\n=== RESULT_JSON ===")
     print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
@@ -836,7 +934,7 @@ if __name__ == "__main__":
     output_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
     os.makedirs(output_dir, exist_ok=True)
     today = datetime.now().strftime("%Y%m%d")
-    output_path = os.path.join(output_dir, f"风控报告_{today}.json")
+    output_path = os.path.join(output_dir, f"风控报告_{today}_{args.risk_profile}.json")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2, default=str)
     print(f"\n风控报告已保存: {output_path}")

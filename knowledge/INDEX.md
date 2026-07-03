@@ -15,7 +15,9 @@
 | [交易执行规则.md](策略/交易执行规则.md) | 买卖规范、仓位分配、止盈止损规则 | Agent6 + Agent4 | `data/仓位管理规则.json`, `skills/agent3-风控官/SKILL.md` | 2026-07-03 |
 | [LLM-Wiki-工作法.md](策略/LLM-Wiki-工作法.md) | Karpathy LLM Wiki 范式 — 编译而非检索的知识管理方法论 | 全团队 | — | 2026-07-03 |
 | [MA96-RSI策略分析.md](策略/MA96-RSI策略分析.md) | MA96+RSI策略回测分析：96源于5分钟K线，日线建议改用MA120 | Agent2+Agent6 | — | 2026-07-03 |
-| [含退市股全策略回测报告.md](策略/含退市股全策略回测报告.md) | 全策略(RSI/MACD/KDJ/MABOLL/止盈止损)含326只退市股的幸存者偏差修正回测 | 全员 | — | 2026-07-04 |
+| [含退市股全策略回测报告.md](策略/含退市股全策略回测报告.md) | 全策略(RSI/MACD/KDJ/MABOLL/止盈止损)含327只退市股的幸存者偏差修正回测 | 全员 | — | 2026-07-04 |
+| [TradingAgents借鉴分析.md](策略/TradingAgents借鉴分析.md) | TradingAgents(TauricResearch)多智能体交易框架架构分析，7项可借鉴改进点分级 | 全员 | — | 2026-07-04 |
+| [ZhuLinsen三项目借鉴分析.md](策略/ZhuLinsen三项目借鉴分析.md) | daily_stock_analysis/AlphaSift/AlphaEvo三项深度分析，L1-L2-L3管线/8因子/评分曲线/多源fallback/GitHub Actions借鉴 | 全员 | daily_stock_analysis, AlphaSift, AlphaEvo | 2026-07-04 |
 
 ## 📁 复盘记录目录
 

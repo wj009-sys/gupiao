@@ -497,6 +497,19 @@ python -X utf8 scripts/agent7-决策/leader.py
 | 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文5.0** — SKILL标准化(22项)+Python覆盖补全(6脚本)+健康度修复(14项)+知识库升级 | +154D3 +81D4 +82D9, 150 try/except | 5 commits (7216601, f2b68ab, 73d0b8f, e470772, 6bbf73f) |
 | 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文6.0** — 全项目一致性审计+30项修复(5CRITICAL+12HIGH+13MEDIUM)+Telegram→PushPlus迁移+裸except消除 | 7 SKILL推送标准化 + 6处裸except修复 + 14处硬编码/路径修复 | e3c2ec9 |
 | 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文7.0** — 全项目全面审计修复(5CRITICAL+7HIGH+13MEDIUM+11LOW) | CLAUDE.md计数刷新+risk_check总资产Bug+stock_picker死代码+静默pass消除+硬编码env变量化+SKILL标准化+知识库权重修正+基础设施加固 | 进行中 |
+| 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文9.0** — 借鉴ZhuLinsen三项目全面架构升级(8因子体系+L1→L2→L3+LLM排序+问股系统) | L2 LLM排序+l2_rerank+agent_ask问股9策略+SKILL+env | 进行中 |
+
+优化内容（第9轮-达尔文9.0）：借鉴ZhuLinsen三项目全面架构升级
+- **L1→L2→L3选股管线**：stock_picker.py重构为三级管线(L1评分→L2重排序→L3后置分析器)
+- **L2 LLM相对排序**：新建 scripts/utils/l2_rerank.py — LiteLLM驱动，支持OpenAI/Claude/DeepSeek，无LLM自动降级规则排序
+- **L3 Scorecard后置分析器**：新建 scripts/utils/scorecard.py — 突破确认/量价配合/均线排列/板块动量/基本面5项规则加减分
+- **Agent策略问股**：新建 scripts/agent_ask/ask.py + skills/agent-问股/SKILL.md — 9大策略模板(均线/缠论/波浪/MACD/量价/RSI/布林/KDJ/综合)，自然语言问股
+- **因子体系升级**：5因子→8因子(新增流动性/稳定性/反转)，非线性评分曲线可配置化(scoring_profile)
+- **风险叠加层**：新建 scripts/utils/risk_overlay.py — 独立6项风险检查(涨跌/量比/PE/MACD/PB/连跌)
+- **多数据源fallback**：新建 scripts/utils/data_provider.py — Tushare+AkShare自动fallback Provider层
+- **零成本部署**：新建 .github/workflows/00-daily-analysis.yml — GitHub Actions定时运行全Agent流水线
+- **知识库升级**：knowledge/策略/ZhuLinsen三项目借鉴分析.md + 选股策略.md 8因子体系同步
+- **配置升级+修复**：data/选股规则.json 新增8因子权重表 + scoring_profile + 热点板块关键词外部化
 
 优化内容（第7轮-Darwin 7.0）：全项目全面审计修复37项
 - **CRITICAL修复**：CLAUDE.md D3/D4/D9计数全部刷新（6个Agent过时）、risk_check.py总资产字段名错误修复、stock_picker.py 策略规则.json死代码清除、build_portfolio硬编码路径env变量化、wechat_send硬编码bot ID配置化
