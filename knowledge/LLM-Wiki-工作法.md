@@ -1,7 +1,7 @@
 # 🏗️ Karpathy LLM Wiki 工作法
 
 > 来源：[Andrej Karpathy Gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) (2026.04)
-> 安装日期：2026-07-03
+> 安装日期：2026-07-03 | 深度研究：2026-07-04
 > 核心理念：**"Obsidian 是 IDE，LLM 是程序员，Wiki 是代码库"**
 
 ---
@@ -74,7 +74,32 @@ LLM 写入和维护所有 Markdown 页面。人类不直接编辑（通过 LLM �
 
 ---
 
-## 三、三大核心操作
+## 三、Vannevar Bush Memex（1945）— 历史渊源
+
+> Karpathy 原文："The idea is related in spirit to Vannevar Bush's Memex (1945) — a personal, curated knowledge store with associative trails between documents. Bush's vision was closer to this than to what the web became: private, actively curated, with the connections between documents as valuable as the documents themselves. **The part he couldn't solve was who does the maintenance. The LLM handles that.**"
+
+LLM Wiki 的本质是 Bush 75年前愿景的现代实现。Memex 缺少的"维护者"角色，终于被 LLM 填补。
+
+---
+
+## 四、为什么这有效
+
+### 维护瓶颈 vs LLM 优势
+
+> "The tedious part of maintaining a knowledge base is not the reading or the thinking — it's the bookkeeping. Updating cross-references, keeping summaries current, noting when new data contradicts old claims, maintaining consistency across dozens of pages. Humans abandon wikis because the maintenance burden grows faster than the value. **LLMs don't get bored, don't forget to update a cross-reference, and can touch 15 files in one pass. The wiki stays maintained because the cost of maintenance is near zero.**"
+
+**人类的工作**：策展原始资料、指导分析方向、提出好问题、思考深层含义。
+**LLM 的工作**：其他一切（摘要、交叉引用、归档、簿记）。
+
+### 核心理念：好的回答也可以成为知识
+
+> "The important insight: **good answers can be filed back into the wiki as new pages.** A comparison you asked for, an analysis, a connection you discovered — these are valuable and shouldn't disappear into chat history. This way your explorations compound in the knowledge base just like ingested sources do."
+
+这意味着：每一次有价值的问答都不是一次性的。如果分析出了新洞见，将其保存为新的 wiki 页面，知识库会像摄入源文件一样不断复利增长。
+
+---
+
+## 五、三大核心操作
 
 ### 🔄 Ingest（摄入）
 
@@ -125,7 +150,42 @@ LLM 写入和维护所有 Markdown 页面。人类不直接编辑（通过 LLM �
 
 ---
 
-## 四、页面规范
+## 六、日志与索引最佳实践
+
+### index.md（内容导向）
+
+主目录是所有 wiki 页面的分类索引。每条记录包含：链接 + 一句话摘要 + 可选元数据（日期、来源数）。组织方式按类别分组（概念、实体、来源等）。
+
+**规模上限**：~100 个来源、~数百个页面时，纯 index 文件足够，**不需要基于 embedding 的 RAG 基础设施**。
+
+### log.md（时间导向）
+
+只追加的操作日志，记录每次 ingest、query、lint。
+
+**格式技巧**（来自 Karpathy 原文）：
+
+> "if each entry starts with a consistent prefix (e.g. `## [2026-04-02] ingest | Article Title`), the log becomes parseable with simple unix tools — `grep "^## \[" log.md | tail -5` gives you the last 5 entries."
+
+我们项目中的对应：`CHANGES.md` 已使用类似格式 `| 日期 | 类型 | 文件 | 摘要 |` — 同样可用 grep/awk 解析。
+
+---
+
+## 七、可选工具生态
+
+| 工具 | 用途 | 我们的替代 |
+|:----|:-----|:----------|
+| **Obsidian Web Clipper** | 浏览器扩展，将网页转为 markdown 供摄入 | Agent1 情报采集 |
+| **Obsidian 图视图 (Graph View)** | 可视化页面之间的连接关系 | —（暂未使用，未来可嵌入 WebUI） |
+| **Marp** | 基于 Markdown 的幻灯片格式 | —（报告使用 Markdown + Word） |
+| **Dataview** | Obsidian 插件，基于 frontmatter 的查询引擎 | —（暂未使用） |
+| **qmd** | 本地 Markdown 搜索引擎（BM25 + 向量混合 + LLM 重排序），有 CLI 和 MCP | knowledge_lint.py + INDEX.md 检索 |
+| **Git** | 版本历史、分支、协作 | ✅ 已在用 |
+
+> 注：qmd 是未来可考虑的增强——当知识库规模显著增长（>500页面）时，支持混合搜索 + LLM 重排序的搜索引擎将超越纯 index 文件的检索能力。
+
+---
+
+## 八、页面规范
 
 ### YAML Frontmatter（每个页面必须有）
 
@@ -158,7 +218,7 @@ tags: []
 
 ---
 
-## 五、我们在项目中的落地对照
+## 九、我们在项目中的落地对照
 
 | LLM Wiki 概念 | 我们项目中对应 | 状态 | 改进方向 |
 |:--------------|:--------------|:----:|:--------|
@@ -186,7 +246,7 @@ Karpathy 的 gist 面向**通用知识管理**，而我们面向**A股投研自�
 
 ---
 
-## 六、对我们未来行为的指导
+## 十、对我们未来行为的指导
 
 ### 每当处理新信息时（Ingest 原则）
 
