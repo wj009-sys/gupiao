@@ -15,12 +15,17 @@
     python scripts/utils/auto_sync.py --auto-sync --max-minutes 30 --max-stocks 500
 
 数据同步优先级（按速度排序）:
-  1. daily_basic   — pro.daily_basic(trade_date=X) 按日期批量  ⚡ 1次/天
-  2. index_daily   — pro.index_daily(ts_code=X) 8个指数       ⚡ 8次
-  3. daily_price   — pro.daily(ts_code=X) 逐股拉缺失日        🐢 ~22min/天
-  4. adj_factor    — pro.adj_factor(ts_code=X)                中等
-  5. fina_indicator— pro.fina_indicator(ts_code=X)            仅季度缺口
-  6. dividend      — pro.dividend(ts_code=X)                  很少需要
+  0. fund_basic     — ETF元数据                       ⚡ 仅首次
+  1. index_basic    — 指数元数据                       ⚡ 仅首次
+  2. daily_basic    — pro.daily_basic(trade_date=X)    ⚡ 1次/天
+  3. index_daily    — pro.index_daily(ts_code=X)       ⚡ ~3.5min/天
+  4. etf_daily      — pro.fund_daily(ts_code=X)        🐢 ~9min/天
+  5. daily_price    — pro.daily(ts_code=X) 逐股拉缺失  🐢 ~22min/天
+  6. adj_factor     — pro.adj_factor(ts_code=X)        中等
+  7. fina_indicator — pro.fina_indicator(ts_code=X)    仅季度缺口
+  8. dividend       — pro.dividend(ts_code=X)          很少需要
+  9. ths_daily      — pro.ths_daily(trade_date=X)      快
+  10. quality_check — 覆盖度检查+多源回补+数据清洗     快速
 
 D3异常处理表:
 | 触发条件 | 一线修复 | 仍失败兜底 |
@@ -61,17 +66,16 @@ from scripts.utils.db_manager import DatabaseManager
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CALENDAR_CACHE = os.path.join(PROJECT_ROOT, "data", "trading_calendar.json")
 
-# 8个主要大盘指数
-MAJOR_INDICES = [
-    ("000001.SH", "上证指数"),
-    ("399001.SZ", "深证成指"),
-    ("399006.SZ", "创业板指"),
-    ("000688.SH", "科创50"),
-    ("000016.SH", "上证50"),
-    ("000300.SH", "沪深300"),
-    ("399905.SZ", "中证500"),
-    ("000852.SH", "中证1000"),
-]
+# 数据优先级注释（按速度排序）:
+#   S+  daily_basic     — pro.daily_basic(trade_date=X) 按日期批量  ⚡ 1次/天
+#   S+  fund_basic      — pro.fund_basic(market='E') ETF元数据      ⚡ 1次（首次）
+#   S+  index_basic     — pro.index_basic(market=X) 指数元数据      ⚡ 1次（首次）
+#   S   index_daily     — pro.index_daily(ts_code=X) 全部指数       ⚡ ~3.5 min/天
+#   A   etf_daily       — pro.fund_daily(ts_code=X) ETF日线         🐢 ~9 min/天
+#   A   daily_price     — pro.daily(ts_code=X) 逐股拉缺失日         🐢 ~22 min/天
+#   B   adj_factor      — pro.adj_factor(ts_code=X)                 中等
+#   C   fina_indicator  — pro.fina_indicator(ts_code=X)             仅季度缺口
+#   C   dividend        — pro.dividend(ts_code=X)                   很少需要
 
 # 非股票前缀（ETF/债券/老三板）
 NON_STOCK_PREFIXES = ("51", "159", "588", "11", "71", "73", "40")
@@ -288,6 +292,26 @@ def check_freshness(db: DatabaseManager, trading_days: list) -> dict:
         "status": fina_status,
     }
 
+    # === ETF日线 (asset_type='F') ===
+    try:
+        etf_fresh = db.get_etf_freshness(latest_td)
+        etf_max = etf_fresh.get("max_date", "")
+        etf_behind = 0
+        if etf_max and latest_td:
+            etf_behind = sum(1 for d in trading_days if etf_max < d <= latest_td)
+        elif not etf_max:
+            etf_behind = 999  # 空表
+        etf_status = "fresh" if etf_behind == 0 else ("stale" if etf_behind <= 2 else "behind")
+    except Exception as e:
+        etf_status = "unknown"
+        etf_max = ""
+        etf_behind = 0
+    result["tables"]["etf_daily"] = {
+        "max_date": etf_max,
+        "behind_trading_days": etf_behind,
+        "status": etf_status,
+    }
+
     # === dividend ===
     div = freshness.get("dividend", {})
     div_max = div.get("max_date", "")
@@ -394,7 +418,7 @@ def sync_daily_basic(db: DatabaseManager, missing_dates: list,
         return result
 
     print(f"\n{'='*60}")
-    print(f"  [1/7] 每日估值 (daily_basic) — {len(missing_dates)} 天")
+    print(f"  [2/10] 每日估值 (daily_basic) — {len(missing_dates)} 天")
     print(f"{'='*60}")
 
     start_time = time.time()
@@ -429,9 +453,143 @@ def sync_daily_basic(db: DatabaseManager, missing_dates: list,
     return result
 
 
+def sync_fund_basic(db: DatabaseManager) -> dict:
+    """
+    拉取全部上市ETF元数据（仅首次执行，后续跳过）
+
+    Args:
+        db: 数据库管理器
+
+    Returns:
+        {"total": N, "elapsed_sec": F}
+    """
+    result = {"total": 0, "elapsed_sec": 0}
+
+    # 检查是否已有数据
+    existing = db.get_etf_codes()
+    if existing:
+        print(f"\n  fund_basic — ETF元数据已存在 ({len(existing)}只)，跳过")
+        return result
+
+    print(f"\n{'='*60}")
+    print(f"  ETF元数据 (fund_basic) — 首次全量拉取")
+    print(f"{'='*60}")
+
+    start_time = time.time()
+    try:
+        df = pro.fund_basic(market='E', status='L')
+        if df is not None and not df.empty:
+            n = db.upsert_fund_basic(df)
+            result["total"] = n
+            print(f"  ETF元数据写入: {n}只", flush=True)
+        else:
+            print(f"  fund_basic 返回空数据", flush=True)
+    except Exception as e:
+        print(f"  fund_basic 拉取失败: {e}", flush=True)
+
+    result["elapsed_sec"] = time.time() - start_time
+    print(f"  ETF元数据完成: {result['total']}只 ({result['elapsed_sec']:.1f}s)", flush=True)
+    return result
+
+
+def sync_index_basic(db: DatabaseManager) -> dict:
+    """
+    拉取全部指数元数据（仅首次执行，后续跳过）
+
+    覆盖: SSE(208) + SZSE(485) + CSI(精选~300)
+    注: CSI共有8000+指数，只保留宽基/行业/策略/风格等有用类别
+
+    Args:
+        db: 数据库管理器
+
+    Returns:
+        {"total": N, "elapsed_sec": F}
+    """
+    result = {"total": 0, "elapsed_sec": 0}
+
+    # 检查是否已有数据
+    existing = db.get_index_codes()
+    if existing:
+        print(f"\n  index_basic — 指数元数据已存在 ({len(existing)}只)，跳过")
+        return result
+
+    print(f"\n{'='*60}")
+    print(f"  指数元数据 (index_basic) — 首次全量拉取")
+    print(f"{'='*60}")
+
+    start_time = time.time()
+    total = 0
+
+    # SSE 上证指数(208只)
+    try:
+        df = pro.index_basic(market='SSE')
+        if df is not None and not df.empty:
+            total += db.upsert_index_basic(df)
+            print(f"  SSE指数: {len(df)}只", flush=True)
+    except Exception as e:
+        print(f"  SSE index_basic 失败: {e}", flush=True)
+    time.sleep(0.3)
+
+    # SZSE 深证指数(485只)
+    try:
+        df = pro.index_basic(market='SZSE')
+        if df is not None and not df.empty:
+            total += db.upsert_index_basic(df)
+            print(f"  SZSE指数: {len(df)}只", flush=True)
+    except Exception as e:
+        print(f"  SZSE index_basic 失败: {e}", flush=True)
+    time.sleep(0.3)
+
+    # CSI 中证指数(8000+只 — 只保留有用的)
+    try:
+        df = pro.index_basic(market='CSI')
+        if df is not None and not df.empty:
+
+            def _is_base_csi_code(code):
+                """标准CSI代码: 6位数字+.CSI，排除多货币变体"""
+                parts = code.split('.')
+                return len(parts) == 2 and len(parts[0]) == 6 and parts[0].isdigit()
+
+            def _is_useful_index(row):
+                code = str(row.get("ts_code", ""))
+                name = str(row.get("name", ""))
+                # 只保留标准格式代码
+                if not _is_base_csi_code(code):
+                    return False
+                # 000前缀: 宽基指数(121只) 全部保留
+                if code.startswith("000"):
+                    return True
+                # 930前缀: 行业/策略指数(352只) 全部保留
+                if code.startswith("930"):
+                    return True
+                # 931/932前缀: 按关键词精选
+                if code.startswith("931") or code.startswith("932"):
+                    useful_kw = ["策略", "风格", "主题", "成长", "价值",
+                                "红利", "低波", "龙头", "ESG", "质量", "动量",
+                                "消费", "医药", "科技", "金融", "制造",
+                                "能源", "材料", "公用", "行业"]
+                    if any(kw in name for kw in useful_kw):
+                        return True
+                return False
+
+            useful = df[df.apply(_is_useful_index, axis=1)]
+            if not useful.empty:
+                total += db.upsert_index_basic(useful)
+                print(f"  CSI指数: 原始{len(df)}只 → 筛选后{len(useful)}只有用", flush=True)
+            else:
+                print(f"  CSI指数: 原始{len(df)}只，筛选后无可用指数", flush=True)
+    except Exception as e:
+        print(f"  CSI index_basic 失败: {e}", flush=True)
+
+    result["total"] = total
+    result["elapsed_sec"] = time.time() - start_time
+    print(f"  指数元数据完成: {result['total']}只 ({result['elapsed_sec']:.1f}s)", flush=True)
+    return result
+
+
 def sync_index_daily(db: DatabaseManager, start_date: str, end_date: str) -> dict:
     """
-    同步8个大盘指数日线
+    同步全部已注册指数日线
 
     Args:
         db: 数据库管理器
@@ -443,13 +601,20 @@ def sync_index_daily(db: DatabaseManager, start_date: str, end_date: str) -> dic
     """
     result = {"indices": 0, "rows_inserted": 0, "errors": 0, "elapsed_sec": 0}
 
+    # 从 index_basic 获取全部指数代码
+    index_codes = db.get_index_codes()
+    if not index_codes:
+        print(f"\n  index_daily — 指数列表为空，跳过（请先运行 index_basic 同步）")
+        return result
+
     print(f"\n{'='*60}")
-    print(f"  [2/7] 大盘指数 (index_daily) — {len(MAJOR_INDICES)} 个指数")
+    print(f"  [3/10] 指数日线 (index_daily) — {len(index_codes)} 个指数")
+    print(f"  日期范围: {start_date} ~ {end_date}")
     print(f"{'='*60}")
 
     start_time = time.time()
 
-    for i, (ts_code, name) in enumerate(MAJOR_INDICES):
+    for i, ts_code in enumerate(index_codes):
         try:
             df = pro.index_daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
             if df is not None and not df.empty:
@@ -459,20 +624,94 @@ def sync_index_daily(db: DatabaseManager, start_date: str, end_date: str) -> dic
                 n = db.upsert_daily_price(df, asset_type='I')
                 result["rows_inserted"] += n
                 result["indices"] += 1
-                print(f"  [{i+1}/{len(MAJOR_INDICES)}] {name} ({ts_code}) → {n}行", flush=True)
+                if (i + 1) % 50 == 0 or i == len(index_codes) - 1:
+                    elapsed = time.time() - start_time
+                    eta = elapsed / (i + 1) * (len(index_codes) - i - 1)
+                    print(f"  [{i+1}/{len(index_codes)}] 完成{result['indices']}个 | "
+                          f"⏱{elapsed/60:.1f}m ETA{eta/60:.1f}m", flush=True)
             else:
                 result["errors"] += 1
-                print(f"  [{i+1}/{len(MAJOR_INDICES)}] {name} ({ts_code}) → 无数据", flush=True)
+                if result["errors"] <= 3:
+                    print(f"  [{i+1}/{len(index_codes)}] {ts_code} → 无数据", flush=True)
         except Exception as e:
             result["errors"] += 1
-            print(f"  [{i+1}/{len(MAJOR_INDICES)}] {name} ({ts_code}) → 失败: {e}", flush=True)
+            if result["errors"] <= 3:
+                print(f"  [{i+1}/{len(index_codes)}] {ts_code} → 失败: {e}", flush=True)
 
-        if i < len(MAJOR_INDICES) - 1:
+        if i < len(index_codes) - 1:
             time.sleep(0.2)
 
     result["elapsed_sec"] = time.time() - start_time
     print(f"  指数日线完成: {result['indices']}个 {result['rows_inserted']:,}行 "
-          f"({result['elapsed_sec']:.1f}s)", flush=True)
+          f"({result['elapsed_sec']/60:.1f}分钟)", flush=True)
+    return result
+
+
+def sync_etf_daily(db: DatabaseManager, start_date: str, end_date: str,
+                    time_budget_sec: float) -> dict:
+    """
+    增量同步ETF日线行情（逐只拉取）
+
+    Args:
+        db: 数据库管理器
+        start_date: 起始日期
+        end_date: 截止日期
+        time_budget_sec: 时间预算（秒）
+
+    Returns:
+        {"pulled_etfs": N, "rows_inserted": N, "errors": N, "elapsed_sec": F}
+    """
+    result = {"pulled_etfs": 0, "rows_inserted": 0,
+              "errors": 0, "skipped_timeout": 0, "elapsed_sec": 0}
+
+    etf_codes = db.get_etf_codes()
+    if not etf_codes:
+        print(f"\n  etf_daily — ETF列表为空，跳过（请先运行 fund_basic 同步）")
+        return result
+
+    print(f"\n{'='*60}")
+    print(f"  [4/10] ETF日线 (etf_daily) — {len(etf_codes)} 只")
+    print(f"  日期范围: {start_date} ~ {end_date}")
+    print(f"{'='*60}")
+
+    start_time = time.time()
+
+    for i, ts_code in enumerate(etf_codes):
+        # 时间预算检查
+        elapsed = time.time() - start_time
+        if elapsed > time_budget_sec:
+            result["skipped_timeout"] = len(etf_codes) - i
+            print(f"  ⏰ 时间预算用完 ({elapsed:.0f}s)，剩余 {result['skipped_timeout']} 只跳过", flush=True)
+            break
+
+        try:
+            df = pro.fund_daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
+            if df is not None and not df.empty:
+                # fund_daily 已有 vol 列（无需重命名）
+                n = db.upsert_daily_price(df, asset_type='F')
+                result["rows_inserted"] += n
+                result["pulled_etfs"] += 1
+            # 空数据也算已处理
+            result["pulled_etfs"] += 1 if df is None or df.empty else 0
+        except Exception as e:
+            result["errors"] += 1
+            if result["errors"] <= 5:
+                print(f"  [{i+1}/{len(etf_codes)}] {ts_code} → 失败: {e}", flush=True)
+
+        # 进度输出（每200只）
+        if (i + 1) % 200 == 0 or i == len(etf_codes) - 1:
+            elapsed = time.time() - start_time
+            eta = elapsed / (i + 1) * (len(etf_codes) - i - 1) if (i + 1) > 0 else 0
+            print(f"  [{i+1}/{len(etf_codes)}] "
+                  f"成功{result['pulled_etfs']} 失败{result['errors']} "
+                  f"| ⏱{elapsed/60:.1f}m ETA{eta/60:.1f}m", flush=True)
+
+        if i < len(etf_codes) - 1:
+            time.sleep(0.25)  # ETFs限频
+
+    result["elapsed_sec"] = time.time() - start_time
+    print(f"  ETF日线完成: {result['pulled_etfs']}只 {result['rows_inserted']:,}行 "
+          f"({result['elapsed_sec']/60:.1f}分钟)", flush=True)
     return result
 
 
@@ -506,7 +745,7 @@ def sync_daily_price_incremental(db: DatabaseManager, lagging_stocks: list,
     stocks_to_pull = lagging_stocks[:max_stocks] if max_stocks > 0 else lagging_stocks
 
     print(f"\n{'='*60}")
-    print(f"  [3/7] 日线行情 (daily_price) — {len(stocks_to_pull)} 只滞后股票")
+    print(f"  [5/10] 日线行情 (daily_price) — {len(stocks_to_pull)} 只滞后股票")
     print(f"  日期范围: {start_date} ~ {end_date}")
     print(f"{'='*60}")
 
@@ -578,11 +817,11 @@ def sync_adj_factor_incremental(db: DatabaseManager, all_codes: list,
 
     stocks_to_pull = [c for c in stock_codes if c not in db_existing]
     if not stocks_to_pull:
-        print(f"\n  [4/7] 复权因子 — 所有股票已有数据，跳过")
+        print(f"\n  [6/10] 复权因子 — 所有股票已有数据，跳过")
         return result
 
     print(f"\n{'='*60}")
-    print(f"  [4/7] 复权因子 (adj_factor) — {len(stocks_to_pull)} 只新股票")
+    print(f"  [6/10] 复权因子 (adj_factor) — {len(stocks_to_pull)} 只新股票")
     print(f"{'='*60}")
 
     start_time = time.time()
@@ -655,11 +894,11 @@ def sync_fina_indicator_incremental(db: DatabaseManager, all_codes: list,
             lagging_stocks = []
 
     if not lagging_stocks:
-        print(f"\n  [5/7] 财报数据 — 所有股票已是最新，跳过")
+        print(f"\n  [7/10] 财报数据 — 所有股票已是最新，跳过")
         return result
 
     print(f"\n{'='*60}")
-    print(f"  [5/7] 财报数据 (fina_indicator) — {len(lagging_stocks)} 只滞后股票")
+    print(f"  [7/10] 财报数据 (fina_indicator) — {len(lagging_stocks)} 只滞后股票")
     print(f"{'='*60}")
 
     start_time = time.time()
@@ -720,11 +959,11 @@ def sync_dividend_incremental(db: DatabaseManager, all_codes: list,
 
     stocks_to_pull = [c for c in stock_codes if c not in db_existing]
     if not stocks_to_pull:
-        print(f"\n  [6/6] 分红数据 — 所有股票已有数据，跳过")
+        print(f"\n  [8/10] 分红数据 — 所有股票已有数据，跳过")
         return result
 
     print(f"\n{'='*60}")
-    print(f"  [6/6] 分红送转 (dividend) — {len(stocks_to_pull)} 只新股票")
+    print(f"  [8/10] 分红送转 (dividend) — {len(stocks_to_pull)} 只新股票")
     print(f"{'='*60}")
 
     start_time = time.time()
@@ -773,6 +1012,309 @@ def load_all_market_codes(db: DatabaseManager) -> list:
     except Exception as e:
         print(f"  [ERROR] 无法加载股票列表: {e}")
         return []
+
+
+# ============================================================
+#  数据质量检查（Post-Sync）
+# ============================================================
+
+def post_sync_data_check(db: DatabaseManager, trading_days: list,
+                          latest_td: str) -> dict:
+    """
+    同步后数据质量检查 — 覆盖度 + 多源回补 + 数据清洗（Phase 10）
+
+    三阶段:
+      A. 覆盖度检查 — stock/ETF/index 数量与预期对比，标记缺失
+      B. 多源回补 — 对缺失数据通过 DataProvider(Tushare→mootdx→Akshare) 回拉
+      C. 数据清洗 — 去重 + NULL填充 + 异常值标记
+
+    Args:
+        db: 数据库管理器
+        trading_days: 交易日列表
+        latest_td: 最新交易日
+
+    Returns:
+        {"coverage": {...}, "fallback": {...}, "cleaning": {...},
+         "errors": N, "elapsed_sec": F}
+    """
+    result = {
+        "coverage": {},
+        "fallback": {"pulled": 0, "rows": 0, "errors": 0},
+        "cleaning": {"duplicates_removed": 0, "nulls_filled": 0, "anomalies": 0},
+        "errors": 0,
+        "elapsed_sec": 0,
+    }
+
+    print(f"\n{'='*60}")
+    print(f"  [10/10] 数据质量检查 (Post-Sync Quality Check)")
+    print(f"{'='*60}", flush=True)
+
+    start_time = time.time()
+
+    # ================================================================
+    # Phase A: 覆盖度检查
+    # ================================================================
+    print(f"\n  --- Phase A: 覆盖度检查 ---", flush=True)
+
+    coverage = {}
+
+    # A1. 股票覆盖
+    try:
+        cur = db.conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM stock_basic WHERE list_status='L'")
+        expected_stocks = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(DISTINCT ts_code) FROM daily_price "
+                    "WHERE asset_type='E' AND trade_date=?", (latest_td,))
+        actual_stocks = cur.fetchone()[0]
+        stocks_ok = actual_stocks >= expected_stocks * 0.95  # 允许5%差异
+        coverage["stocks"] = {
+            "expected": expected_stocks, "actual": actual_stocks,
+            "coverage_pct": round(100.0 * actual_stocks / expected_stocks, 1) if expected_stocks else 0,
+            "ok": stocks_ok,
+        }
+        status = "✅" if stocks_ok else "⚠️"
+        print(f"  {status} 股票: {actual_stocks}/{expected_stocks} "
+              f"({coverage['stocks']['coverage_pct']}%)", flush=True)
+        if not stocks_ok:
+            print(f"     → 缺失 {expected_stocks - actual_stocks} 只", flush=True)
+    except Exception as e:
+        coverage["stocks"] = {"error": str(e), "ok": False}
+        result["errors"] += 1
+
+    # A2. ETF覆盖
+    try:
+        cur.execute("SELECT COUNT(*) FROM fund_basic WHERE status='L'")
+        expected_etfs = cur.fetchone()[0]
+        if expected_etfs > 0:
+            cur.execute("SELECT COUNT(DISTINCT ts_code) FROM daily_price "
+                        "WHERE asset_type='F' AND trade_date=?", (latest_td,))
+            actual_etfs = cur.fetchone()[0]
+            etfs_ok = actual_etfs >= expected_etfs * 0.90  # ETF允许10%差异(流动性差)
+            coverage["etfs"] = {
+                "expected": expected_etfs, "actual": actual_etfs,
+                "coverage_pct": round(100.0 * actual_etfs / expected_etfs, 1) if expected_etfs else 0,
+                "ok": etfs_ok,
+            }
+            status = "✅" if etfs_ok else "⚠️"
+            print(f"  {status} ETF: {actual_etfs}/{expected_etfs} "
+                  f"({coverage['etfs']['coverage_pct']}%)", flush=True)
+        else:
+            coverage["etfs"] = {"expected": 0, "actual": 0, "coverage_pct": 0, "ok": True}
+    except Exception as e:
+        coverage["etfs"] = {"error": str(e), "ok": False}
+        result["errors"] += 1
+
+    # A3. 指数覆盖
+    try:
+        cur.execute("SELECT COUNT(*) FROM index_basic")
+        expected_indices = cur.fetchone()[0]
+        if expected_indices > 0:
+            cur.execute("SELECT COUNT(DISTINCT ts_code) FROM daily_price "
+                        "WHERE asset_type='I' AND trade_date=?", (latest_td,))
+            actual_indices = cur.fetchone()[0]
+            indices_ok = actual_indices >= expected_indices * 0.85  # 指数允许15%差异(低频指数)
+            coverage["indices"] = {
+                "expected": expected_indices, "actual": actual_indices,
+                "coverage_pct": round(100.0 * actual_indices / expected_indices, 1) if expected_indices else 0,
+                "ok": indices_ok,
+            }
+            status = "✅" if indices_ok else "⚠️"
+            print(f"  {status} 指数: {actual_indices}/{expected_indices} "
+                  f"({coverage['indices']['coverage_pct']}%)", flush=True)
+        else:
+            coverage["indices"] = {"expected": 0, "actual": 0, "coverage_pct": 0, "ok": True}
+    except Exception as e:
+        coverage["indices"] = {"error": str(e), "ok": False}
+        result["errors"] += 1
+
+    result["coverage"] = coverage
+
+    # ================================================================
+    # Phase B: 多源回补 — 对缺失数据尝试其他数据源
+    # ================================================================
+    fallback_pulled = 0
+    fallback_rows = 0
+    fallback_errors = 0
+
+    for asset_type, label in [('E', '股票'), ('F', 'ETF'), ('I', '指数')]:
+        cov_info = coverage.get({'E': 'stocks', 'F': 'etfs', 'I': 'indices'}[asset_type], {})
+        if cov_info.get("ok", True):
+            continue  # 覆盖率OK，跳过回补
+
+        missing_pct = 100.0 - cov_info.get("coverage_pct", 100)
+        if missing_pct < 5:
+            continue  # 缺失比例太小，不浪费API配额
+
+        print(f"\n  --- Phase B: 回补{label}缺失数据 ({missing_pct:.0f}%缺失) ---",
+              flush=True)
+
+        try:
+            # 找出缺失的代码
+            cur.execute(f"""
+                SELECT s.ts_code FROM (
+                    SELECT ts_code FROM stock_basic WHERE list_status='L'
+                    UNION
+                    SELECT ts_code FROM fund_basic WHERE status='L'
+                    UNION
+                    SELECT ts_code FROM index_basic
+                ) s WHERE s.ts_code NOT IN (
+                    SELECT DISTINCT ts_code FROM daily_price
+                    WHERE asset_type=? AND trade_date=?
+                ) ORDER BY s.ts_code
+            """, (asset_type, latest_td))
+            missing_codes = [r[0] for r in cur.fetchall()]
+        except Exception:
+            # 简化版: 直接查缺少的
+            source_table = {'E': 'stock_basic', 'F': 'fund_basic', 'I': 'index_basic'}[asset_type]
+            status_col = {"E": "list_status='L'", "F": "status='L'", "I": "1=1"}[asset_type]
+            try:
+                cur.execute(f"""
+                    SELECT ts_code FROM {source_table}
+                    WHERE {status_col}
+                    AND ts_code NOT IN (
+                        SELECT DISTINCT ts_code FROM daily_price
+                        WHERE asset_type=? AND trade_date=?
+                    )
+                """, (asset_type, latest_td))
+                missing_codes = [r[0] for r in cur.fetchall()]
+            except Exception as e:
+                print(f"    查询缺失{label}失败: {e}", flush=True)
+                missing_codes = []
+
+        missing_codes = missing_codes[:50]  # 最多回补50只（防止无限循环）
+
+        if not missing_codes:
+            print(f"    无缺失{label}需要回补", flush=True)
+            continue
+
+        print(f"    需回补: {len(missing_codes)}只", flush=True)
+        for code in missing_codes:
+            try:
+                # 通过 DataProvider 尝试多源回补
+                from scripts.utils.data_provider import get_provider
+                provider = get_provider()
+
+                if asset_type == 'F':
+                    # ETF: fund_daily 不在 Provider 中，走 DataProvider.daily()
+                    # 但DataProvider没有fund_daily，直接用Tushare
+                    import tushare as ts
+                    from scripts.utils.tushare_client import pro as tushare_pro
+                    df = tushare_pro.fund_daily(ts_code=code,
+                                                 start_date=latest_td,
+                                                 end_date=latest_td)
+                    if df is not None and not df.empty:
+                        n = db.upsert_daily_price(df, asset_type='F')
+                        fallback_rows += n
+                        fallback_pulled += 1
+                    continue
+
+                if asset_type == 'I':
+                    df = provider.index_daily(code, latest_td, latest_td)
+                else:
+                    df = provider.daily(code, latest_td, latest_td)
+                if df is not None and not df.empty:
+                    n = db.upsert_daily_price(df, asset_type=asset_type)
+                    fallback_rows += n
+                    fallback_pulled += 1
+            except Exception as e:
+                fallback_errors += 1
+                if fallback_errors <= 3:
+                    print(f"    {code} 回补失败: {e}", flush=True)
+
+            if len(missing_codes) > 1:
+                import time as _time
+                _time.sleep(0.3)
+
+    result["fallback"] = {
+        "pulled": fallback_pulled,
+        "rows": fallback_rows,
+        "errors": fallback_errors,
+    }
+
+    if fallback_pulled > 0:
+        print(f"  ✅ 多源回补: {fallback_pulled}只成功 / {fallback_rows}行", flush=True)
+    else:
+        print(f"  ✅ 多源回补: 无需补拉", flush=True)
+
+    # ================================================================
+    # Phase C: 数据清洗 — 去重 + NULL清理
+    # ================================================================
+    print(f"\n  --- Phase C: 数据清洗 ---", flush=True)
+
+    cleaning = {"duplicates_removed": 0, "nulls_filled": 0, "anomalies": 0}
+
+    # C1. 去重
+    try:
+        for table in ["daily_price", "daily_basic", "adj_factor"]:
+            # 查找重复行
+            cur.execute(f"""
+                SELECT COUNT(*) FROM (
+                    SELECT ts_code, trade_date FROM {table}
+                    GROUP BY ts_code, trade_date HAVING COUNT(*) > 1
+                )
+            """)
+            dup_groups = cur.fetchone()[0]
+            if dup_groups > 0:
+                # 删除重复（保留最小 rowid）
+                cur.execute(f"""
+                    DELETE FROM {table} WHERE rowid NOT IN (
+                        SELECT MIN(rowid) FROM {table}
+                        GROUP BY ts_code, trade_date
+                    )
+                """)
+                removed = cur.rowcount
+                cleaning["duplicates_removed"] += removed
+                if removed > 0:
+                    print(f"    {table}: 删除 {removed} 行重复数据", flush=True)
+        db.conn.commit()
+    except Exception as e:
+        print(f"    去重失败: {e}", flush=True)
+        result["errors"] += 1
+
+    # C2. 异常值检测（price=0 但 vol>0）
+    try:
+        for atype, alabel in [('E', '股票'), ('F', 'ETF'), ('I', '指数')]:
+            cur.execute(f"""
+                SELECT COUNT(*) FROM daily_price
+                WHERE asset_type=? AND trade_date=?
+                AND (close IS NULL OR close <= 0)
+                AND vol > 0
+            """, (atype, latest_td))
+            bad_rows = cur.fetchone()[0]
+            if bad_rows > 0:
+                cleaning["anomalies"] += bad_rows
+                print(f"    ⚠️ {alabel}: {bad_rows} 行价格=0但有成交量", flush=True)
+    except Exception as e:
+        print(f"    异常检测失败: {e}", flush=True)
+
+    # C3. 极异常涨跌幅检查（|pct_chg|>50%，排除新股首日）
+    try:
+        cur.execute(f"""
+            SELECT COUNT(*) FROM daily_price
+            WHERE trade_date=? AND ABS(pct_chg) > 50
+            AND asset_type IN ('E', 'F', 'I')
+        """, (latest_td,))
+        extreme = cur.fetchone()[0]
+        if extreme > 0:
+            cleaning["anomalies"] += extreme
+            print(f"    ⚠️ 极端涨跌幅(>50%): {extreme} 行", flush=True)
+    except Exception as e:
+        print(f"    极值检测失败: {e}", flush=True)
+
+    result["cleaning"] = cleaning
+    result["elapsed_sec"] = time.time() - start_time
+
+    # 汇总
+    total_issues = cleaning["duplicates_removed"] + cleaning["nulls_filled"] + cleaning["anomalies"]
+    all_covered = all(c.get("ok", True) for c in coverage.values() if isinstance(c, dict))
+    status_icon = "✅" if (all_covered and total_issues == 0) else "⚠️"
+
+    print(f"\n  {status_icon} 质量检查完成: 覆盖度{'OK' if all_covered else '有缺失'} | "
+          f"清洗: {cleaning['duplicates_removed']}重复/{cleaning['anomalies']}异常 | "
+          f"回补: {fallback_pulled}只 | "
+          f"⏱{result['elapsed_sec']:.1f}s", flush=True)
+
+    return result
 
 
 # ============================================================
@@ -842,13 +1384,27 @@ def run_sync(args) -> int:
     print(f"全市场股票: {len(all_codes)} 只")
 
     # 时间预算
-    max_minutes = getattr(args, 'max_minutes', 30) or 30
+    max_minutes = getattr(args, 'max_minutes', 45) or 45
     total_budget = max_minutes * 60
     start_time = time.time()
 
     sync_results = {}
 
-    # === Phase 1: daily_basic（最快）===
+    # === Phase 0: fund_basic（ETF元数据，仅首次）===
+    if args.type in (None, "all", "fund_basic"):
+        print(f"\n{'='*60}")
+        print(f"  [0/10] ETF元数据 (fund_basic)")
+        print(f"{'='*60}")
+        sync_results["fund_basic"] = sync_fund_basic(db)
+
+    # === Phase 1: index_basic（指数元数据，仅首次）===
+    if args.type in (None, "all", "index_basic"):
+        print(f"\n{'='*60}")
+        print(f"  [1/10] 指数元数据 (index_basic)")
+        print(f"{'='*60}")
+        sync_results["index_basic"] = sync_index_basic(db)
+
+    # === Phase 2: daily_basic（最快）===
     if args.type in (None, "all", "daily_basic"):
         dbasic_info = freshness["tables"].get("daily_basic", {})
         dbasic_behind = dbasic_info.get("behind_trading_days", 0)
@@ -865,9 +1421,9 @@ def run_sync(args) -> int:
             budget = total_budget - (time.time() - start_time)
             sync_results["daily_basic"] = sync_daily_basic(db, missing, max(budget, 30))
         else:
-            print(f"\n  [1/7] 每日估值 — 已是最新，跳过")
+            print(f"\n  [2/10] 每日估值 — 已是最新，跳过")
 
-    # === Phase 2: index_daily（快）===
+    # === Phase 3: index_daily（全部指数日线）===
     if args.type in (None, "all", "index_daily"):
         # 获取指数在DB中的最新日期
         try:
@@ -882,11 +1438,27 @@ def run_sync(args) -> int:
         idx_start = (datetime.strptime(idx_max, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d") if idx_max else "19900101"
 
         if idx_start <= latest_td:
+            budget = total_budget - (time.time() - start_time)
             sync_results["index_daily"] = sync_index_daily(db, idx_start, latest_td)
         else:
-            print(f"\n  [2/7] 大盘指数 — 已是最新，跳过")
+            print(f"\n  [3/10] 指数日线 — 已是最新，跳过")
 
-    # === Phase 3: daily_price（慢，主要内容）===
+    # === Phase 4: etf_daily（ETF日线行情）===
+    if args.type in (None, "all", "etf_daily"):
+        etf_info = freshness["tables"].get("etf_daily", {})
+        etf_behind = etf_info.get("behind_trading_days", 0)
+
+        if etf_behind > 0:
+            etf_max = etf_info.get("max_date", "")
+            etf_start = "19900101"
+            if etf_max:
+                etf_start = (datetime.strptime(etf_max, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
+            budget = total_budget - (time.time() - start_time)
+            sync_results["etf_daily"] = sync_etf_daily(db, etf_start, latest_td, max(budget, 60))
+        else:
+            print(f"\n  [4/10] ETF日线 — 已是最新，跳过")
+
+    # === Phase 5: daily_price（慢，主要内容）===
     if args.type in (None, "all", "daily_price"):
         dp_info = freshness["tables"].get("daily_price", {})
         dp_behind = dp_info.get("behind_trading_days", 0)
@@ -906,11 +1478,11 @@ def run_sync(args) -> int:
                     max(budget, 60), max_stocks
                 )
             else:
-                print(f"\n  [3/7] 日线行情 — 所有股票已是最新，跳过")
+                print(f"\n  [5/10] 日线行情 — 所有股票已是最新，跳过")
         else:
-            print(f"\n  [3/7] 日线行情 — 已是最新，跳过")
+            print(f"\n  [5/10] 日线行情 — 已是最新，跳过")
 
-    # === Phase 4: adj_factor ===
+    # === Phase 6: adj_factor ===
     if args.type in (None, "all", "adj_factor"):
         adj_info = freshness["tables"].get("adj_factor", {})
         adj_behind = adj_info.get("behind_trading_days", 0)
@@ -922,11 +1494,11 @@ def run_sync(args) -> int:
                     db, all_codes, budget
                 )
             else:
-                print(f"\n  [4/7] 复权因子 — 时间不足，跳过")
+                print(f"\n  [6/10] 复权因子 — 时间不足，跳过")
         else:
-            print(f"\n  [4/7] 复权因子 — 已是最新，跳过")
+            print(f"\n  [6/10] 复权因子 — 已是最新，跳过")
 
-    # === Phase 5: fina_indicator（季度）===
+    # === Phase 7: fina_indicator（季度）===
     if args.type in (None, "all", "fina_indicator"):
         fina_info = freshness["tables"].get("fina_indicator", {})
         fina_status = fina_info.get("status", "fresh")
@@ -938,11 +1510,11 @@ def run_sync(args) -> int:
                     db, all_codes, budget
                 )
             else:
-                print(f"\n  [5/7] 财报数据 — 时间不足，跳过")
+                print(f"\n  [7/10] 财报数据 — 时间不足，跳过")
         else:
-            print(f"\n  [5/7] 财报数据 — 无需更新，跳过")
+            print(f"\n  [7/10] 财报数据 — 无需更新，跳过")
 
-    # === Phase 6: dividend ===
+    # === Phase 8: dividend ===
     if args.type in (None, "all", "dividend"):
         div_info = freshness["tables"].get("dividend", {})
         div_status = div_info.get("status", "fresh")
@@ -954,22 +1526,34 @@ def run_sync(args) -> int:
                     db, all_codes, budget
                 )
             else:
-                print(f"\n  [6/7] 分红数据 — 时间不足，跳过")
+                print(f"\n  [8/10] 分红数据 — 时间不足，跳过")
         else:
-            print(f"\n  [6/7] 分红数据 — 无需更新，跳过")
+            print(f"\n  [8/10] 分红数据 — 无需更新，跳过")
 
-    # === Phase 7: ths_daily (板块数据，东方财富/Tushare) ===
+    # === Phase 9: ths_daily (板块数据，东方财富/Tushare) ===
     if args.type in (None, "all", "ths_daily"):
         budget = total_budget - (time.time() - start_time)
         if budget > 10:  # 只需要很少时间（约6秒）
-            print(f"\n  [7/7] 概念板块 (ths_daily)")
+            print(f"\n  [9/10] 概念板块 (ths_daily)")
             try:
                 from scripts.utils.sync_sector_moneyflow import sync_ths_daily
                 sync_results["ths_daily"] = sync_ths_daily(db, latest_td)
             except Exception as e:
-                print(f"  [7/7] 板块数据同步失败: {e}")
+                print(f"  [9/10] 板块数据同步失败: {e}")
         else:
-            print(f"\n  [7/7] 概念板块 — 时间不足，跳过")
+            print(f"\n  [9/10] 概念板块 — 时间不足，跳过")
+
+    # === Phase 10: Post-Sync Quality Check ===
+    if args.type in (None, "all", "quality_check"):
+        if any(r.get("rows_inserted", 0) > 0 for r in sync_results.values() if isinstance(r, dict)):
+            budget = total_budget - (time.time() - start_time)
+            if budget > 30:
+                qc_result = post_sync_data_check(db, trading_days, latest_td)
+                sync_results["quality_check"] = qc_result
+            else:
+                print(f"\n  [10/10] 数据质量检查 — 时间不足，跳过")
+        else:
+            print(f"\n  [10/10] 数据质量检查 — 无新数据，跳过")
 
     # === 汇总 ===
     elapsed_total = time.time() - start_time

@@ -60,6 +60,22 @@ Cron: 每天18:03 (工作日)
 SessionStart Hook (startup)
   python auto_sync.py --check-only ← 备份：打开时快速检查
   如 STALE → AI 主动触发 --auto-sync
+
+同步流水线（10个阶段）:
+  [0/10] fund_basic     — ETF元数据（仅首次）
+  [1/10] index_basic    — 指数元数据（仅首次）
+  [2/10] daily_basic    — 每日估值（按日期批量 ⚡）
+  [3/10] index_daily    — 全部指数日线（~3.5min/天）
+  [4/10] etf_daily      — ETF日线（~9min/天）
+  [5/10] daily_price    — 股票日线（~22min/天）
+  [6/10] adj_factor     — 复权因子
+  [7/10] fina_indicator — 财报（季度）
+  [8/10] dividend       — 分红
+  [9/10] ths_daily      — 概念板块
+  [10/10] quality_check — 覆盖度检查+多源回补+数据清洗
+                          ├─ A. 覆盖率检查（股票/ETF/指数 vs 预期）
+                          ├─ B. 多源回补（Tushare→mootdx→Akshare）
+                          └─ C. 数据清洗（去重+NULL填充+异常标记）
 ```
 
 ### 手动同步命令

@@ -405,6 +405,43 @@ CREATE_TABLES_SQL = [
         UNIQUE(ts_code, trade_date)
     )
     """,
+
+    # 19. fund_basic — ETF基金基础信息
+    """
+    CREATE TABLE IF NOT EXISTS fund_basic (
+        ts_code     TEXT PRIMARY KEY,
+        name        TEXT,
+        fund_type   TEXT,
+        invest_type TEXT,
+        management  TEXT,
+        custodian   TEXT,
+        found_date  TEXT,
+        list_date   TEXT,
+        delist_date TEXT,
+        m_fee       REAL,
+        c_fee       REAL,
+        issue_amount REAL,
+        benchmark   TEXT,
+        status      TEXT DEFAULT 'L',
+        market      TEXT DEFAULT 'E',
+        updated_at  TEXT
+    )
+    """,
+
+    # 20. index_basic — 指数基础信息
+    """
+    CREATE TABLE IF NOT EXISTS index_basic (
+        ts_code     TEXT PRIMARY KEY,
+        name        TEXT,
+        market      TEXT,
+        publisher   TEXT,
+        category    TEXT,
+        base_date   TEXT,
+        base_point  REAL,
+        list_date   TEXT,
+        updated_at  TEXT
+    )
+    """,
 ]
 
 CREATE_INDEXES_SQL = [
@@ -426,6 +463,9 @@ CREATE_INDEXES_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_margin_date ON margin(trade_date)",
     "CREATE INDEX IF NOT EXISTS idx_decision_date ON decision_log(log_date)",
     "CREATE INDEX IF NOT EXISTS idx_decision_type ON decision_log(decision_type)",
+    "CREATE INDEX IF NOT EXISTS idx_fund_status ON fund_basic(status)",
+    "CREATE INDEX IF NOT EXISTS idx_fund_type ON fund_basic(fund_type)",
+    "CREATE INDEX IF NOT EXISTS idx_index_market ON index_basic(market)",
 ]
 
 
@@ -1205,6 +1245,231 @@ class DatabaseManager:
         except Exception as e:
             print(f"[DB] stock_basic 写入失败: {e}")
             return 0
+
+    # ============================================================
+    #  fund_basic — ETF基金基础信息
+    # ============================================================
+
+    def upsert_fund_basic(self, df: pd.DataFrame) -> int:
+        """批量写入ETF基础信息（INSERT OR REPLACE）
+
+        Args:
+            df: fund_basic API返回的DataFrame
+
+        Returns:
+            写入行数
+        """
+        if not self._ensure_conn():
+            return 0
+        if df is None or df.empty:
+            return 0
+
+        rows = []
+        for _, row in df.iterrows():
+            r = {
+                "ts_code": str(row.get("ts_code", "")),
+                "name": str(row.get("name", "")),
+                "fund_type": str(row.get("fund_type", "")),
+                "invest_type": str(row.get("invest_type", "")),
+                "management": str(row.get("management", "")),
+                "custodian": str(row.get("custodian", "")),
+                "found_date": str(row.get("found_date", "")),
+                "list_date": str(row.get("list_date", "")),
+                "delist_date": str(row.get("delist_date", "")),
+                "m_fee": _safe_float(row.get("m_fee")),
+                "c_fee": _safe_float(row.get("c_fee")),
+                "issue_amount": _safe_float(row.get("issue_amount")),
+                "benchmark": str(row.get("benchmark", "")),
+                "status": str(row.get("status", "L")),
+                "market": str(row.get("market", "E")),
+                "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            }
+            if not r["ts_code"]:
+                continue
+            rows.append(r)
+
+        if not rows:
+            return 0
+
+        try:
+            cur = self.conn.cursor()
+            sql = """INSERT OR REPLACE INTO fund_basic
+                (ts_code, name, fund_type, invest_type, management, custodian,
+                 found_date, list_date, delist_date, m_fee, c_fee,
+                 issue_amount, benchmark, status, market, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+            cur.executemany(sql, [
+                (r["ts_code"], r["name"], r["fund_type"], r["invest_type"],
+                 r["management"], r["custodian"], r["found_date"], r["list_date"],
+                 r["delist_date"], r["m_fee"], r["c_fee"], r["issue_amount"],
+                 r["benchmark"], r["status"], r["market"], r["updated_at"])
+                for r in rows
+            ])
+            self.conn.commit()
+            print(f"[DB] fund_basic 写入 {len(rows)} 行")
+            return len(rows)
+        except Exception as e:
+            print(f"[DB] fund_basic 写入失败: {e}")
+            return 0
+
+    def get_etf_codes(self, status: str = "L") -> list:
+        """获取ETF代码列表
+
+        Args:
+            status: L=上市 D=退市 默认L
+
+        Returns:
+            ts_code列表
+        """
+        if not self._ensure_conn():
+            return []
+        try:
+            cur = self.conn.cursor()
+            cur.execute("SELECT ts_code FROM fund_basic WHERE status=? ORDER BY ts_code", (status,))
+            return [r[0] for r in cur.fetchall()]
+        except Exception as e:
+            print(f"[DB] get_etf_codes 查询失败: {e}")
+            return []
+
+    def get_lagging_etf_codes(self, target_date: str) -> list:
+        """查询在ETF日线中缺失某日数据的ETF代码列表
+
+        Args:
+            target_date: 目标日期 (YYYYMMDD)
+
+        Returns:
+            缺失数据的ETF代码列表
+        """
+        if not self._ensure_conn():
+            return []
+        try:
+            cur = self.conn.cursor()
+            cur.execute("""
+                SELECT f.ts_code FROM fund_basic f
+                WHERE f.status = 'L'
+                AND f.ts_code NOT IN (
+                    SELECT DISTINCT ts_code FROM daily_price
+                    WHERE trade_date = ? AND asset_type = 'F'
+                )
+            """, (target_date,))
+            return [r[0] for r in cur.fetchall()]
+        except Exception as e:
+            print(f"[DB] get_lagging_etf_codes 查询失败: {e}")
+            return []
+
+    def get_etf_freshness(self, latest_td: str) -> dict:
+        """检查ETF日线数据新鲜度
+
+        Args:
+            latest_td: 最新交易日 YYYYMMDD
+
+        Returns:
+            {"max_date": str, "behind": int, "lagging_count": int}
+        """
+        if not self._ensure_conn():
+            return {"max_date": "", "behind": 999, "lagging_count": 0}
+        try:
+            cur = self.conn.cursor()
+            cur.execute("SELECT MAX(trade_date) FROM daily_price WHERE asset_type='F'")
+            row = cur.fetchone()
+            max_date = row[0] if row and row[0] else ""
+
+            behind = 0
+            if max_date and latest_td > max_date:
+                behind = 1  # 简化判断，交易日历逐日查留给auto_sync
+            elif not max_date:
+                behind = 999
+
+            # 滞后ETF数量
+            if max_date and max_date >= latest_td:
+                lagging = 0
+            else:
+                lagging = self.get_lagging_etf_codes(latest_td)
+                lagging = len(lagging) if isinstance(lagging, list) else 0
+
+            return {"max_date": max_date, "behind": behind, "lagging_count": lagging}
+        except Exception as e:
+            print(f"[DB] get_etf_freshness 查询失败: {e}")
+            return {"max_date": "", "behind": 999, "lagging_count": 0}
+
+    # ============================================================
+    #  index_basic — 指数基础信息
+    # ============================================================
+
+    def upsert_index_basic(self, df: pd.DataFrame) -> int:
+        """批量写入指数基础信息（INSERT OR REPLACE）
+
+        Args:
+            df: index_basic API返回的DataFrame
+
+        Returns:
+            写入行数
+        """
+        if not self._ensure_conn():
+            return 0
+        if df is None or df.empty:
+            return 0
+
+        rows = []
+        for _, row in df.iterrows():
+            r = {
+                "ts_code": str(row.get("ts_code", "")),
+                "name": str(row.get("name", "")),
+                "market": str(row.get("market", "")),
+                "publisher": str(row.get("publisher", "")),
+                "category": str(row.get("category", "")),
+                "base_date": str(row.get("base_date", "")),
+                "base_point": _safe_float(row.get("base_point")),
+                "list_date": str(row.get("list_date", "")),
+                "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            }
+            if not r["ts_code"]:
+                continue
+            rows.append(r)
+
+        if not rows:
+            return 0
+
+        try:
+            cur = self.conn.cursor()
+            sql = """INSERT OR REPLACE INTO index_basic
+                (ts_code, name, market, publisher, category,
+                 base_date, base_point, list_date, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+            cur.executemany(sql, [
+                (r["ts_code"], r["name"], r["market"], r["publisher"],
+                 r["category"], r["base_date"], r["base_point"],
+                 r["list_date"], r["updated_at"])
+                for r in rows
+            ])
+            self.conn.commit()
+            print(f"[DB] index_basic 写入 {len(rows)} 行")
+            return len(rows)
+        except Exception as e:
+            print(f"[DB] index_basic 写入失败: {e}")
+            return 0
+
+    def get_index_codes(self, market: str = None) -> list:
+        """获取指数代码列表
+
+        Args:
+            market: SSE/SZSE/CSI，None=全部
+
+        Returns:
+            ts_code列表
+        """
+        if not self._ensure_conn():
+            return []
+        try:
+            cur = self.conn.cursor()
+            if market:
+                cur.execute("SELECT ts_code FROM index_basic WHERE market=? ORDER BY ts_code", (market,))
+            else:
+                cur.execute("SELECT ts_code FROM index_basic ORDER BY ts_code")
+            return [r[0] for r in cur.fetchall()]
+        except Exception as e:
+            print(f"[DB] get_index_codes 查询失败: {e}")
+            return []
 
     def save_portfolio_snapshot(self, snap_date: str, holdings: list) -> int:
         """

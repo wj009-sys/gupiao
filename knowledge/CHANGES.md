@@ -9,6 +9,10 @@
 
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
+| 2026-07-05 | 📝 feat | scripts/utils/auto_sync.py | 新增Phase10: post_sync_data_check覆盖度检查+多源回补+数据清洗 |
+| 2026-07-05 | 📝 feat | scripts/utils/backfill_etf_index.py | 新建一次性回填脚本(ETF+指数全量历史数据) |
+| 2026-07-05 | 📝 feat | scripts/utils/auto_sync.py | 新增ETF/指数同步函数(sync_fund_basic/sync_index_basic/sync_etf_daily)+扩展sync_index_daily+流水线10阶段 |
+| 2026-07-05 | 📝 feat | scripts/utils/db_manager.py | 新增 fund_basic + index_basic 元数据表和 upsert/query 方法 |
 | 2026-07-05 | 📝 知识库 | skills/agent3-风控官/SKILL.md | Agent3扩展Lockup Watcher+基本面风控职责 |
 | 2026-07-05 | 📝 知识库 | knowledge/策略/a-stock-data借鉴分析.md | 新增a-stock-data技术方案借鉴分析 |
 | 2026-07-05 | 📝 知识库 | knowledge/策略/游资追踪策略.md | 新增游资追踪策略文件 |
