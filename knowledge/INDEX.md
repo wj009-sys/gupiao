@@ -29,6 +29,9 @@
 | [含退市股全策略回测报告.md](策略/含退市股全策略回测报告.md) | 全策略(RSI/MACD/KDJ/MABOLL/止盈止损)含327只退市股的幸存者偏差修正回测 | 全员 | — | 2026-07-04 |
 | [ZhuLinsen三项目借鉴分析.md](策略/ZhuLinsen三项目借鉴分析.md) | daily_stock_analysis/AlphaSift/AlphaEvo三项深度分析：L1-L2-L3管线/8因子体系/评分曲线/多源fallback/GitHub Actions | 全员 | — | 2026-07-04 |
 | [TradingAgents借鉴分析.md](策略/TradingAgents借鉴分析.md) | TradingAgents(TauricResearch)多智能体交易框架架构分析，7项可借鉴改进点分级 | 全员 | — | 2026-07-04 |
+| [政策分析策略.md](策略/政策分析策略.md) | 📜 政策分类框架、四类政策影响评估方法、政策→板块映射、持仓关联分析 | Agent8+Agent4 | `data/portfolio.json`, `data/watchlist.json` | 2026-07-05 |
+| [游资追踪策略.md](策略/游资追踪策略.md) | 🔥 龙虎榜基础、游资席位识别方法、资金情绪指数计算、与各策略联动 | Agent9+Agent4 | `scripts/utils/eastmoney_get.py` | 2026-07-05 |
+| [a-stock-data借鉴分析.md](策略/a-stock-data借鉴分析.md) | 🏗️ a-stock-data技术方案吸收记录：mootdx/em_get()/多级优先级/TradingAgents-astock | 全员 | `scripts/utils/mootdx_provider.py`, `scripts/utils/eastmoney_get.py`, `scripts/utils/data_provider.py` | 2026-07-05 |
 
 ## 📁 复盘记录目录
 
@@ -65,6 +68,10 @@
 | `skills/agent6-操盘手/SKILL.md` | 交易执行规则 | 操盘手操作规范 |
 | `skills/agent7-投资领导/SKILL.md` | 全部 | 投资领导规范 |
 | `skills/agent-问股/SKILL.md` | 全部 | 策略问股Agent规范 |
+| `skills/agent8-政策分析师/SKILL.md` | 政策分析策略 | 政策分析师操作规范 |
+| `skills/agent9-游资追踪师/SKILL.md` | 游资追踪策略 | 游资追踪师操作规范 |
+| `scripts/utils/eastmoney_get.py` | 全部 | 东方财富限流数据网关（吸收 a-stock-data） |
+| `scripts/utils/mootdx_provider.py` | 全部 | mootdx TCP免费数据源（吸收 a-stock-data） |
 
 ## 🔄 双向引用关系
 

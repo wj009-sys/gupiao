@@ -98,6 +98,8 @@ python scripts/utils/auto_sync.py --auto-sync --max-minutes 15 --max-stocks 500
 | 🔍 Agent5 选股机器人 | `skills/agent5-选股机器人/SKILL.md` | `stock_picker.py` | **100** (Darwin五星) | 默认 | 09:00/12:00/21:30 |
 | 🎯 Agent6 操盘手 | `skills/agent6-操盘手/SKILL.md` | `trader.py` | **97** (Darwin五星) | 默认 | 按需 |
 | 🏆 Agent7 投资领导 | `skills/agent7-投资领导/SKILL.md` | `leader.py` | **96** (Darwin五星) | **opus** | 按需 |
+| 📜 Agent8 政策分析师 | `skills/agent8-政策分析师/SKILL.md` | `policy_analyst.py` | **—** (待评分) | 默认 | 07:30 |
+| 🔥 Agent9 游资追踪师 | `skills/agent9-游资追踪师/SKILL.md` | `hot_money_tracker.py` | **—** (待评分) | 默认 | 08:00 |
 
 | 🔮 Agent-问股 | `skills/agent-问股/SKILL.md` | `agent_ask/ask.py` | **—** (Darwin待评分) | 默认 | 按需 |
 
@@ -115,10 +117,12 @@ Agent 的 SKILL.md frontmatter 中通过 `model:` 字段声明所需模型。
 | Agent5 选股机器人 | 默认 | 多因子评分+排序，结构化流水线 |
 | Agent6 操盘手 | 默认 | 基于规则+约束生成交易计划，不需要复杂推理 |
 | **Agent7 投资领导** | **opus** | 质量审核（6Agent结构化评判）、冲突仲裁、最终投资决策 |
+| Agent8 政策分析师 | 默认 | 政策数据采集+分类，结构化处理，不需要复杂推理 |
+| Agent9 游资追踪师 | 默认 | 龙虎榜数据分析+情绪计算，结构化处理，不需要复杂推理 |
 | Agent-问股 | 默认 | 策略模板匹配+技术指标解释，不需要复杂推理 |
 
 > Agent4 和 Agent7 在各自 `skills/agent4-复盘师/SKILL.md` 和 `skills/agent7-投资领导/SKILL.md`
-> 的 frontmatter 中声明了 `model: opus`。其余 6 个 Agent 不声明 model 字段，由调用方使用默认模型。
+> 的 frontmatter 中声明了 `model: opus`。其余 8 个 Agent 不声明 model 字段，由调用方使用默认模型。
 
 ### 优化后新增通用模块（所有Skill均含）
 
@@ -240,6 +244,8 @@ Agent3（风控官）与 Agent6（操盘手）构成「提案-审查」双轨制
              ├─ 🔄 复盘/总结 → 派给Agent4复盘师
              ├─ 🔍 选股/推荐 → 派给Agent5选股机器人
              ├─ 🔮 问股/分析 → 派给Agent-问股
+             ├─ 📜 政策/宏观 → 派给Agent8政策分析师
+             ├─ 🔥 游资/资金 → 派给Agent9游资追踪师
              ├─ 🎯 下单/交易 → 派给Agent6操盘手
              ├─ 🏆 综合/决策 → 自己做最终决策
              └─ 💬 闲聊/简单 → 直接回复
@@ -292,6 +298,26 @@ Agent3（风控官）与 Agent6（操盘手）构成「提案-审查」双轨制
 - ⚠️ **有异议** → 记录争议点，下次复盘时回应
 - 📝 **核心原则**：同样的错误不犯第二次。复盘师的反馈是帮你进步的，不是找你麻烦的。
 
+### Agent8：政策分析师（政策影响评估 — 吸收TradingAgents-astock Policy Analyst）
+- **职责**：每天早7:30自动采集政策新闻（宏观/产业/监管/税收），评估政策对持仓的影响
+- **上游输入**：Agent1 情报员（提供政策线索）
+- **下游输出**：Agent2 分析师（宏观背景）、Agent7 投资领导（纳入决策）
+- **输出**：`reports/日报/政策/政策分析_YYYY-MM-DD.md`
+- **数据源**：东方财富新闻API（em_get()限流）、财联社、央行/证监会公告
+- **D3异常**：4条fallback（新闻API无响应、北向资金不可用、持仓缺失、分类失败）
+- **D4检查**：5个CP（来源验证、持仓关联、影响一致性、历史去重、输出完整）
+- **D9反例**：5条（只收集不分析、忽视政策节奏、脱离行情背景）
+
+### Agent9：游资追踪师（资金面分析 — 吸收TradingAgents-astock Hot Money Tracker）
+- **职责**：每天早8:00分析龙虎榜数据，追踪知名游资席位，计算资金情绪指数
+- **上游输入**：Agent1 情报员（龙虎榜基础数据）、Agent8 政策分析师（政策影响资金情绪）
+- **下游输出**：Agent2 分析师（资金面辅助）、Agent5 选股机器人（游资方向因子）、Agent6 操盘手（资金面风险）
+- **输出**：`reports/日报/游资/游资追踪_YYYY-MM-DD.md`
+- **数据源**：Tushare `limit_list`/`top_list`、东方财富龙虎榜API（em_get()）、Tushare `moneyflow`（个股资金）
+- **D3异常**：6条fallback（Tushare龙虎榜失败、东财API 403、个股资金流超时、席位识别未知）
+- **D4检查**：5个CP（双源验证、席位风格标注、持仓全覆盖、情绪有依据、数据时效）
+- **D9反例**：5条（涨跌停板当龙虎榜、游资机构不分、忽视连板效应）
+
 ## 目录结构
 
 ```
@@ -311,6 +337,8 @@ reports/           - 报告输出（日报/周报/月报，日报文件已 gitig
   ├── 日报/操盘/   - Agent6 交易计划
   ├── 日报/决策/   - Agent7 投资决策
   ├── 日报/复盘/   - Agent4 复盘报告
+  ├── 日报/政策/   - Agent8 政策分析
+  ├── 日报/游资/   - Agent9 游资追踪
   ├── 周报/        - 每周汇总
   └── 月报/        - 每月汇总
 scripts/           - Python 分析脚本
@@ -321,8 +349,10 @@ scripts/           - Python 分析脚本
   ├── agent5-选股/
   ├── agent6-操盘/
   ├── agent7-决策/
-  ├── agent_ask/       - Agent问股（自然语言策略问股）
-  └── utils/       - 工具函数（Tushare/AkShare数据源、技术指标、L2重排序、L3后置分析、风险叠加、RPS、DB管理、自动同步等）
+  ├── agent8-政策分析/  - Agent8 政策分析师（吸收 TradingAgents-astock Policy Analyst）
+  ├── agent9-游资追踪/  - Agent9 游资追踪师（吸收 TradingAgents-astock Hot Money Tracker）
+  ├── agent_ask/        - Agent问股（自然语言策略问股）
+  └── utils/            - 工具函数（Tushare/AkShare/mootdx数据源、em_get()限流网关、技术指标、L2重排序、L3后置分析、风险叠加、RPS、DB管理、自动同步等）
 webui/             - Web界面（FastAPI，策略问股可视化）
 .github/workflows/  - GitHub Actions CI/CD（定时运行全Agent流水线）
 .claude/           - Claude 配置
@@ -345,7 +375,9 @@ skills/            - 自定义 Skills
   ├── agent5-选股机器人/SKILL.md + test-prompts.json
   ├── agent6-操盘手/SKILL.md + test-prompts.json
   ├── agent-问股/SKILL.md
-  └── agent7-投资领导/SKILL.md + test-prompts.json
+  ├── agent7-投资领导/SKILL.md + test-prompts.json
+  ├── agent8-政策分析师/SKILL.md
+  └── agent9-游资追踪师/SKILL.md
 ```
 
 ## 数据源
@@ -388,6 +420,8 @@ skills/            - 自定义 Skills
 |------|------|------|---------|
 | **18:03 工作日** | **🔄 数据自动同步** | `3 18 * * 1-5` | **claw MCP + auto_sync.py → DB更新** |
 | 07:00 工作日 | Agent1 情报采集 | `7 7 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
+| 07:30 工作日 | Agent8 政策分析 | `33 7 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
+| 08:00 工作日 | Agent9 游资追踪 | `3 8 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
 | 08:30 工作日 | Agent2 技术分析 | `13 8 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
 | 09:00 工作日 | Agent5 早盘选股 | `17 9 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
 | 12:00 工作日 | Agent5 午盘选股 | `23 12 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
@@ -397,6 +431,8 @@ skills/            - 自定义 Skills
 | 按需 | Agent5 盘中/按需选股 | - | 手动 `/选股` 或 `/盘中选股` |
 | 按需 | Agent6 操盘手 | - | 手动 `/操盘` |
 | 按需 | Agent7 投资领导 | - | 手动 `/决策` |
+| 按需 | Agent8 政策分析 | - | 手动 `/政策` |
+| 按需 | Agent9 游资追踪 | - | 手动 `/游资` 或 `/龙虎榜` |
 
 > **注意**：cron 分钟字段使用非整点值(7/13/17/23/37/47)以避免:00/:30的集中负载。
 
@@ -415,6 +451,8 @@ skills/            - 自定义 Skills
 | `/盘中选股` | agent5-选股机器人 | 盘中异动选股（intraday模式） |
 | `/操盘` | agent6-操盘手 | 制定交易计划 |
 | `/决策` | agent7-投资领导 | 综合决策+质量审核+冲突仲裁 |
+| `/政策` | agent8-政策分析师 | 政策影响分析+宏观解读 |
+| `/游资` | agent9-游资追踪师 | 龙虎榜分析+游资追踪+资金情绪 |
 | `/问股` | agent-问股 | 自然语言策略问股（均线/缠论/波浪/MACD等9大策略） |
 
 ---

@@ -257,34 +257,66 @@ def _normalize_basic_columns(df: pd.DataFrame, source: str) -> pd.DataFrame:
 
 class DataProvider:
     """
-    多数据源 Provider — 自动fallback
+    多数据源 Provider — 自动fallback（三级优先级系统）
 
-    优先使用Tushare，失败时依次尝试后备数据源。
+    优先级: Tushare(付费稳定) → mootdx(免费TCP不封IP) → AkShare(HTTP备用回退)
     所有方法返回统一的DataFrame格式。
 
     用法：
         dp = DataProvider()
         df = dp.daily("000001.SZ", start_date="20260701", end_date="20260703")
         # DataFrame列: ts_code, trade_date, open, high, low, close, vol, amount, pct_chg
+
+    数据源策略（借鉴 a-stock-data 多级优先级设计）：
+        Tier 1 — Tushare: 付费版，数据最全最准（需 token），主数据源
+        Tier 2 — mootdx: 通达信 TCP 二进制协议，免费无限量，几乎不封 IP
+        Tier 3 — AkShare: 开源 HTTP 接口，免费，作为最终回退
+        每种方法可独立配置优先级顺序（通过 provider_order 参数）
     """
 
-    def __init__(self):
+    def __init__(self, provider_order: list = None):
+        """
+        Args:
+            provider_order: 自定义优先级顺序，可选
+                e.g. ["mootdx", "tushare", "akshare"] 以 mootdx 优先
+                None 则使用默认：tushare → mootdx → akshare
+        """
         self._providers = []
+        self._provider_order = provider_order or ["tushare", "mootdx", "akshare"]
+        self._provider_map = {}
 
-        # Tushare（主数据源）
-        try:
-            self._providers.append(TushareProvider())
-        except Exception as e:
-            logger.warning(f"[DataProvider] Tushare初始化失败: {e}")
+        # 初始化所有可用 Provider
+        providers_to_try = {
+            "tushare": ("Tushare", TushareProvider),
+            "mootdx": ("mootdx", self._lazy_mootdx),
+            "akshare": ("AkShare", AkshareProvider),
+        }
 
-        # AkShare（后备数据源）
-        try:
-            self._providers.append(AkshareProvider())
-        except Exception as e:
-            logger.warning(f"[DataProvider] AkShare初始化失败: {e}")
+        for key in self._provider_order:
+            if key not in providers_to_try:
+                continue
+            name, cls_or_fn = providers_to_try[key]
+            try:
+                if callable(cls_or_fn) and not isinstance(cls_or_fn, type):
+                    provider = cls_or_fn()
+                else:
+                    provider = cls_or_fn()
+                self._providers.append(provider)
+                self._provider_map[key] = provider
+            except Exception as e:
+                logger.warning(f"[DataProvider] {name}初始化失败: {e}")
 
         if not self._providers:
             raise DataUnavailableError("所有数据源都初始化失败")
+
+    @staticmethod
+    def _lazy_mootdx():
+        """延迟初始化 mootdx Provider（避免未安装 mootdx 时报错）"""
+        try:
+            from scripts.utils.mootdx_provider import MootdxProvider
+            return MootdxProvider()
+        except ImportError:
+            raise DataUnavailableError("mootdx 未安装，请运行 pip install mootdx")
 
     def _try_providers(self, method: str, *args, **kwargs) -> pd.DataFrame:
         """依次尝试所有Provider，全部失败时返回空DataFrame"""
@@ -339,8 +371,10 @@ def get_provider() -> DataProvider:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
+    # 默认优先级：Tushare → mootdx → AkShare
     dp = DataProvider()
     print(f"可用数据源: {dp.providers_info}")
+    print(f"优先级顺序: {dp._provider_order}")
 
     # 测试行情获取
     test_codes = ["000001.SZ", "600519.SH", "300750.SZ"]
@@ -351,3 +385,11 @@ if __name__ == "__main__":
             print(f"  列: {list(df.columns)}")
         else:
             print(f"{code}: 无数据 ❌")
+
+    # 测试：以 mootdx 为优先的 Provider
+    print("\n=== 测试: mootdx 优先模式 ===")
+    dp_tdx = DataProvider(provider_order=["mootdx", "tushare", "akshare"])
+    print(f"优先级顺序: {dp_tdx._provider_order}")
+    for code in ["000001.SZ", "600519.SH"]:
+        df = dp_tdx.daily(code, start_date="20260701", end_date="20260703")
+        print(f"{code}: {'✅' if not df.empty else '❌'}")

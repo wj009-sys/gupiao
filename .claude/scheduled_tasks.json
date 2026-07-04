@@ -8,6 +8,20 @@
       "description": "Agent1 情报采集 — 每日07:00"
     },
     {
+      "id": "agent8-policy",
+      "cron": "33 7 * * 1-5",
+      "prompt": "source venv/Scripts/activate && python -u -X utf8 scripts/agent8-政策分析/policy_analyst.py",
+      "recurring": true,
+      "description": "Agent8 政策分析 — 每日07:30"
+    },
+    {
+      "id": "agent9-hotmoney",
+      "cron": "3 8 * * 1-5",
+      "prompt": "source venv/Scripts/activate && python -u -X utf8 scripts/agent9-游资追踪/hot_money_tracker.py",
+      "recurring": true,
+      "description": "Agent9 游资追踪 — 每日08:00"
+    },
+    {
       "id": "agent2-analyze",
       "cron": "13 8 * * 1-5",
       "prompt": "source venv/Scripts/activate && python -u -X utf8 scripts/agent2-技术分析/analyze.py",

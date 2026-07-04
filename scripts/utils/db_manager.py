@@ -302,6 +302,109 @@ CREATE_TABLES_SQL = [
         created_at  TEXT DEFAULT (datetime('now','localtime'))
     )
     """,
+
+    # 13. policy_events — 政策事件数据库（Agent8政策分析师使用）
+    """
+    CREATE TABLE IF NOT EXISTS policy_events (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_date    TEXT NOT NULL,
+        title         TEXT,
+        content       TEXT,
+        source        TEXT,
+        category      TEXT,          -- 宏观调控/产业政策/监管动态/税收政策
+        impact_sector TEXT,          -- 影响行业/板块
+        impact_score  INTEGER,       -- -5(重大利空) ~ 0(中性) ~ +5(重大利好)
+        related_codes TEXT,          -- 关联股票代码(逗号分隔)
+        url           TEXT,
+        created_at    TEXT DEFAULT (datetime('now','localtime'))
+    )
+    """,
+
+    # 14. dragon_tiger_detail — 龙虎榜机构席位明细（Agent9游资追踪师使用）
+    """
+    CREATE TABLE IF NOT EXISTS dragon_tiger_detail (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        trade_date    TEXT NOT NULL,
+        ts_code       TEXT NOT NULL,
+        name          TEXT,
+        close         REAL,
+        pct_chg       REAL,
+        turnover_ratio REAL,
+        amount        REAL,
+        buy_amount    REAL,
+        sell_amount   REAL,
+        net_amount    REAL,
+        buy_seats     TEXT,           -- 买入席位JSON
+        sell_seats    TEXT,           -- 卖出席位JSON
+        reason_type   TEXT,           -- 上榜原因
+        created_at    TEXT DEFAULT (datetime('now','localtime'))
+    )
+    """,
+
+    # 15. hot_money_seats — 游资席位跟踪（Agent9游资追踪师使用）
+    """
+    CREATE TABLE IF NOT EXISTS hot_money_seats (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        trade_date    TEXT NOT NULL,
+        seat_name     TEXT NOT NULL,
+        seat_type     TEXT,           -- 游资/机构/量化/散户
+        total_buy     REAL,
+        total_sell    REAL,
+        net_amount    REAL,
+        active_stocks INTEGER,       -- 操作股票数
+        style         TEXT,           -- 打板/趋势/低吸
+        created_at    TEXT DEFAULT (datetime('now','localtime'))
+    )
+    """,
+
+    # 16. lockup_schedule — 限售股解禁日历（Agent3风控扩展使用）
+    """
+    CREATE TABLE IF NOT EXISTS lockup_schedule (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts_code       TEXT NOT NULL,
+        name          TEXT,
+        unlock_date   TEXT,           -- 解禁日期
+        unlock_volume REAL,           -- 解禁数量(万股)
+        unlock_ratio  REAL,           -- 解禁占流通股比(%)
+        market_value  REAL,           -- 解禁市值(万元)
+        holder_name   TEXT,           -- 解禁股东
+        lockup_type   TEXT,           -- 首发/定增/股权激励
+        created_at    TEXT DEFAULT (datetime('now','localtime'))
+    )
+    """,
+
+    # 17. margin_detail — 个股融资融券明细
+    """
+    CREATE TABLE IF NOT EXISTS margin_detail (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts_code       TEXT NOT NULL,
+        trade_date    TEXT NOT NULL,
+        rzye          REAL,           -- 融资余额(元)
+        rqye          REAL,           -- 融券余额(元)
+        rzmre         REAL,           -- 融资买入额(元)
+        rqmcl         REAL,           -- 融券卖出量(股)
+        rzrqye        REAL,           -- 融资融券余额(元)
+        UNIQUE(ts_code, trade_date)
+    )
+    """,
+
+    # 18. moneyflow_stock — 个股资金流向
+    """
+    CREATE TABLE IF NOT EXISTS moneyflow_stock (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts_code         TEXT NOT NULL,
+        trade_date      TEXT NOT NULL,
+        net_amount      REAL,           -- 净流入(万元)
+        buy_lg_amount   REAL,           -- 超大单买入(万元)
+        sell_lg_amount  REAL,           -- 超大单卖出(万元)
+        buy_md_amount   REAL,           -- 大单买入(万元)
+        sell_md_amount  REAL,           -- 大单卖出(万元)
+        buy_sm_amount   REAL,           -- 中单买入(万元)
+        sell_sm_amount  REAL,           -- 中单卖出(万元)
+        net_lg_amount   REAL,           -- 超大单净额(万元)
+        UNIQUE(ts_code, trade_date)
+    )
+    """,
 ]
 
 CREATE_INDEXES_SQL = [

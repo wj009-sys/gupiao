@@ -9,6 +9,15 @@
 
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
+| 2026-07-05 | 📝 知识库 | skills/agent3-风控官/SKILL.md | Agent3扩展Lockup Watcher+基本面风控职责 |
+| 2026-07-05 | 📝 知识库 | knowledge/策略/a-stock-data借鉴分析.md | 新增a-stock-data技术方案借鉴分析 |
+| 2026-07-05 | 📝 知识库 | knowledge/策略/游资追踪策略.md | 新增游资追踪策略文件 |
+| 2026-07-05 | 📝 知识库 | knowledge/策略/政策分析策略.md | 新增政策分析策略文件 |
+| 2026-07-05 | 📝 Agent | scripts/agent9-游资追踪/hot_money_tracker.py | 新增Agent9游资追踪师（吸收TradingAgents-astock Hot Money Tracker） |
+| 2026-07-05 | 📝 Agent | scripts/agent8-政策分析/policy_analyst.py | 新增Agent8政策分析师（吸收TradingAgents-astock Policy Analyst） |
+| 2026-07-05 | 📝 数据层 | scripts/utils/data_provider.py | 升级多级数据源优先级系统（Tushare→mootdx→AkShare） |
+| 2026-07-05 | 📝 数据层 | scripts/utils/mootdx_provider.py | 新增mootdx TCP免费数据源（吸收a-stock-data） |
+| 2026-07-05 | 📝 数据层 | scripts/utils/eastmoney_get.py | 新增em_get()东方财富限流网关（吸收a-stock-data反爬设计） |
 | 2026-07-04 | 📝 复盘 | 复盘记录/复盘_20260703.json | 日常复盘：偏差分析 + 策略建议 + 准确率趋势 |
 | 2026-07-04 | 📝 🧬 研究 | knowledge/LLM-Wiki-工作法.md | 深度研究Karpathy原Gist:Memex溯源+维护瓶颈分析+回答复利原则+日志格式/搜索工具/Obsidian生态 |
 | 2026-07-04 | 🔧 研究 | LLM-Wiki-工作法.md | 深度研究Karpathy原Gist，补充四大深度内容：①Memex历史渊源 ②"为什么有效"维护瓶颈分析 ③"好的回答可成为知识"复利原则 ④日志格式/搜索工具/Obsidian生态 ⑤修正章节编号+补充深度研究日期

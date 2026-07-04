@@ -22,6 +22,9 @@ jinja2>=3.1.2
 markdown>=3.5.0
 aiofiles>=23.2.0          # 静态文件服务
 
+# ── 新增数据源（吸收 a-stock-data） ──
+mootdx>=0.6.0             # 通达信TCP二进制协议（免费K线/实时行情，几乎不封IP）
+
 # ── LLM (可选, L2重排序用) ──
 # litellm>=1.0.0          # L2 LLM相对排序 (按需安装)
 # openai>=1.0.0           # OpenAI API (按需安装)

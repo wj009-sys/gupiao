@@ -67,6 +67,7 @@ jobs:
         run: |
           mkdir -p reports/日报/情报 reports/日报/分析 reports/日报/选股
           mkdir -p reports/日报/风控 reports/日报/操盘 reports/日报/决策 reports/日报/复盘
+          mkdir -p reports/日报/政策 reports/日报/游资
           mkdir -p data/raw data/checkpoints
 
       - name: 🔑 验证配置
@@ -93,6 +94,22 @@ jobs:
           echo "▶️ 情报采集..."
           python scripts/agent1-情报采集/fetch_all.py
           echo "✅ 情报采集完成"
+
+      - name: 📜 Agent8 - 政策分析
+        if: ${{ github.event.inputs.mode != 'sync_only' }}
+        continue-on-error: true
+        run: |
+          echo "▶️ 政策分析..."
+          python scripts/agent8-政策分析/policy_analyst.py
+          echo "✅ 政策分析完成"
+
+      - name: 🔥 Agent9 - 游资追踪
+        if: ${{ github.event.inputs.mode != 'sync_only' }}
+        continue-on-error: true
+        run: |
+          echo "▶️ 游资追踪..."
+          python scripts/agent9-游资追踪/hot_money_tracker.py
+          echo "✅ 游资追踪完成"
 
       - name: 📊 Agent2 - 技术分析
         if: ${{ github.event.inputs.mode != 'sync_only' }}
@@ -173,6 +190,8 @@ jobs:
           echo "| Agent | 状态 |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|------|" >> $GITHUB_STEP_SUMMARY
           echo "| 🕵️ 情报采集 | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📜 政策分析 | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔥 游资追踪 | ✅ |" >> $GITHUB_STEP_SUMMARY
           echo "| 📊 技术分析 | ✅ |" >> $GITHUB_STEP_SUMMARY
           echo "| 🔍 选股 | ✅ |" >> $GITHUB_STEP_SUMMARY
           echo "| 🛡️ 风控 | ✅ |" >> $GITHUB_STEP_SUMMARY

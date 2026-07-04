@@ -57,7 +57,10 @@ import os
 import sys
 import json
 import glob
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, PROJECT_ROOT)
@@ -732,12 +735,261 @@ def detect_trade_conflicts(
 
 
 # ============================================================
+# 【Agent3扩展】Lockup Watcher + 基本面风控（吸收 a-stock-data + TradingAgents-astock）
+# 新增4项风控检查：解禁风险/财务健康/融资融券/股东减持
+# ============================================================
+
+
+def check_lockup_risk(portfolio: dict) -> list:
+    """
+    限售股解禁风险检查（Lockup Watcher）
+
+    检查持仓/自选股是否有近期（30天内）的限售股解禁事件。
+    解禁量 >5% 流通市值时发预警，>20% 时发CRITICAL。
+
+    数据来源：lockup_schedule 表（由数据同步填充）
+    """
+    alerts = []
+    try:
+        from scripts.utils.db_manager import DatabaseManager
+        db = DatabaseManager()
+        import datetime as dt
+
+        today = dt.datetime.now().strftime("%Y%m%d")
+        cutoff = (dt.datetime.now() + dt.timedelta(days=30)).strftime("%Y%m%d")
+
+        holdings = portfolio.get("持仓列表", [])
+        for h in holdings:
+            code = h.get("代码", "")
+            if not code:
+                continue
+            name = h.get("名称", "未知")
+
+            rows = db.execute_query(
+                """SELECT unlock_date, unlock_volume, unlock_ratio, holder_name, lockup_type
+                   FROM lockup_schedule
+                   WHERE ts_code = ? AND unlock_date >= ? AND unlock_date <= ?
+                   ORDER BY unlock_date ASC""",
+                (code, today, cutoff)
+            )
+            if rows:
+                for row in rows:
+                    unlock_date, volume, ratio, holder, lu_type = row[:5]
+                    ratio_val = float(ratio or 0)
+                    level = "WARNING" if ratio_val >= 5 else "INFO"
+                    level = "CRITICAL" if ratio_val >= 20 else level
+                    alerts.append({
+                        "level": level,
+                        "type": "限售股解禁",
+                        "asset": f"{name}({code})",
+                        "message": (
+                            f"{unlock_date} 解禁 {volume or '?'}万股 "
+                            f"(占流通 {ratio_val:.1f}%), "
+                            f"类型: {lu_type or '?'}, 股东: {holder or '?'}"
+                        ),
+                        "suggested_action": "评估减持压力，考虑提前减仓" if level in ("WARNING", "CRITICAL") else "关注"
+                    })
+    except Exception as e:
+        logger.warning(f"解禁风险检查失败: {e}")
+        import traceback
+        logger.debug(traceback.format_exc())
+
+    return alerts
+
+
+def check_financial_risk(portfolio: dict) -> list:
+    """
+    财务健康检查
+
+    使用 DB 中 fina_indicator 表的最新财务数据，
+    检查持仓公司的：ROE为负、负债率过高、流动比率过低
+
+    数据源：fina_indicator 表（已有数据，之前风控未使用）
+    """
+    alerts = []
+    try:
+        from scripts.utils.db_manager import DatabaseManager
+        db = DatabaseManager()
+
+        holdings = portfolio.get("持仓列表", [])
+        for h in holdings:
+            code = h.get("代码", "")
+            if not code:
+                continue
+            name = h.get("名称", "未知")
+
+            rows = db.execute_query(
+                """SELECT roe, debt_to_assets, current_ratio, grossprofit_margin, end_date
+                   FROM fina_indicator
+                   WHERE ts_code = ? AND end_date IS NOT NULL
+                   ORDER BY end_date DESC LIMIT 1""",
+                (code,)
+            )
+            if rows:
+                row = rows[0]
+                roe, debt, curr_ratio, gross_margin, end_date = (row + [None]*5)[:5]
+                report_date = end_date or "?"
+
+                # ROE为负 = 不赚钱
+                if roe is not None and float(roe) < -5:
+                    alerts.append({
+                        "level": "WARNING",
+                        "type": "财务风险-ROE",
+                        "asset": f"{name}({code})",
+                        "message": f"ROE {roe:.1f}%（截至{report_date}），盈利能力为负",
+                        "suggested_action": "关注亏损原因，如持续恶化考虑止损"
+                    })
+
+                # 负债率过高
+                if debt is not None and float(debt) > 80:
+                    level = "CRITICAL" if float(debt) > 90 else "WARNING"
+                    alerts.append({
+                        "level": level,
+                        "type": "财务风险-负债率",
+                        "asset": f"{name}({code})",
+                        "message": f"资产负债率 {debt:.1f}%（截至{report_date}），高于80%警戒线",
+                        "suggested_action": "高负债企业抗风险能力弱，注意加息/信贷收紧风险"
+                    })
+
+                # 流动比率过低
+                if curr_ratio is not None and float(curr_ratio) < 0.8:
+                    alerts.append({
+                        "level": "WARNING",
+                        "type": "财务风险-流动性",
+                        "asset": f"{name}({code})",
+                        "message": f"流动比率 {curr_ratio:.2f}（截至{report_date}），低于1.0安全线",
+                        "suggested_action": "短期偿债能力不足，关注现金流"
+                    })
+    except Exception as e:
+        logger.warning(f"财务健康检查失败: {e}")
+
+    return alerts
+
+
+def check_margin_risk(portfolio: dict) -> list:
+    """
+    个股融资融券风险监控
+
+    检查持仓中是否有融资余额过高或融券激增的情况。
+    融资余额过高 = 浮盈加杠杆风险，融券激增 = 做空压力
+
+    数据源：margin_detail 表（需同步个股融资融券数据）
+    """
+    alerts = []
+    try:
+        from scripts.utils.db_manager import DatabaseManager
+        db = DatabaseManager()
+        import datetime as dt
+
+        today = dt.datetime.now().strftime("%Y%m%d")
+        week_ago = (dt.datetime.now() - dt.timedelta(days=7)).strftime("%Y%m%d")
+
+        holdings = portfolio.get("持仓列表", [])
+        for h in holdings:
+            code = h.get("代码", "")
+            if not code:
+                continue
+            name = h.get("名称", "未知")
+
+            rows = db.execute_query(
+                """SELECT trade_date, rzye, rqye, rzmre
+                   FROM margin_detail
+                   WHERE ts_code = ? AND trade_date >= ?
+                   ORDER BY trade_date DESC LIMIT 5""",
+                (code, week_ago)
+            )
+            if rows and len(rows) >= 2:
+                # 最近两日融资余额变化
+                latest = rows[0]
+                prev = rows[1]
+                rzye_latest = float(latest[1] or 0)
+                rzye_prev = float(prev[1] or 0)
+                rqye_latest = float(latest[2] or 0)
+
+                # 融资余额骤增（>30%）
+                if rzye_prev > 0 and (rzye_latest - rzye_prev) / rzye_prev > 0.3:
+                    alerts.append({
+                        "level": "WARNING",
+                        "type": "融资风险-余额骤增",
+                        "asset": f"{name}({code})",
+                        "message": f"融资余额较上日增长{(rzye_latest-rzye_prev)/rzye_prev*100:.0f}%，当前{rzye_latest/1e8:.1f}亿",
+                        "suggested_action": "融资余额快速增加=杠杆风险上升，注意回调时的被动平仓压力"
+                    })
+
+                # 融券余额较大（做空压力）
+                if rqye_latest > 1e8:  # 1亿以上
+                    alerts.append({
+                        "level": "INFO",
+                        "type": "融券风险",
+                        "asset": f"{name}({code})",
+                        "message": f"融券余额{rqye_latest/1e8:.1f}亿，做空压力较大",
+                        "suggested_action": "关注融券变化趋势，如持续增加需警惕"
+                    })
+    except Exception as e:
+        logger.warning(f"融资融券检查失败: {e}")
+
+    return alerts
+
+
+def check_shareholder_risk(portfolio: dict) -> list:
+    """
+    股东变动监控
+
+    检查持仓是否有大股东减持/机构减持信号
+
+    数据源：dragon_tiger_detail 表中的机构卖出/游资卖出
+    以及 top10_holders 表（Tushare十大股东变动）
+    """
+    alerts = []
+    try:
+        from scripts.utils.db_manager import DatabaseManager
+        db = DatabaseManager()
+        import datetime as dt
+
+        today = dt.datetime.now().strftime("%Y%m%d")
+
+        holdings = portfolio.get("持仓列表", [])
+        for h in holdings:
+            code = h.get("代码", "")
+            if not code:
+                continue
+            name = h.get("名称", "未知")
+
+            # 检查龙虎榜中该股票的机构卖出
+            rows = db.execute_query(
+                """SELECT trade_date, sell_amount, sell_seats
+                   FROM dragon_tiger_detail
+                   WHERE ts_code = ? AND trade_date >= ?
+                   ORDER BY trade_date DESC LIMIT 3""",
+                (code, today[:6] + "01")  # 当月
+            )
+            if rows:
+                total_sell = sum(float(r[1] or 0) for r in rows)
+                if total_sell > 1e7:  # 机构卖出超千万
+                    seats_text = rows[0][2] or ""
+                    has_institution = "机构" in seats_text or "基金" in seats_text
+                    if has_institution:
+                        alerts.append({
+                            "level": "WARNING",
+                            "type": "股东减持-机构卖出",
+                            "asset": f"{name}({code})",
+                            "message": f"本月龙虎榜机构累计卖出{total_sell/1e4:.0f}万元",
+                            "suggested_action": "机构减持可能是基本面或估值风险的信号，建议核对"
+                        })
+    except Exception as e:
+        logger.warning(f"股东变动检查失败: {e}")
+
+    return alerts
+
+
+# ============================================================
 # 主函数
 # ============================================================
 
 
 def generate_risk_report(portfolio_path: str = None, env_score: int = None,
-                          trade_plan_path: str = None, risk_profile: str = "neutral") -> dict:
+                          trade_plan_path: str = None, risk_profile: str = "neutral",
+                          extended_risk: bool = True) -> dict:
     """主函数：生成完整风控报告
 
     支持三级风控委员会（TradingAgents借鉴）：
@@ -886,7 +1138,35 @@ def generate_risk_report(portfolio_path: str = None, env_score: int = None,
     else:
         print(f"  {warn} 未发现操盘手交易计划，跳过审查")
 
-    # 10. 综合风险等级（含与操盘手冲突）
+    # 10. 【Agent3扩展】限售股解禁 + 财务健康 + 融资融券 + 股东减持检查
+    try:
+        if extended_risk:
+            print(f"  {ok} 运行扩展风控检查（解禁/财务/融资/股东）...")
+
+            lockup_alerts = check_lockup_risk(portfolio)
+            report["alerts"].extend(lockup_alerts)
+            for a in lockup_alerts:
+                print(f"  [{a['level']}] {a['type']}: {a['message']}")
+
+            fin_alerts = check_financial_risk(portfolio)
+            report["alerts"].extend(fin_alerts)
+            for a in fin_alerts:
+                print(f"  [{a['level']}] {a['type']}: {a['message']}")
+
+            margin_alerts = check_margin_risk(portfolio)
+            report["alerts"].extend(margin_alerts)
+            for a in margin_alerts:
+                print(f"  [{a['level']}] {a['type']}: {a['message']}")
+
+            sh_alerts = check_shareholder_risk(portfolio)
+            report["alerts"].extend(sh_alerts)
+            for a in sh_alerts:
+                print(f"  [{a['level']}] {a['type']}: {a['message']}")
+    except Exception as e:
+        report["errors"].append(f"扩展风控检查失败: {e}")
+        print(f"  {fail} 扩展风控检查: {e}")
+
+    # 11. 综合风险等级（含扩展检查）
     critical_count = sum(1 for a in report["alerts"] if a["level"] == "CRITICAL")
     warning_count = sum(1 for a in report["alerts"] if a["level"] == "WARNING")
     rejected_count = len(trade_conflicts)
@@ -923,9 +1203,14 @@ if __name__ == "__main__":
     parser.add_argument("--trade-plan", dest="trade_plan", default=None, help="交易计划原始数据JSON路径")
     parser.add_argument("--risk-profile", default="neutral", choices=["aggressive", "neutral", "conservative"],
                         help="风控档位: aggressive(激进)/neutral(中性)/conservative(保守)")
+    parser.add_argument("--extended-risk", action="store_true", default=True,
+                        help="扩展风控检查（解禁/财务/融资/股东），默认开启")
+    parser.add_argument("--no-extended-risk", action="store_false", dest="extended_risk",
+                        help="禁用扩展风控检查")
     args = parser.parse_args()
 
-    report = generate_risk_report(args.portfolio, args.env_score, args.trade_plan, args.risk_profile)
+    report = generate_risk_report(args.portfolio, args.env_score, args.trade_plan,
+                                   args.risk_profile, args.extended_risk)
 
     print("\n=== RESULT_JSON ===")
     print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
