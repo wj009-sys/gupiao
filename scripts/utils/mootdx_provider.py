@@ -31,6 +31,7 @@ D9反例：
 - 不要假设海外 IP 能稳定连接（海外 TO 可能超时）
 """
 import os
+import socket
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
@@ -61,6 +62,7 @@ class MootdxProvider:
         try:
             from mootdx.quotes import Quotes
             # 尝试连接（自动选择可用服务器）
+            socket.setdefaulttimeout(10)  # 防止TCP阻塞20-30秒
             self._quotes = Quotes.factory()
             logger.info("[Mootdx] 连接成功")
         except Exception as e:

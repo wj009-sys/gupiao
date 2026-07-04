@@ -230,7 +230,8 @@ def check_freshness(db: DatabaseManager, trading_days: list) -> dict:
             """, (latest_td,))
             dp_lagging = cur.fetchone()[0]
         except Exception as e:
-            pass  # non-critical fallback
+            print(f"  [WARN] lagging_stocks查询失败: {e}", flush=True)
+            dp_lagging = 0
 
     dp_status = "fresh"
     if dp_behind == 0:
@@ -286,7 +287,8 @@ def check_freshness(db: DatabaseManager, trading_days: list) -> dict:
             if months_behind > 5:
                 fina_status = "stale"
         except Exception as e:
-            pass  # non-critical fallback
+            print(f"  [WARN] fina_indicator日期解析失败: {e}", flush=True)
+
     result["tables"]["fina_indicator"] = {
         "max_date": fina_max,
         "status": fina_status,
@@ -323,7 +325,8 @@ def check_freshness(db: DatabaseManager, trading_days: list) -> dict:
             if days_behind > 30:
                 div_status = "stale"
         except Exception as e:
-            pass  # non-critical fallback
+            print(f"  [WARN] dividend日期解析失败: {e}", flush=True)
+
     result["tables"]["dividend"] = {
         "max_date": div_max,
         "status": div_status,
@@ -587,7 +590,8 @@ def sync_index_basic(db: DatabaseManager) -> dict:
     return result
 
 
-def sync_index_daily(db: DatabaseManager, start_date: str, end_date: str) -> dict:
+def sync_index_daily(db: DatabaseManager, start_date: str, end_date: str,
+                      time_budget_sec: float = 600) -> dict:
     """
     同步全部已注册指数日线
 
@@ -595,11 +599,12 @@ def sync_index_daily(db: DatabaseManager, start_date: str, end_date: str) -> dic
         db: 数据库管理器
         start_date: 起始日期
         end_date: 截止日期
+        time_budget_sec: 时间预算（秒）
 
     Returns:
         {"indices": N, "rows_inserted": N, "errors": N, "elapsed_sec": F}
     """
-    result = {"indices": 0, "rows_inserted": 0, "errors": 0, "elapsed_sec": 0}
+    result = {"indices": 0, "rows_inserted": 0, "errors": 0, "skipped_timeout": 0, "elapsed_sec": 0}
 
     # 从 index_basic 获取全部指数代码
     index_codes = db.get_index_codes()
@@ -615,6 +620,12 @@ def sync_index_daily(db: DatabaseManager, start_date: str, end_date: str) -> dic
     start_time = time.time()
 
     for i, ts_code in enumerate(index_codes):
+        # 时间预算检查
+        if time.time() - start_time > time_budget_sec:
+            result["skipped_timeout"] = len(index_codes) - i
+            print(f"  ⏰ 时间预算用完 ({time.time() - start_time:.0f}s)，剩余 {result['skipped_timeout']} 个跳过", flush=True)
+            break
+
         try:
             df = pro.index_daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
             if df is not None and not df.empty:
@@ -813,7 +824,8 @@ def sync_adj_factor_incremental(db: DatabaseManager, all_codes: list,
         cur.execute("SELECT DISTINCT ts_code FROM adj_factor")
         db_existing = set(row[0] for row in cur.fetchall())
     except Exception as e:
-        pass  # non-critical fallback
+        print(f"  [WARN] adj_factor已存在查询失败: {e}", flush=True)
+        db_existing = set()
 
     stocks_to_pull = [c for c in stock_codes if c not in db_existing]
     if not stocks_to_pull:
@@ -1148,38 +1160,22 @@ def post_sync_data_check(db: DatabaseManager, trading_days: list,
         print(f"\n  --- Phase B: 回补{label}缺失数据 ({missing_pct:.0f}%缺失) ---",
               flush=True)
 
+        source_table = {'E': 'stock_basic', 'F': 'fund_basic', 'I': 'index_basic'}[asset_type]
+        status_col = {"E": "list_status='L'", "F": "status='L'", "I": "1=1"}[asset_type]
         try:
-            # 找出缺失的代码
+            # 只查询当前asset_type对应的源表（不混合UNION全部类型）
             cur.execute(f"""
-                SELECT s.ts_code FROM (
-                    SELECT ts_code FROM stock_basic WHERE list_status='L'
-                    UNION
-                    SELECT ts_code FROM fund_basic WHERE status='L'
-                    UNION
-                    SELECT ts_code FROM index_basic
-                ) s WHERE s.ts_code NOT IN (
+                SELECT ts_code FROM {source_table}
+                WHERE {status_col}
+                AND ts_code NOT IN (
                     SELECT DISTINCT ts_code FROM daily_price
                     WHERE asset_type=? AND trade_date=?
-                ) ORDER BY s.ts_code
+                )
             """, (asset_type, latest_td))
             missing_codes = [r[0] for r in cur.fetchall()]
-        except Exception:
-            # 简化版: 直接查缺少的
-            source_table = {'E': 'stock_basic', 'F': 'fund_basic', 'I': 'index_basic'}[asset_type]
-            status_col = {"E": "list_status='L'", "F": "status='L'", "I": "1=1"}[asset_type]
-            try:
-                cur.execute(f"""
-                    SELECT ts_code FROM {source_table}
-                    WHERE {status_col}
-                    AND ts_code NOT IN (
-                        SELECT DISTINCT ts_code FROM daily_price
-                        WHERE asset_type=? AND trade_date=?
-                    )
-                """, (asset_type, latest_td))
-                missing_codes = [r[0] for r in cur.fetchall()]
-            except Exception as e:
-                print(f"    查询缺失{label}失败: {e}", flush=True)
-                missing_codes = []
+        except Exception as e:
+            print(f"    查询缺失{label}失败: {e}", flush=True)
+            missing_codes = []
 
         missing_codes = missing_codes[:50]  # 最多回补50只（防止无限循环）
 
@@ -1271,7 +1267,45 @@ def post_sync_data_check(db: DatabaseManager, trading_days: list,
         print(f"    去重失败: {e}", flush=True)
         result["errors"] += 1
 
-    # C2. 异常值检测（price=0 但 vol>0）
+    # C2. NULL填充（可推导字段）
+    try:
+        # 填充可计算的 pct_chg：pct_chg = (close - pre_close) / pre_close * 100
+        cur.execute(f"""
+            UPDATE daily_price
+            SET pct_chg = ROUND((close - pre_close) / pre_close * 100, 2)
+            WHERE trade_date = ? AND pct_chg IS NULL
+            AND pre_close IS NOT NULL AND pre_close > 0 AND close IS NOT NULL
+        """, (latest_td,))
+        filled_pct = cur.rowcount
+        if filled_pct > 0:
+            cleaning["nulls_filled"] += filled_pct
+            print(f"    daily_price: 填充 {filled_pct} 行 NULL pct_chg", flush=True)
+
+        # 填充 NULL vol → 0（无成交量的行）
+        cur.execute(f"""
+            UPDATE daily_price SET vol = 0
+            WHERE trade_date = ? AND vol IS NULL
+        """, (latest_td,))
+        filled_vol = cur.rowcount
+        if filled_vol > 0:
+            cleaning["nulls_filled"] += filled_vol
+            print(f"    daily_price: 填充 {filled_vol} 行 NULL vol → 0", flush=True)
+
+        # 填充 NULL amount → 0
+        cur.execute(f"""
+            UPDATE daily_price SET amount = 0
+            WHERE trade_date = ? AND amount IS NULL
+        """, (latest_td,))
+        filled_amt = cur.rowcount
+        if filled_amt > 0:
+            cleaning["nulls_filled"] += filled_amt
+            print(f"    daily_price: 填充 {filled_amt} 行 NULL amount → 0", flush=True)
+
+        db.conn.commit()
+    except Exception as e:
+        print(f"    NULL填充失败: {e}", flush=True)
+
+    # C3. 异常值检测（price=0 但 vol>0）
     try:
         for atype, alabel in [('E', '股票'), ('F', 'ETF'), ('I', '指数')]:
             cur.execute(f"""
@@ -1287,7 +1321,7 @@ def post_sync_data_check(db: DatabaseManager, trading_days: list,
     except Exception as e:
         print(f"    异常检测失败: {e}", flush=True)
 
-    # C3. 极异常涨跌幅检查（|pct_chg|>50%，排除新股首日）
+    # C4. 极异常涨跌幅检查（|pct_chg|>50%，排除新股首日）
     try:
         cur.execute(f"""
             SELECT COUNT(*) FROM daily_price
@@ -1439,7 +1473,7 @@ def run_sync(args) -> int:
 
         if idx_start <= latest_td:
             budget = total_budget - (time.time() - start_time)
-            sync_results["index_daily"] = sync_index_daily(db, idx_start, latest_td)
+            sync_results["index_daily"] = sync_index_daily(db, idx_start, latest_td, max(budget, 60))
         else:
             print(f"\n  [3/10] 指数日线 — 已是最新，跳过")
 

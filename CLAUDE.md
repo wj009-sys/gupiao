@@ -45,7 +45,7 @@
 
 ## 项目目标
 
-构建A股自动化投研团队，包含8个AI Agent角色（7个流水线Agent + 1个交互式问股Agent），每天自动完成情报采集→技术分析→选股推荐→风控检查→交易计划→复盘迭代的完整闭环，由投资领导统筹管理。每个Agent都经过Darwin Skill优化（评分从平均65.1提升至97.1，全部达到五星标准）。
+构建A股自动化投研团队，包含10个AI Agent角色（9个流水线Agent + 1个交互式问股Agent），每天自动完成情报采集→技术分析→政策分析→游资追踪→选股推荐→风控检查→交易计划→复盘迭代的完整闭环，由投资领导统筹管理。每个Agent都经过Darwin Skill优化（评分从平均65.1提升至97.1，全部达到五星标准）。
 
 ## 🔄 数据自动同步
 
@@ -320,7 +320,7 @@ Agent3（风控官）与 Agent6（操盘手）构成「提案-审查」双轨制
 - **下游输出**：Agent2 分析师（宏观背景）、Agent7 投资领导（纳入决策）
 - **输出**：`reports/日报/政策/政策分析_YYYY-MM-DD.md`
 - **数据源**：东方财富新闻API（em_get()限流）、财联社、央行/证监会公告
-- **D3异常**：4条fallback（新闻API无响应、北向资金不可用、持仓缺失、分类失败）
+- **D3异常**：6条fallback（新闻API无响应、财联社无法访问、分类失败、持仓缺失、北向资金不可用、DB写入失败）
 - **D4检查**：5个CP（来源验证、持仓关联、影响一致性、历史去重、输出完整）
 - **D9反例**：5条（只收集不分析、忽视政策节奏、脱离行情背景）
 
@@ -330,7 +330,7 @@ Agent3（风控官）与 Agent6（操盘手）构成「提案-审查」双轨制
 - **下游输出**：Agent2 分析师（资金面辅助）、Agent5 选股机器人（游资方向因子）、Agent6 操盘手（资金面风险）
 - **输出**：`reports/日报/游资/游资追踪_YYYY-MM-DD.md`
 - **数据源**：Tushare `limit_list`/`top_list`、东方财富龙虎榜API（em_get()）、Tushare `moneyflow`（个股资金）
-- **D3异常**：6条fallback（Tushare龙虎榜失败、东财API 403、个股资金流超时、席位识别未知）
+- **D3异常**：5条fallback（龙虎榜为空、top_list API不可用、资金流向为空、持仓缺失、东财API 403）
 - **D4检查**：5个CP（双源验证、席位风格标注、持仓全覆盖、情绪有依据、数据时效）
 - **D9反例**：5条（涨跌停板当龙虎榜、游资机构不分、忽视连板效应）
 
@@ -341,7 +341,7 @@ Agent3（风控官）与 Agent6（操盘手）构成「提案-审查」双轨制
 .env.example         - 环境变量模板
 docs/archive/        - 历史设计文档和过时脚本归档
 data/              - 数据文件（持仓、自选、规则配置、数据库）
-  ├── stocks.db       - SQLite主数据库（~4100万行，15张表）
+  ├── stocks.db       - SQLite主数据库（~4943万行，24张表）
   ├── trading_calendar.json - 交易日历缓存
   ├── checkpoints/    - 数据同步检查点（gitignored）
   ├── raw/            - 原始数据缓存（gitignored）
@@ -588,8 +588,9 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001.SZ --strategy 均线
 | 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文3.0** — 全量Python脚本D3/D4/D9代码级嵌入+知识库升级 | +655行D3/D4/D9代码级实现 | 13 files, 7ab7249 |
 | 2026-06-27 | `auto-optimize/20260627-0020` | **达尔文4.0** — 全项目审计修复+跨SKILL引用+知识库标准化+QQ MCP+README | 15项修复+7项优化 | 90d520e |
 | 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文5.0** — SKILL标准化(22项)+Python覆盖补全(6脚本)+健康度修复(14项)+知识库升级 | +154D3 +81D4 +82D9, 150 try/except | 5 commits (7216601, f2b68ab, 73d0b8f, e470772, 6bbf73f) |
-| 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文6.0** — 全项目一致性审计+30项修复(5CRITICAL+12HIGH+13MEDIUM)+Telegram→PushPlus迁移+裸except消除 | 7 SKILL推送标准化 + 6处裸except修复 + 14处硬编码/路径修复 | e3c2ec9 |
-| 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文7.0** — 全项目全面审计修复(5CRITICAL+7HIGH+13MEDIUM+11LOW) | CLAUDE.md计数刷新+risk_check总资产Bug+stock_picker死代码+静默pass消除+硬编码env变量化+SKILL标准化+知识库权重修正+基础设施加固 | 已完成 |
+| 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文6.0** — 全项目一致性审计+30项修复(5CRITICAL+12HIGH+13MEDIUM)+Telegram→PushPlus迁移+裸except消除 | 7 SKILL推送标准化 + 6处裸except修复 + 14处硬编码/路径修复 | d9b678a |
+| 2026-07-02 | `auto-optimize/20260627-0020` | **达尔文7.0** — 全项目全面审计修复(5CRITICAL+7HIGH+13MEDIUM+11LOW) | CLAUDE.md计数刷新+risk_check总资产Bug+stock_picker死代码+静默pass消除+硬编码env变量化+SKILL标准化+知识库权重修正+基础设施加固 | e3c2ec9 |
+| 2026-07-03 | `auto-optimize/20260627-0020` | **达尔文8.0** — debate.py新增+决策审计日志+三级风控委员会+决策记忆注入+TradingAgents借鉴分析 | 4项架构升级 + 知识库 + CLAUDE.md | 无独立提交（合并到达尔文9.0） |
 | 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文9.0** — 借鉴ZhuLinsen三项目全面架构升级(8因子体系+L1→L2→L3+LLM排序+问股系统) | L2 LLM排序+l2_rerank+agent_ask问股9策略+SKILL+env | 已完成 |
 | 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文10.0** — 全项目全面审计修复101项(27CRITICAL+13HIGH+37MEDIUM+24LOW) | 知识库+data全面审计修复14项+knowledge_lint 2项Bug修复+补录11只指数 | c31188d, 1a83e8f, 26682e1 |
 | 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文11.0** — 全项目全面审计修复105项(8CRITICAL+22HIGH+31MEDIUM+40LOW+4INFO) | 7维度并行审计+交叉引用+38项自动修复+requirements.txt+GHA Agent4补全+Token安全+CLAUDE.md修正 | 当前 |
@@ -639,18 +640,33 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001.SZ --strategy 均线
 - **配置修复**：修复止损规则.json的type名重名（大盘联动止损×2→大盘联动止损/大盘联动清仓）
 - **知识库修复**：CHANGES.md路径前缀补全；复盘记录 correct=null→false；knowledge_lint.py stderr AttributeError加注释
 
-### 工具脚本（scripts/utils/ 补充清单）
+### 工具脚本（scripts/utils/ 补充清单 — 共25个脚本）
 
 | 脚本 | 行数 | 用途 |
 |:-----|:----:|:-----|
-| `migrate_to_db.py` | 370 | 数据迁移工具 |
-| `fetch_all_history.py` | 1,104 | 全量历史行情拉取 |
+| `auto_sync.py` | 1,664 | 自动同步流水线(10阶段) |
+| `backfill_etf_index.py` | 379 | ETF/指数全量历史回填 |
+| `build_portfolio.py` | 257 | 持仓组合构建工具 |
 | `data_cleaner.py` | 1,062 | 数据审计+清洗+复权工具 |
-| `research_ma96_rsi.py` | 602 | MA96+RSI策略研究脚本 |
-| `research_all_strategies.py` | 1,183 | 全策略含退市股回测 |
-| `sync_sector_moneyflow.py` | 330 | 板块资金流向同步 |
-| `fetch_financials.py` | 369 | 财务数据拉取 |
+| `data_provider.py` | 395 | 多数据源统一Provider层 |
+| `db_manager.py` | 2,128 | SQLite数据库管理(建表/迁移/查询) |
 | `eastmoney_client.py` | 292 | 东方财富板块数据客户端 |
-| `weekly_review.py` | 984 | Agent4周度复盘 |
-| `debate.py` | 537 | Agent7三方辩论引擎 |
+| `eastmoney_get.py` | 326 | 东方财富新闻/数据API(限流网关) |
+| `fetch_all_history.py` | 1,104 | 全量历史行情拉取 |
+| `fetch_financials.py` | 369 | 财务数据拉取 |
+| `fetch_remaining.py` | 268 | 剩余股票数据补齐 |
+| `knowledge_lint.py` | 624 | 知识库健康度检查+变更记录 |
+| `l2_rerank.py` | 384 | L2 LLM相对排序器 |
+| `md_to_docx.py` | 388 | Markdown→Word文档转换 |
+| `migrate_to_db.py` | 370 | 数据迁移工具 |
+| `mootdx_provider.py` | 323 | mootdx数据源Provider |
+| `research_all_strategies.py` | 1,183 | 全策略含退市股回测 |
+| `research_ma96_rsi.py` | 602 | MA96+RSI策略研究脚本 |
+| `risk_overlay.py` | 289 | 独立6项风险检查层 |
+| `rps.py` | 628 | RPS相对强弱排名计算 |
+| `scorecard.py` | 326 | L3 Scorecard后置分析器 |
+| `sync_sector_moneyflow.py` | 332 | 板块资金流向同步 |
+| `technical_analysis.py` | 402 | 技术指标计算(MACD/KDJ/RSI/布林带) |
+| `tushare_client.py` | 176 | Tushare Pro API统一客户端 |
+| `wechat_send.py` | 628 | 微信推送(PushPlus/cc-connect) |
 

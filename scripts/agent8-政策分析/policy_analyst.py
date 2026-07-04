@@ -156,10 +156,10 @@ def get_recent_policy_events(days: int = 7) -> list:
         return []
     try:
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
-        rows = _db.execute_query(
+        rows = _db.conn.execute(
             "SELECT title, event_date, category FROM policy_events WHERE event_date >= ? ORDER BY event_date DESC",
             (cutoff,)
-        )
+        ).fetchall()
         return [{"title": r[0], "date": r[1], "category": r[2]} for r in rows] if rows else []
     except Exception as e:
         logger.warning(f"历史政策查询失败: {e}")
@@ -285,7 +285,7 @@ def _save_policy_to_db(data: dict):
 
     for event in events:
         try:
-            _db.execute_query(
+            _db.conn.execute(
                 """INSERT OR IGNORE INTO policy_events
                    (event_date, title, content, source, category, impact_sector, impact_score, url)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -300,6 +300,7 @@ def _save_policy_to_db(data: dict):
                     event.get("url", ""),
                 )
             )
+            _db.conn.commit()
         except Exception as e:
             logger.warning(f"政策事件写入失败: {e}")
 

@@ -9,6 +9,7 @@
 
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
+| 2026-07-05 | 📝 📝 架构 | knowledge/INDEX.md | 达尔文12.0 — INDEX.md修复(孤立行移除+复盘07-04记录补全+日期更新) |
 | 2026-07-05 | 📝 feat | scripts/utils/auto_sync.py | 新增Phase10: post_sync_data_check覆盖度检查+多源回补+数据清洗 |
 | 2026-07-05 | 📝 feat | scripts/utils/backfill_etf_index.py | 新建一次性回填脚本(ETF+指数全量历史数据) |
 | 2026-07-05 | 📝 feat | scripts/utils/auto_sync.py | 新增ETF/指数同步函数(sync_fund_basic/sync_index_basic/sync_etf_daily)+扩展sync_index_daily+流水线10阶段 |

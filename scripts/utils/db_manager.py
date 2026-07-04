@@ -49,7 +49,7 @@ DEFAULT_DB_PATH = os.path.join(PROJECT_ROOT, "data", "stocks.db")
 
 
 # ============================================================
-#  建表 SQL（9张表）
+#  建表 SQL（23张表）
 # ============================================================
 
 CREATE_TABLES_SQL = [
@@ -194,7 +194,7 @@ CREATE_TABLES_SQL = [
     )
     """,
 
-    # 8. ths_daily — 概念板块每日
+    # 9. ths_daily — 概念板块每日
     """
     CREATE TABLE IF NOT EXISTS ths_daily (
         ts_code     TEXT NOT NULL,
@@ -207,7 +207,7 @@ CREATE_TABLES_SQL = [
     )
     """,
 
-    # 7. portfolio_snapshot — 持仓快照
+    # 10. portfolio_snapshot — 持仓快照
     """
     CREATE TABLE IF NOT EXISTS portfolio_snapshot (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -225,7 +225,7 @@ CREATE_TABLES_SQL = [
     )
     """,
 
-    # 8. watchlist — 自选股
+    # 11. watchlist — 自选股
     """
     CREATE TABLE IF NOT EXISTS watchlist (
         ts_code     TEXT PRIMARY KEY,
@@ -236,7 +236,7 @@ CREATE_TABLES_SQL = [
     )
     """,
 
-    # 9. report_log — 报告运行日志
+    # 12. report_log — 报告运行日志
     """
     CREATE TABLE IF NOT EXISTS report_log (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -250,7 +250,7 @@ CREATE_TABLES_SQL = [
     )
     """,
 
-    # 10. moneyflow_mkt — 大盘资金流向（需 Tushare 2000+积分权限）
+    # 13. moneyflow_mkt — 大盘资金流向（需 Tushare 2000+积分权限）
     """
     CREATE TABLE IF NOT EXISTS moneyflow_mkt (
         trade_date      TEXT NOT NULL,
@@ -268,7 +268,7 @@ CREATE_TABLES_SQL = [
     )
     """,
 
-    # 11. margin — 融资融券（沪深两市）
+    # 14. margin — 融资融券（沪深两市）
     """
     CREATE TABLE IF NOT EXISTS margin (
         trade_date  TEXT NOT NULL,
@@ -286,7 +286,7 @@ CREATE_TABLES_SQL = [
     )
     """,
 
-    # 12. decision_log — 决策审计日志（TradingAgents借鉴自SQLite持久化）
+    # 15. decision_log — 决策审计日志（TradingAgents借鉴自SQLite持久化）
     """
     CREATE TABLE IF NOT EXISTS decision_log (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -303,7 +303,7 @@ CREATE_TABLES_SQL = [
     )
     """,
 
-    # 13. policy_events — 政策事件数据库（Agent8政策分析师使用）
+    # 16. policy_events — 政策事件数据库（Agent8政策分析师使用）
     """
     CREATE TABLE IF NOT EXISTS policy_events (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -320,7 +320,7 @@ CREATE_TABLES_SQL = [
     )
     """,
 
-    # 14. dragon_tiger_detail — 龙虎榜机构席位明细（Agent9游资追踪师使用）
+    # 17. dragon_tiger_detail — 龙虎榜机构席位明细（Agent9游资追踪师使用）
     """
     CREATE TABLE IF NOT EXISTS dragon_tiger_detail (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -341,7 +341,7 @@ CREATE_TABLES_SQL = [
     )
     """,
 
-    # 15. hot_money_seats — 游资席位跟踪（Agent9游资追踪师使用）
+    # 18. hot_money_seats — 游资席位跟踪（Agent9游资追踪师使用）
     """
     CREATE TABLE IF NOT EXISTS hot_money_seats (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -357,7 +357,7 @@ CREATE_TABLES_SQL = [
     )
     """,
 
-    # 16. lockup_schedule — 限售股解禁日历（Agent3风控扩展使用）
+    # 19. lockup_schedule — 限售股解禁日历（Agent3风控扩展使用）
     """
     CREATE TABLE IF NOT EXISTS lockup_schedule (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -373,7 +373,7 @@ CREATE_TABLES_SQL = [
     )
     """,
 
-    # 17. margin_detail — 个股融资融券明细
+    # 20. margin_detail — 个股融资融券明细
     """
     CREATE TABLE IF NOT EXISTS margin_detail (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -388,7 +388,7 @@ CREATE_TABLES_SQL = [
     )
     """,
 
-    # 18. moneyflow_stock — 个股资金流向
+    # 21. moneyflow_stock — 个股资金流向
     """
     CREATE TABLE IF NOT EXISTS moneyflow_stock (
         id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -406,7 +406,7 @@ CREATE_TABLES_SQL = [
     )
     """,
 
-    # 19. fund_basic — ETF基金基础信息
+    # 22. fund_basic — ETF基金基础信息
     """
     CREATE TABLE IF NOT EXISTS fund_basic (
         ts_code     TEXT PRIMARY KEY,
@@ -428,7 +428,7 @@ CREATE_TABLES_SQL = [
     )
     """,
 
-    # 20. index_basic — 指数基础信息
+    # 23. index_basic — 指数基础信息
     """
     CREATE TABLE IF NOT EXISTS index_basic (
         ts_code     TEXT PRIMARY KEY,
@@ -1033,22 +1033,18 @@ class DatabaseManager:
             return pd.DataFrame()
 
         try:
-            # 获取该股票最新的复权因子作为基准
+            # 检查该股票是否有可用的复权因子（>0）
             cur = self.conn.cursor()
             cur.execute(
-                "SELECT adj_factor FROM adj_factor WHERE ts_code = ? ORDER BY trade_date DESC LIMIT 1",
+                "SELECT 1 FROM adj_factor WHERE ts_code = ? AND adj_factor > 0 LIMIT 1",
                 (ts_code,)
             )
-            row = cur.fetchone()
-            if not row:
+            if not cur.fetchone():
                 # 无复权因子，返回原始价格
                 return self.get_daily_price(ts_code, start_date, end_date)
-            latest_af = row[0]
-            if not latest_af or latest_af == 0:
-                return self.get_daily_price(ts_code, start_date, end_date)
 
-            # JOIN查询，计算前复权价
-            conditions = ["p.ts_code = ?", "a.ts_code = p.ts_code", "a.trade_date = p.trade_date"]
+            # CTE + JOIN 查询，计算前复权价（全部参数化，无 f-string 嵌入）
+            conditions = ["p.ts_code = ?"]
             params = [ts_code]
             if start_date:
                 conditions.append("p.trade_date >= ?")
@@ -1058,22 +1054,28 @@ class DatabaseManager:
                 params.append(end_date)
 
             sql = f"""
+                WITH latest_af AS (
+                    SELECT adj_factor FROM adj_factor
+                    WHERE ts_code = ? ORDER BY trade_date DESC LIMIT 1
+                )
                 SELECT p.ts_code, p.trade_date,
-                       ROUND(p.open  * {latest_af} / a.adj_factor, 4) AS open_adj,
-                       ROUND(p.high  * {latest_af} / a.adj_factor, 4) AS high_adj,
-                       ROUND(p.low   * {latest_af} / a.adj_factor, 4) AS low_adj,
-                       ROUND(p.close * {latest_af} / a.adj_factor, 4) AS close_adj,
+                       ROUND(p.open  / a.adj_factor * COALESCE(NULLIF(la.adj_factor, 0), 1), 4) AS open_adj,
+                       ROUND(p.high  / a.adj_factor * COALESCE(NULLIF(la.adj_factor, 0), 1), 4) AS high_adj,
+                       ROUND(p.low   / a.adj_factor * COALESCE(NULLIF(la.adj_factor, 0), 1), 4) AS low_adj,
+                       ROUND(p.close / a.adj_factor * COALESCE(NULLIF(la.adj_factor, 0), 1), 4) AS close_adj,
                        p.open, p.high, p.low, p.close,
                        p.pre_close, p.change, p.pct_chg,
                        p.vol, p.amount,
                        a.adj_factor,
-                       {latest_af} AS latest_adj_factor
+                       COALESCE(NULLIF(la.adj_factor, 0), 1) AS latest_adj_factor
                 FROM daily_price p
                 JOIN adj_factor a ON a.ts_code = p.ts_code AND a.trade_date = p.trade_date
+                CROSS JOIN latest_af la
                 WHERE {' AND '.join(conditions)}
                 ORDER BY p.trade_date ASC
             """
-            return pd.read_sql_query(sql, self.conn, params=params)
+            all_params = [ts_code] + params  # CTE param + WHERE params
+            return pd.read_sql_query(sql, self.conn, params=all_params)
         except Exception as e:
             print(f"[DB] get_daily_price_adj 失败 ({ts_code}): {e}")
             return self.get_daily_price(ts_code, start_date, end_date)
@@ -1960,7 +1962,10 @@ class DatabaseManager:
             "stock_basic", "daily_price", "daily_basic", "fina_indicator",
             "dividend", "adj_factor", "daily_indicator", "moneyflow_hsgt",
             "ths_daily", "moneyflow_mkt", "margin",
-            "portfolio_snapshot", "watchlist", "report_log", "decision_log"
+            "portfolio_snapshot", "watchlist", "report_log", "decision_log",
+            "fund_basic", "index_basic", "policy_events",
+            "dragon_tiger_detail", "hot_money_seats", "lockup_schedule",
+            "margin_detail", "moneyflow_stock",
         ]
         stats = {}
         try:

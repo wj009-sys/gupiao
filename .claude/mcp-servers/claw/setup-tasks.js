@@ -16,7 +16,7 @@ const tasks = [
     prompt: `现在是工作日早上7点，执行 Agent1 情报采集任务：
 1. 读取 skills/agent1-情报员/SKILL.md 了解工作流程
 2. 运行：source venv/Scripts/activate && python -X utf8 scripts/agent1-情报采集/fetch_all.py
-3. 用 WebFetch 和 tavily-search 抓取今日财经新闻
+3. 用 WebFetch 和 WebSearch 抓取今日财经新闻
 4. 按 SKILL.md 模板生成情报摘要报告
 5. 保存到 reports/日报/情报/ 目录
 6. 输出3-5句话要点汇总给用户`,

@@ -73,8 +73,9 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001 --strategy 综合 --mode b
 | 技术指标计算异常 | 跳过失败指标 | 基于可用指标做分析 |
 | 涨跌停/停牌 | 标注异常状态 | 提示用户注意风险 |
 | ask.py脚本报错 | 检查Python环境和依赖 | 手动调用technical_analysis.py计算指标并基于策略模板人工分析 |
-| LLM API超时/不可用 | 降级为纯规则引擎输出（不依赖LLM解读） | 标注"规则引擎模式，无LLM解读" |
+| 数据库连接失败 | 重试3次后检查 DB 文件存在性 | 提示"数据源异常，部分功能受限" |
 | Tushare行情获取失败 | 自动切换到AkShare（data_provider.py fallback） | 标注数据来源 |
+| 策略分析结果为空 | 标注"无明确信号" | 建议横向对比其他策略 |
 
 ## 🔴 D4 CHECKPOINT
 
@@ -177,7 +178,7 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001 --strategy 综合 --mode b
 
 ## 参考文件
 
-- `scripts/agent_ask/ask.py` — 策略问股核心脚本（9大策略模板+LiteLLM驱动的自然语言分析）
+- `scripts/agent_ask/ask.py` — 策略问股核心脚本（9大策略模板+规则引擎分析）
 - `scripts/utils/technical_analysis.py` — 技术指标计算函数库（MACD/KDJ/RSI/布林带/均线）
 - `data/stocks.db` — 股票行情数据库（问股分析的行情数据源）
 - `knowledge/策略/交易执行规则.md` — 买卖规则参考（用于建议部分的合规校验，避免给出违规建议）

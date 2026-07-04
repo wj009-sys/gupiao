@@ -765,13 +765,13 @@ def check_lockup_risk(portfolio: dict) -> list:
                 continue
             name = h.get("名称", "未知")
 
-            rows = db.execute_query(
+            rows = db.conn.execute(
                 """SELECT unlock_date, unlock_volume, unlock_ratio, holder_name, lockup_type
                    FROM lockup_schedule
                    WHERE ts_code = ? AND unlock_date >= ? AND unlock_date <= ?
                    ORDER BY unlock_date ASC""",
                 (code, today, cutoff)
-            )
+            ).fetchall()
             if rows:
                 for row in rows:
                     unlock_date, volume, ratio, holder, lu_type = row[:5]
@@ -818,13 +818,13 @@ def check_financial_risk(portfolio: dict) -> list:
                 continue
             name = h.get("名称", "未知")
 
-            rows = db.execute_query(
+            rows = db.conn.execute(
                 """SELECT roe, debt_to_assets, current_ratio, grossprofit_margin, end_date
                    FROM fina_indicator
                    WHERE ts_code = ? AND end_date IS NOT NULL
                    ORDER BY end_date DESC LIMIT 1""",
                 (code,)
-            )
+            ).fetchall()
             if rows:
                 row = rows[0]
                 roe, debt, curr_ratio, gross_margin, end_date = (row + [None]*5)[:5]
@@ -891,13 +891,13 @@ def check_margin_risk(portfolio: dict) -> list:
                 continue
             name = h.get("名称", "未知")
 
-            rows = db.execute_query(
+            rows = db.conn.execute(
                 """SELECT trade_date, rzye, rqye, rzmre
                    FROM margin_detail
                    WHERE ts_code = ? AND trade_date >= ?
                    ORDER BY trade_date DESC LIMIT 5""",
                 (code, week_ago)
-            )
+            ).fetchall()
             if rows and len(rows) >= 2:
                 # 最近两日融资余额变化
                 latest = rows[0]
@@ -956,13 +956,13 @@ def check_shareholder_risk(portfolio: dict) -> list:
             name = h.get("名称", "未知")
 
             # 检查龙虎榜中该股票的机构卖出
-            rows = db.execute_query(
+            rows = db.conn.execute(
                 """SELECT trade_date, sell_amount, sell_seats
                    FROM dragon_tiger_detail
                    WHERE ts_code = ? AND trade_date >= ?
                    ORDER BY trade_date DESC LIMIT 3""",
                 (code, today[:6] + "01")  # 当月
-            )
+            ).fetchall()
             if rows:
                 total_sell = sum(float(r[1] or 0) for r in rows)
                 if total_sell > 1e7:  # 机构卖出超千万

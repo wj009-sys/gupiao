@@ -106,11 +106,18 @@ def get_limit_list(trade_date: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def get_ths_index(daily: bool = True) -> pd.DataFrame:
-    """获取同花顺概念板块（Tushare优先，失败时回退到东方财富）"""
+def get_ths_index(daily: bool = True, trade_date: str = None) -> pd.DataFrame:
+    """获取同花顺概念板块（Tushare优先，失败时回退到东方财富）
+
+    Args:
+        daily: True 获取日线数据，False 获取板块列表
+        trade_date: 交易日 YYYYMMDD，默认今天
+    """
+    if trade_date is None:
+        trade_date = today_str()
     try:
         if daily:
-            return pro.ths_daily(trade_date=today_str())
+            return pro.ths_daily(trade_date=trade_date)
         return pro.ths_index()
     except Exception as e:
         print(f"[tushare] get_ths_index 失败: {e}，回退到东方财富...")

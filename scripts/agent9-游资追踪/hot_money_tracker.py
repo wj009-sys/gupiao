@@ -315,28 +315,28 @@ def generate_hot_money_tracking(trade_date: str = None) -> dict:
         data["sentiment"] = {"rating": "计算失败", "score": 0}
 
     # 5. 持仓资金流向（用 Tushare moneyflow）
-    try:
-        for h in data["holdings"]:
-            code = h.get("代码", "")
-            if not code:
-                continue
+    for h in data["holdings"]:
+        code = h.get("代码", "")
+        if not code:
+            continue
+        try:
             mf = pro.moneyflow(ts_code=code, start_date=trade_date, end_date=trade_date)
             if mf is not None and not mf.empty:
                 row = mf.iloc[0]
                 data["holdings_moneyflow"].append({
                     "ts_code": code,
                     "name": h.get("名称", ""),
-                    "net_amount": float(row.get("net_amount", 0)) / 1e4 if "net_amount" in row else 0,
+                    "net_amount": float(row.get("buy_lg_amount", 0) - row.get("sell_lg_amount", 0)) / 1e4,
                     "buy_lg_amount": float(row.get("buy_lg_amount", 0)) / 1e4 if "buy_lg_amount" in row else 0,
                     "sell_lg_amount": float(row.get("sell_lg_amount", 0)) / 1e4 if "sell_lg_amount" in row else 0,
                     "buy_sm_amount": float(row.get("buy_sm_amount", 0)) / 1e4 if "buy_sm_amount" in row else 0,
                     "sell_sm_amount": float(row.get("sell_sm_amount", 0)) / 1e4 if "sell_sm_amount" in row else 0,
                 })
+        except Exception as e:
+            logger.warning(f"个股资金流向获取失败 ({code} {h.get('名称', '')}): {e}")
+            continue
 
-        print(f"  {ok} 持仓资金流向: {len(data['holdings_moneyflow'])} 只")
-    except Exception as e:
-        data["errors"].append(f"持仓资金流向获取失败: {e}")
-        print(f"  {fail} 持仓资金流向: {e}")
+    print(f"  {ok if data['holdings_moneyflow'] else warn} 持仓资金流向: {len(data['holdings_moneyflow'])} 只")
 
     # 6. 写入数据库
     _save_to_db(data)
@@ -366,7 +366,7 @@ def _save_to_db(data: dict):
     # 写入龙虎榜明细
     for item in data.get("dragon_tiger", []):
         try:
-            _db.execute_query(
+            _db.conn.execute(
                 """INSERT OR IGNORE INTO dragon_tiger_detail
                    (trade_date, ts_code, name, close, pct_chg, amount,
                     buy_amount, sell_amount, net_amount, buy_seats, sell_seats, reason_type)
@@ -386,13 +386,14 @@ def _save_to_db(data: dict):
                     item.get("reason_type", ""),
                 )
             )
+            _db.conn.commit()
         except Exception as e:
             logger.warning(f"龙虎榜写入失败: {e}")
 
     # 写入游资席位
     for seat in data.get("hot_money_seats", []):
         try:
-            _db.execute_query(
+            _db.conn.execute(
                 """INSERT OR IGNORE INTO hot_money_seats
                    (trade_date, seat_name, seat_type, style, active_stocks)
                    VALUES (?, ?, ?, ?, ?)""",
@@ -404,13 +405,14 @@ def _save_to_db(data: dict):
                     seat.get("count", 0),
                 )
             )
+            _db.conn.commit()
         except Exception as e:
             logger.warning(f"游资席位写入失败: {e}")
 
     # 写入个股资金流向
     for mf in data.get("holdings_moneyflow", []):
         try:
-            _db.execute_query(
+            _db.conn.execute(
                 """INSERT OR IGNORE INTO moneyflow_stock
                    (ts_code, trade_date, net_amount, buy_lg_amount, sell_lg_amount,
                     buy_sm_amount, sell_sm_amount, net_lg_amount)
@@ -426,6 +428,7 @@ def _save_to_db(data: dict):
                     mf.get("net_amount", 0),  # net_lg_amount 近似
                 )
             )
+            _db.conn.commit()
         except Exception as e:
             logger.warning(f"资金流向写入失败: {e}")
 

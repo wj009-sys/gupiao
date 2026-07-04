@@ -134,7 +134,7 @@ def analyze_sectors(end_date: str, top_n: int = 30) -> pd.DataFrame:
     """获取板块涨跌排名并添加技术面评分"""
     # D4-CP3: 板块数据时效（优先Tushare THS，失败自动回退东方财富）
     try:
-        df = get_ths_index(daily=True)
+        df = get_ths_index(daily=True, trade_date=end_date)
         if df.empty:
             print(f"  [WARN] 板块数据为空（可能非交易日或API不可用）")
     except Exception as e:
