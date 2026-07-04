@@ -26,6 +26,7 @@
   8. dividend       — pro.dividend(ts_code=X)          很少需要
   9. ths_daily      — pro.ths_daily(trade_date=X)      快
   10. quality_check — 覆盖度检查+多源回补+数据清洗     快速
+  11. daily_indicator — 全市场技术指标计算              快速
 
 D3异常处理表:
 | 触发条件 | 一线修复 | 仍失败兜底 |
@@ -58,6 +59,9 @@ import json
 import time
 import argparse
 from datetime import datetime, timedelta
+
+import pandas as pd
+import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.tushare_client import pro
@@ -1351,6 +1355,122 @@ def post_sync_data_check(db: DatabaseManager, trading_days: list,
     return result
 
 
+def sync_daily_indicators(db: DatabaseManager, latest_td: str,
+                           lookback_days: int = 80) -> dict:
+    """
+    全市场技术指标增量计算（Phase 11）
+
+    读取最近 lookback_days 天的价格数据，计算 MACD/KDJ/RSI/BOLL/MA 指标，
+    写入 daily_indicator 表。
+
+    参数:
+        db: 数据库连接
+        latest_td: 最新交易日 YYYYMMDD
+        lookback_days: 回看天数
+    返回:
+        {"rows_inserted": int, "elapsed_sec": float}
+    """
+    import time
+    t0 = time.time()
+    result = {"rows_inserted": 0, "elapsed_sec": 0.0}
+
+    print(f"  [11/11] 技术指标计算 — 回看 {lookback_days} 天...", flush=True)
+
+    lookback_sql = f"""
+        SELECT ts_code, trade_date, open, high, low, close, vol
+        FROM daily_price
+        WHERE trade_date >= date('now', '-{lookback_days} days')
+        ORDER BY ts_code, trade_date ASC
+    """
+
+    df = pd.read_sql_query(lookback_sql, db.conn)
+    if df.empty:
+        print(f"  [11/11] 无新价格数据，跳过", flush=True)
+        return result
+
+    if "vol" in df.columns and "volume" not in df.columns:
+        df = df.rename(columns={"vol": "volume"})
+
+    from scripts.utils.technical_analysis import add_all_indicators
+
+    all_rows = []
+    total_stocks = df["ts_code"].nunique()
+    processed = 0
+    skipped = 0
+
+    for code, grp in df.groupby("ts_code", sort=False):
+        grp = grp.sort_values("trade_date").reset_index(drop=True)
+        if len(grp) < 20:
+            processed += 1
+            skipped += 1
+            continue
+
+        try:
+            df_ta = add_all_indicators(grp)
+        except Exception:
+            processed += 1
+            continue
+
+        if df_ta is None or df_ta.empty:
+            processed += 1
+            continue
+
+        for _, row in df_ta.iterrows():
+            vals = []
+            for col in INDICATOR_COLS:
+                v = row.get(col)
+                if col in STR_COLS:
+                    vals.append(str(v) if v is not None else None)
+                elif col in BOOL_COLS:
+                    vals.append(1 if v else 0)
+                else:
+                    if v is None or (isinstance(v, float) and np.isnan(v)):
+                        vals.append(None)
+                    else:
+                        vals.append(float(v))
+            all_rows.append(tuple(vals))
+
+        processed += 1
+        if processed % 200 == 0:
+            print(f"    [11/11] {processed}/{total_stocks}, 累计 {len(all_rows)} 行",
+                  flush=True)
+
+    # 批量写入
+    if all_rows:
+        placeholders = ", ".join(["?" for _ in INDICATOR_COLS])
+        cols_str = ", ".join(INDICATOR_COLS)
+        upsert_sql = f"INSERT OR REPLACE INTO daily_indicator ({cols_str}) VALUES ({placeholders})"
+
+        batch_size = 5000
+        cur = db.conn.cursor()
+        for i in range(0, len(all_rows), batch_size):
+            batch = all_rows[i:i + batch_size]
+            cur.executemany(upsert_sql, batch)
+            db.conn.commit()
+        result["rows_inserted"] = len(all_rows)
+
+    elapsed = time.time() - t0
+    result["elapsed_sec"] = round(elapsed, 1)
+
+    print(f"  ✅ [11/11] daily_indicator 完成: {result['rows_inserted']}行 "
+          f"(覆盖{total_stocks}只, 跳过{skipped}只, {elapsed:.0f}s)", flush=True)
+    return result
+
+
+# 常量定义（供 sync_daily_indicators 使用）
+INDICATOR_COLS = [
+    "ts_code", "trade_date",
+    "macd", "macd_signal", "macd_diff",
+    "macd_golden_cross", "macd_death_cross",
+    "kdj_k", "kdj_d", "kdj_j", "kdj_golden_cross",
+    "rsi_14",
+    "boll_upper", "boll_mid", "boll_lower", "boll_width",
+    "ma_5", "ma_10", "ma_20", "ma_60",
+]
+BOOL_COLS = {"macd_golden_cross", "macd_death_cross", "kdj_golden_cross"}
+STR_COLS = {"ts_code", "trade_date"}
+
+
 # ============================================================
 #  主流程
 # ============================================================
@@ -1568,14 +1688,14 @@ def run_sync(args) -> int:
     if args.type in (None, "all", "ths_daily"):
         budget = total_budget - (time.time() - start_time)
         if budget > 10:  # 只需要很少时间（约6秒）
-            print(f"\n  [9/10] 概念板块 (ths_daily)")
+            print(f"\n  [9/11] 概念板块 (ths_daily)")
             try:
                 from scripts.utils.sync_sector_moneyflow import sync_ths_daily
                 sync_results["ths_daily"] = sync_ths_daily(db, latest_td)
             except Exception as e:
-                print(f"  [9/10] 板块数据同步失败: {e}")
+                print(f"  [9/11] 板块数据同步失败: {e}")
         else:
-            print(f"\n  [9/10] 概念板块 — 时间不足，跳过")
+            print(f"\n  [9/11] 概念板块 — 时间不足，跳过")
 
     # === Phase 10: Post-Sync Quality Check ===
     if args.type in (None, "all", "quality_check"):
@@ -1585,9 +1705,22 @@ def run_sync(args) -> int:
                 qc_result = post_sync_data_check(db, trading_days, latest_td)
                 sync_results["quality_check"] = qc_result
             else:
-                print(f"\n  [10/10] 数据质量检查 — 时间不足，跳过")
+                print(f"\n  [10/11] 数据质量检查 — 时间不足，跳过")
         else:
-            print(f"\n  [10/10] 数据质量检查 — 无新数据，跳过")
+            print(f"\n  [10/11] 数据质量检查 — 无新数据，跳过")
+
+    # === Phase 11: daily_indicator（全市场技术指标计算）===
+    if args.type in (None, "all", "daily_indicator"):
+        budget = total_budget - (time.time() - start_time)
+        if budget > 30:
+            print(f"\n  [11/11] 全市场技术指标 (daily_indicator)")
+            try:
+                ind_result = sync_daily_indicators(db, latest_td)
+                sync_results["daily_indicator"] = ind_result
+            except Exception as e:
+                print(f"  [11/11] 技术指标计算失败: {e}")
+        else:
+            print(f"\n  [11/11] 技术指标计算 — 时间不足，跳过")
 
     # === 汇总 ===
     elapsed_total = time.time() - start_time
@@ -1645,7 +1778,8 @@ def main():
                         help="自动同步缺失数据")
     parser.add_argument("--type", type=str, default=None,
                         choices=["all", "daily_price", "adj_factor", "daily_basic",
-                                 "fina_indicator", "dividend", "index_daily", "ths_daily"],
+                                 "fina_indicator", "dividend", "index_daily",
+                                 "ths_daily", "daily_indicator"],
                         help="只同步特定类型（默认 all）")
     parser.add_argument("--max-minutes", type=int, default=30,
                         help="最大时间预算（分钟，默认30）")

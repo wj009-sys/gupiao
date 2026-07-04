@@ -55,7 +55,7 @@ def _calc_obv(df: pd.DataFrame) -> pd.Series:
     """
     obv = pd.Series(0.0, index=df.index, dtype=float)
     close = df["close"].values
-    volume = df["volume"].values
+    volume = np.nan_to_num(df["volume"].values, nan=0.0)
 
     for i in range(1, len(close)):
         if close[i] > close[i - 1]:
@@ -138,6 +138,20 @@ def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
         if col not in result.columns:
             print(f"[technical_analysis] 缺少必要列: {col}")
             return pd.DataFrame()  # 无法计算
+
+    # OHLC 矛盾修复（原始数据问题：Tushare 早期A股/指数偶有 close>high 等）
+    # 修复规则：close>high → high=close; low>close → low=close; low>open → low=open
+    # 不修改open/high超出范围的情况（数据量极少且不影响核心指标）
+    for col, ref, label in [("high", "close", "close>high"), ("close", "low", "low>close")]:
+        if col in result.columns and ref in result.columns:
+            bad = result[col] < result[ref] if label == "close>high" else result[col] < result[ref]
+            n_bad = bad.sum()
+            if n_bad > 0:
+                if label == "close>high":
+                    result.loc[bad, "high"] = result.loc[bad, "close"]
+                else:
+                    result.loc[bad, "low"] = result.loc[bad, "close"]
+                print(f"  [technical_analysis] OHLC修复: {n_bad}处{label}")
 
     has_ohlc = all(c in result.columns for c in ["open", "high", "low", "close", "volume"])
     has_volume = "volume" in result.columns

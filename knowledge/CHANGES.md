@@ -9,6 +9,14 @@
 
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
+| 2026-07-05 | 📝 修复 | skills/agent8-政策分析师/SKILL.md | D4 CHECKPOINT删除重复CP5条目(5章节vs6章节矛盾) |
+| 2026-07-05 | 📝 修复 | skills/agent7-投资领导/SKILL.md | 质量审核标准新增Agent8+Agent9专属审核项+描述更新(Agent1-9+问股) |
+| 2026-07-05 | 📝 修复 | skills/agent4-复盘师/SKILL.md | 关联Agent表新增Agent8+Agent9上游输入 |
+| 2026-07-05 | 📝 修复 | skills/agent2-分析师/SKILL.md | 关联Agent表新增Agent8(政策分析师)+Agent9(游资追踪师)上游输入 |
+| 2026-07-05 | 📝 修复 | utils/technical_analysis.py | OBV计算NaN安全处理：np.nan_to_num防NoneVolume+OHLC矛盾自动修复 |
+| 2026-07-05 | 📝 修复 | utils/auto_sync.py | 新增Phase 11: 全市场技术指标计算(daily_indicator)。新增sync_daily_indicators函数，更新docstring和--type choices |
+| 2026-07-05 | 📝 添加 | utils/backfill_indicators.py | 新建全市场技术指标回填脚本，批量计算MACD/KDJ/RSI/BOLL/MA，支持全量回填和每日增量 |
+| 2026-07-05 | 📝 修复 | utils/technical_analysis.py | OHLC矛盾修复：close>high→high=close, low>close→low=close，在指标计算层自动修复 |
 | 2026-07-05 | 📝 📝 架构 | knowledge/INDEX.md | 达尔文12.0 — INDEX.md修复(孤立行移除+复盘07-04记录补全+日期更新) |
 | 2026-07-05 | 📝 feat | scripts/utils/auto_sync.py | 新增Phase10: post_sync_data_check覆盖度检查+多源回补+数据清洗 |
 | 2026-07-05 | 📝 feat | scripts/utils/backfill_etf_index.py | 新建一次性回填脚本(ETF+指数全量历史数据) |
