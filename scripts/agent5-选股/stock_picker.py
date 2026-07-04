@@ -989,7 +989,7 @@ def score_growth(ts_code: str, trade_date: str) -> dict:
         score = 50
         details = {}
 
-        rev_growth = row.get("revenue_yoy")
+        rev_growth = row.get("or_yoy") or row.get("revenue_yoy")
         if rev_growth is not None:
             if rev_growth > 30:
                 score += 25
@@ -1004,7 +1004,7 @@ def score_growth(ts_code: str, trade_date: str) -> dict:
                 score -= 10
                 details["营收增长"] = f"{rev_growth:.1f}%，负增长"
 
-        profit_growth = row.get("profit_dedt")
+        profit_growth = row.get("profit_dedt_yoy")
         if profit_growth is not None:
             if profit_growth > 30:
                 score += 20

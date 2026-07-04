@@ -77,13 +77,14 @@ def _get_indicators(ts_code: str, df: pd.DataFrame = None) -> dict:
         latest = df_with_idx.iloc[-1]
         result = {
             "close": float(latest.get("close", 0)),
-            "volume": float(latest.get("vol", 0)),
+            "volume": float(latest.get("volume") or latest.get("vol", 0)),
             "pct_chg": float(latest.get("pct_chg", 0)),
             "signals": signals,
         }
 
         # MACD（列名均为小写，由 technical_analysis.py 生成）
-        for k in ["macd_diff", "macd_dea", "macd"]:
+        # 注意：ta库使用 macd_signal（非 macd_dea），macd_diff = DIF - DEA
+        for k in ["macd_diff", "macd_signal", "macd"]:
             v = latest.get(k)
             if v is not None and not (isinstance(v, float) and np.isnan(v)):
                 result[k] = round(float(v), 4)
@@ -94,8 +95,8 @@ def _get_indicators(ts_code: str, df: pd.DataFrame = None) -> dict:
             if v is not None and not (isinstance(v, float) and np.isnan(v)):
                 result[k] = round(float(v), 2)
 
-        # RSI
-        for k in ["rsi_14", "rsi_6"]:
+        # RSI (仅 rsi_14 由 technical_analysis.py 生成，无 rsi_6)
+        for k in ["rsi_14"]:
             v = latest.get(k)
             if v is not None and not (isinstance(v, float) and np.isnan(v)):
                 result[k] = round(float(v), 2)

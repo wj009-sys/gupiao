@@ -929,9 +929,9 @@ def sync_fina_indicator_incremental(db: DatabaseManager, all_codes: list,
                 ts_code=code,
                 start_date="20200101",
                 end_date=today,
-                fields="ts_code,end_date,revenue,profit_dedt,roe,roa,"
+                fields="ts_code,end_date,op_income,profit_dedt,roe,roa,"
                        "grossprofit_margin,debt_to_assets,current_ratio,"
-                       "revenue_yoy,profit_dedt_yoy,or_yoy"
+                       "or_yoy,dt_netprofit_yoy"
             )
             if df is not None and not df.empty:
                 n = db.upsert_fina_indicator(df)

@@ -506,8 +506,10 @@ DAILY_INDICATOR_COLS = [
     "ts_code", "trade_date",
     "macd", "macd_signal", "macd_diff", "macd_golden_cross", "macd_death_cross",
     "kdj_k", "kdj_d", "kdj_j", "kdj_golden_cross",
-    "rsi_14",
+    "rsi_14", "rsi_oversold", "rsi_overbought",
     "boll_upper", "boll_mid", "boll_lower", "boll_width",
+    "boll_break_upper", "boll_break_lower",
+    "obv", "obv_ma20", "obv_trend", "obv_divergence",
     "ma_5", "ma_10", "ma_20", "ma_60",
 ]
 
@@ -518,6 +520,30 @@ THS_DAILY_COL_MAP = {
     "strength": "strength",
     "anomaly": "anomaly",
 }
+
+# fina_indicator 列映射：Tushare API 字段名 → 数据库列名
+# Tushare 字段: dt_profit_yoy = 净利润同比增长率，or_yoy = 营收同比增长率
+FINA_INDICATOR_COL_MAP = {
+    "ts_code": "ts_code",
+    "end_date": "end_date",
+    "revenue": "revenue",           # 营业收入（元）
+    "profit_dedt": "profit_dedt",   # 扣非净利润（元）
+    "roe": "roe",
+    "roa": "roa",
+    "grossprofit_margin": "grossprofit_margin",
+    "debt_to_assets": "debt_to_assets",
+    "current_ratio": "current_ratio",
+    "or_yoy": "or_yoy",             # 营收同比增长率 %
+    "dt_netprofit_yoy": "profit_dedt_yoy",  # 扣非净利同比增长率 %
+    "op_income": "revenue",         # 营业总收入（元）→ 营业收入
+}
+
+# 数据库fina_indicator列（用于自动检测存在的列）
+FINA_INDICATOR_DB_COLS = [
+    "ts_code", "end_date", "revenue", "profit_dedt", "roe", "roa",
+    "grossprofit_margin", "debt_to_assets", "current_ratio",
+    "revenue_yoy", "profit_dedt_yoy", "or_yoy",
+]
 
 
 # ============================================================
@@ -881,7 +907,8 @@ class DatabaseManager:
         写入财务报表指标（季度数据，INSERT OR REPLACE）
 
         Args:
-            df: 含 ts_code, end_date, roe, roa, revenue_yoy, profit_dedt_yoy 等列的 DataFrame
+            df: 含 ts_code, end_date, roe, roa, or_yoy, dt_profit_yoy 等列的 DataFrame
+                列名会被 FINA_INDICATOR_COL_MAP 映射到数据库列名
 
         Returns:
             写入行数
@@ -891,21 +918,17 @@ class DatabaseManager:
         if df is None or df.empty:
             return 0
 
-        # 数据库中的列
-        db_cols = [
-            "ts_code", "end_date", "revenue", "profit_dedt", "roe", "roa",
-            "grossprofit_margin", "debt_to_assets", "current_ratio",
-            "revenue_yoy", "profit_dedt_yoy", "or_yoy",
-        ]
-        # 只取存在的列
-        available_cols = [c for c in db_cols if c in df.columns]
+        # 映射列名：Tushare API → 数据库列名
+        df_renamed = df.rename(columns=FINA_INDICATOR_COL_MAP)
+        # 只取数据库存在的列
+        available_cols = [c for c in FINA_INDICATOR_DB_COLS if c in df_renamed.columns]
         if "ts_code" not in available_cols or "end_date" not in available_cols:
             print("[DB] fina_indicator: 缺少 ts_code 或 end_date 列，跳过")
             return 0
 
         try:
             rows = []
-            for _, row in df.iterrows():
+            for _, row in df_renamed.iterrows():
                 vals = []
                 for col in available_cols:
                     v = row.get(col)
