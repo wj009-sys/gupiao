@@ -173,7 +173,7 @@ def get_limit_list(trade_date: str) -> pd.DataFrame:
 
 
 def get_ths_index(daily: bool = True, trade_date: str = None) -> pd.DataFrame:
-    """获取同花顺概念板块（Tushare优先，失败时回退到东方财富）
+    """获取同花顺概念板块（Tushare优先，回退到东方财富，再回退到THS AkShare）
 
     Args:
         daily: True 获取日线数据，False 获取板块列表
@@ -186,15 +186,51 @@ def get_ths_index(daily: bool = True, trade_date: str = None) -> pd.DataFrame:
             return pro.ths_daily(trade_date=trade_date)
         return pro.ths_index()
     except Exception as e:
-        print(f"[tushare] get_ths_index 失败: {e}，回退到东方财富...")
+        print(f"[tushare] get_ths_index 失败: {e}")
+
+        if not daily:
+            return pd.DataFrame()
+
+        # 方案2: 查DB（已有THS回填数据，最快）
+        try:
+            from scripts.utils.db_manager import DatabaseManager
+            db = DatabaseManager()
+            db_df = db.get_sector_ranking(trade_date, 500)
+            db.close()
+            if db_df is not None and len(db_df) > 100:
+                print(f"[tushare] DB查询成功，获取 {len(db_df)} 个板块 (来源:THS回填)")
+                return db_df
+        except Exception as e2:
+            print(f"[tushare] DB查询失败: {e2}")
+
+        # 方案3: 尝试东方财富（当前被封锁，快速失败）
         try:
             from scripts.utils.eastmoney_client import get_ths_daily_fallback
             df = get_ths_daily_fallback()
             if not df.empty:
                 print(f"[tushare] 东方财富回退成功，获取 {len(df)} 个板块")
                 return df
-        except Exception as e2:
-            print(f"[tushare] 东方财富回退也失败: {e2}")
+        except Exception as e3:
+            print(f"[tushare] 东方财富回退失败: {e3}")
+
+        # 方案4: THS AkShare回填（仅首次缺失时触发，后续走DB查询）
+        try:
+            print(f"[tushare] 触发THS AkShare回填...")
+            from scripts.utils.backfill_ths_daily import backfill as ths_backfill
+            from datetime import datetime, timedelta
+            since = (datetime.strptime(trade_date, "%Y%m%d") - timedelta(days=15)).strftime("%Y%m%d")
+            until = datetime.now().strftime("%Y%m%d")
+            result = ths_backfill(since=since, until=until, dry_run=False)
+            if result.get("rows", 0) > 0:
+                from scripts.utils.db_manager import DatabaseManager
+                db = DatabaseManager()
+                df = db.get_sector_ranking(trade_date, 500)
+                db.close()
+                if not df.empty:
+                    print(f"[tushare] THS AkShare 回填成功，获取 {len(df)} 个板块")
+                    return df
+        except Exception as e4:
+            print(f"[tushare] THS AkShare 回填失败: {e4}")
         return pd.DataFrame()
 
 

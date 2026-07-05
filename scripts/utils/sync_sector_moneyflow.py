@@ -170,14 +170,14 @@ def sync_moneyflow_mkt(db: DatabaseManager) -> dict:
 def sync_ths_daily(db: DatabaseManager, since: str) -> dict:
     """
     同步概念板块每日数据 (ths_daily)
-    优先尝试 Tushare THS API，失败时回退到东方财富公开接口
+    优先尝试 Tushare THS API，失败时回退到东方财富公开接口，再回退到同花顺THS AkShare
 
     注意: 东方财富仅支持当日实时数据，不支持历史日期回填。
-          如需历史数据，需升级 Tushare 到2000+积分。
+          THS AkShare 支持历史数据但需要逐板块请求（~10分钟/次）。
 
     Args:
         db: 数据库管理器
-        since: 起始日期 YYYYMMDD（仅当日有效）
+        since: 目标日期 YYYYMMDD（函数会拉取最近10个交易日确保覆盖）
 
     Returns:
         {"days": N, "rows": N, "errors": N, "elapsed": F}
@@ -185,10 +185,12 @@ def sync_ths_daily(db: DatabaseManager, since: str) -> dict:
     result = {"days": 0, "rows": 0, "errors": 0, "elapsed": 0}
 
     today = datetime.now().strftime("%Y%m%d")
+    target_date = since if since else today
 
-    print(f"\n{'='*60}")
-    print(f"  📊 同步 概念板块 (ths_daily)")
-    print(f"  数据日期: {today}")
+    print(f"
+{'='*60}")
+    print(f"  同步 概念板块 (ths_daily)")
+    print(f"  目标日期: {target_date}")
     print(f"{'='*60}")
 
     start_time = time.time()
@@ -196,7 +198,7 @@ def sync_ths_daily(db: DatabaseManager, since: str) -> dict:
     # 方案1: 尝试 Tushare THS API
     df = pd.DataFrame()
     try:
-        df = pro.ths_daily(trade_date=today)
+        df = pro.ths_daily(trade_date=target_date)
         if not df.empty:
             print(f"  [Tushare] ths_daily 返回 {len(df)} 条", flush=True)
     except Exception as e:
@@ -209,27 +211,54 @@ def sync_ths_daily(db: DatabaseManager, since: str) -> dict:
             from scripts.utils.eastmoney_client import get_sector_data
             df_em = get_sector_data()
             if not df_em.empty:
-                # 转换为与 pro.ths_daily() 兼容的列
                 df = df_em[["ts_code", "trade_date", "name", "pct_chg", "strength", "anomaly"]].copy()
                 print(f"  [东方财富] 获取 {len(df)} 个板块", flush=True)
         except Exception as e:
             print(f"  [东方财富] 失败: {e}", flush=True)
 
-    # 写入数据库
+    # 方案3: 查DB（已有THS回填数据）
+    if df.empty:
+        try:
+            db_df = db.get_sector_ranking(target_date, 500)
+            if db_df is not None and len(db_df) > 100:
+                df = db_df
+                print(f"  [DB] 查询到 {len(df)} 个板块 (来源:THS回填)", flush=True)
+        except Exception as e:
+            print(f"  [DB] 查询失败: {e}", flush=True)
+
+    # 方案4: 最终回退到同花顺 THS AkShare（首次缺失时触发，后续走DB查询）
+    if df.empty:
+        print(f"  [回退] DB中无{target_date}数据，触发THS AkShare回填...", flush=True)
+        try:
+            from scripts.utils.backfill_ths_daily import backfill as ths_backfill
+            since_dt = (datetime.strptime(target_date, "%Y%m%d") - timedelta(days=15)).strftime("%Y%m%d")
+            ths_result = ths_backfill(since=since_dt, until=today, dry_run=False)
+            result["days"] = 1
+            result["rows"] = ths_result.get("rows", 0)
+            result["errors"] = ths_result.get("errors", 0)
+            if result["rows"] > 0:
+                print(f"  [THS AkShare] 回填 {result["rows"]} 行", flush=True)
+        except Exception as e:
+            result["errors"] += 1
+            print(f"  [THS AkShare] 失败: {e}", flush=True)
+
+    # 写入数据库 (方案1/2的流程，方案3已在ths_backfill中写入)
     if not df.empty:
         try:
             n = db.upsert_ths_daily(df)
-            result["rows"] = n
-            result["days"] = 1
-            print(f"  ✅ ths_daily 写入 {n} 行", flush=True)
+            if n > 0:
+                result["rows"] = n
+                result["days"] = 1
+            print(f"  [+] ths_daily 写入 {n} 行", flush=True)
         except Exception as e:
             result["errors"] += 1
-            print(f"  ❌ ths_daily 写入失败: {e}", flush=True)
-    else:
-        print(f"  ⚠️ 无板块数据（可能非交易日或API不可用）", flush=True)
+            print(f"  [ERROR] ths_daily 写入失败: {e}", flush=True)
+    elif result["rows"] == 0:
+        print(f"  [WARN] 无板块数据", flush=True)
 
     result["elapsed"] = time.time() - start_time
-    print(f"  📋 板块数据完成: {result['rows']:,}行 ({result['elapsed']:.1f}s)", flush=True)
+    total_rows = result["rows"]
+    print(f"  板块数据完成: {total_rows:,}行 ({result["elapsed"]:.1f}s)", flush=True)
     return result
 
 
