@@ -1436,20 +1436,26 @@ def sync_moneyflow_hsgt(db: DatabaseManager, trading_days: list,
     return result
 
 
-def sync_moneyflow_stock_portfolio(db: DatabaseManager, latest_td: str) -> dict:
+def sync_moneyflow_stock_portfolio(db: DatabaseManager, latest_td: str,
+                                   force_backfill: bool = False) -> dict:
     """
     同步持仓/自选股资金流向（Phase 11）
 
     读取 portfolio.json 和 watchlist.json，为持仓股拉取每日资金流向。
-    仅同步最新交易日数据（避免全市场逐个API调用的配额消耗）。
+
+    模式:
+        - 默认（force_backfill=False）: 仅拉取最新交易日数据
+        - force_backfill=True: 全量历史回填（从2014-01-01起）
 
     D3异常:
         配置文件缺失 → 跳过，输出警告
         API失败 → 跳过该股票
+        非股票代码（ETF/债券/可转债）→ 静默跳过
     """
-    import time, json
+    import time, json, re
     t0 = time.time()
-    result = {"rows_inserted": 0, "errors": 0, "pulled_stocks": 0, "elapsed_sec": 0.0}
+    result = {"rows_inserted": 0, "errors": 0, "pulled_stocks": 0, "elapsed_sec": 0.0,
+              "force_backfill": force_backfill}
 
     # 读取配置文件
     project_root = os.path.join(os.path.dirname(__file__), "..", "..")
@@ -1457,39 +1463,87 @@ def sync_moneyflow_stock_portfolio(db: DatabaseManager, latest_td: str) -> dict:
     watchlist_path = os.path.join(project_root, "data", "watchlist.json")
 
     codes = set()
+
+    def _extract_codes(data, fname=""):
+        """递归从各种结构中抽取股票代码（支持中文/英文key）"""
+        extracted = set()
+        if isinstance(data, dict):
+            holdings = data.get("持仓列表") or data.get("holdings") or data.get("positions")
+            if isinstance(holdings, list):
+                for item in holdings:
+                    code = (item.get("代码") or item.get("ts_code") or item.get("code") or "")
+                    if code and code.strip():
+                        extracted.add(code.strip())
+                if extracted:
+                    return extracted
+            for val in data.values():
+                if isinstance(val, list):
+                    for v in val:
+                        if isinstance(v, str) and len(v) >= 6 and "." in v:
+                            extracted.add(v)
+            if extracted:
+                return extracted
+            for key in ("watchlist", "stocks", "holdings", "positions"):
+                items = data.get(key, [])
+                if isinstance(items, list):
+                    for item in items:
+                        code = (item.get("代码") or item.get("ts_code") or item.get("code") or "")
+                        if code: extracted.add(code)
+        elif isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict):
+                    code = (item.get("代码") or item.get("ts_code") or item.get("code") or "")
+                    if code: extracted.add(code)
+                elif isinstance(item, str) and len(item) >= 6 and "." in item:
+                    extracted.add(item)
+        return extracted
+
     for fpath in (portfolio_path, watchlist_path):
         if os.path.exists(fpath):
             try:
                 with open(fpath, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                if isinstance(data, list):
-                    for item in data:
-                        code = item.get("ts_code", item.get("code", ""))
-                        if code: codes.add(code)
-                elif isinstance(data, dict):
-                    for key in ("holdings", "positions", "watchlist", "stocks"):
-                        items = data.get(key, [])
-                        if isinstance(items, list):
-                            for item in items:
-                                code = item.get("ts_code", item.get("code", ""))
-                                if code: codes.add(code)
-            except Exception:
-                pass
+                codes.update(_extract_codes(data, os.path.basename(fpath)))
+            except Exception as e:
+                print(f"    [11/13] 读取 {os.path.basename(fpath)} 失败: {e}", flush=True)
 
     if not codes:
         print(f"  [11/13] 持仓资金流向 — 无持仓/自选股配置，跳过", flush=True)
         result["elapsed_sec"] = round(time.time() - t0, 1)
         return result
 
-    print(f"  [11/13] 持仓资金流向 (moneyflow_stock) — {len(codes)} 只", flush=True)
+    # 过滤：仅保留A股股票代码（排除ETF 51xxxx/159xxx, 债券 11xxxx/12xxxx,
+    #         可转债 11xxxx, 发债 718xxx/733xxx, 老三板 400xxx）
+    def _is_stock(code):
+        prefix = code[:3]
+        return (prefix in ("000", "001", "002", "003", "004", "300", "301",
+                           "600", "601", "603", "605", "688", "689") and
+                "." in code)
+
+    stock_codes = sorted(c for c in codes if _is_stock(c))
+    skipped = sorted(c for c in codes if not _is_stock(c))
+    if skipped:
+        print(f"  [11/13] 跳过非股票代码: {', '.join(skipped[:10])}"
+              f"{'...' if len(skipped) > 10 else ''}", flush=True)
+
+    if not stock_codes:
+        print(f"  [11/13] 持仓资金流向 — 无A股持仓（全为ETF/债券），跳过", flush=True)
+        result["elapsed_sec"] = round(time.time() - t0, 1)
+        return result
+
+    mode_label = "全量历史回填" if force_backfill else "最新交易日"
+    print(f"  [11/13] 持仓资金流向 (moneyflow_stock) — {len(stock_codes)} 只, "
+          f"模式={mode_label}", flush=True)
 
     from scripts.utils.tushare_client import pro as tushare_pro
 
     pulled = 0
-    for i, code in enumerate(sorted(codes)):
+    start_date = "20140101" if force_backfill else latest_td
+
+    for i, code in enumerate(stock_codes):
         try:
             df = tushare_pro.moneyflow(ts_code=code,
-                                       start_date=latest_td,
+                                       start_date=start_date,
                                        end_date=latest_td)
             if df is not None and not df.empty:
                 n = db.upsert_moneyflow_stock(df)
@@ -1501,7 +1555,7 @@ def sync_moneyflow_stock_portfolio(db: DatabaseManager, latest_td: str) -> dict:
             if result["errors"] <= 3:
                 print(f"    [11/13] {code} 失败: {e}", flush=True)
 
-        if (i + 1) < len(codes):
+        if (i + 1) < len(stock_codes):
             import time as _t; _t.sleep(0.12)
 
     result["rows_inserted"] = pulled
@@ -1880,9 +1934,11 @@ def run_sync(args) -> int:
 
     # === Phase 11: moneyflow_stock（持仓资金流向）===
     if args.type in (None, "all", "moneyflow_stock"):
+        force_mf = args.type == "moneyflow_stock"  # 指定类型时强制全量回填
         budget = total_budget - (time.time() - start_time)
-        if budget > 20:
-            sync_results["moneyflow_stock"] = sync_moneyflow_stock_portfolio(db, latest_td)
+        if budget > (30 if force_mf else 20):
+            sync_results["moneyflow_stock"] = sync_moneyflow_stock_portfolio(
+                db, latest_td, force_backfill=force_mf)
         else:
             print(f"\n  [11/13] 持仓资金流向 — 时间不足，跳过")
 
