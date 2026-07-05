@@ -1358,11 +1358,13 @@ def post_sync_data_check(db: DatabaseManager, trading_days: list,
 
 
 def sync_moneyflow_hsgt(db: DatabaseManager, trading_days: list,
-                         latest_td: str) -> dict:
+                         latest_td: str,
+                         force_backfill: bool = False) -> dict:
     """
     同步北向资金流向（Phase 10）
 
     从 pro.moneyflow_hsgt() 批拉取缺失交易日数据。
+    force_backfill=True 时忽略已有数据，从2014-01-01起全量拉取。
     D3异常:
         API失败 → 跳过该日期
         空数据 → 正常跳过
@@ -1371,29 +1373,34 @@ def sync_moneyflow_hsgt(db: DatabaseManager, trading_days: list,
     t0 = time.time()
     result = {"rows_inserted": 0, "errors": 0, "elapsed_sec": 0.0}
 
-    # 获取DB最新日期
-    try:
-        cur = db.conn.cursor()
-        cur.execute("SELECT MAX(trade_date) FROM moneyflow_hsgt")
-        row = cur.fetchone()
-        db_max = row[0] if row and row[0] else ""
-    except Exception as e:
-        print(f"  [10/13] 查询北向资金最新日期失败: {e}")
-        db_max = ""
-
-    missing = []
-    if db_max:
-        missing = [d for d in trading_days if db_max < d <= latest_td]
-    else:
-        # 空表：从2014-01-01起全量拉取
+    if force_backfill:
+        # 全量回填：忽略已有数据，从2014-01-01起拉取
         missing = [d for d in trading_days if "20140101" <= d <= latest_td]
+        print(f"  [10/13] 北向资金全量回填 — 从2014年至今, 共 {len(missing)} 天", flush=True)
+    else:
+        # 增量模式：获取DB最新日期
+        try:
+            cur = db.conn.cursor()
+            cur.execute("SELECT MAX(trade_date) FROM moneyflow_hsgt")
+            row = cur.fetchone()
+            db_max = row[0] if row and row[0] else ""
+        except Exception as e:
+            print(f"  [10/13] 查询北向资金最新日期失败: {e}")
+            db_max = ""
 
-    if not missing:
-        print(f"  [10/13] 北向资金 — 已是最新，跳过")
-        result["elapsed_sec"] = round(time.time() - t0, 1)
-        return result
+        missing = []
+        if db_max:
+            missing = [d for d in trading_days if db_max < d <= latest_td]
+        else:
+            # 空表：从2014-01-01起全量拉取
+            missing = [d for d in trading_days if "20140101" <= d <= latest_td]
 
-    print(f"  [10/13] 北向资金 (moneyflow_hsgt) — 缺失 {len(missing)} 天", flush=True)
+        if not missing:
+            print(f"  [10/13] 北向资金 — 已是最新，跳过")
+            result["elapsed_sec"] = round(time.time() - t0, 1)
+            return result
+
+    print(f"  [10/13] 北向资金 (moneyflow_hsgt) — 需要拉取 {len(missing)} 天", flush=True)
 
     from scripts.utils.tushare_client import pro as tushare_pro
 
@@ -1672,22 +1679,32 @@ def run_sync(args) -> int:
 
     # === 4. 自动同步 ===
     if not is_td:
-        print("今天不是交易日，跳过数据拉取。")
-        db.close()
-        return 0
+        # 指定类型时，允许部分回溯型类型在非交易日运行
+        backfill_types = {"moneyflow_hsgt", "moneyflow_stock",
+                          "fina_indicator", "dividend", "daily_indicator"}
+        if not args.type or args.type not in backfill_types:
+            print("今天不是交易日，跳过数据拉取。")
+            db.close()
+            return 0
+        else:
+            print("今天不是交易日，但指定了回溯类型，继续执行...")
 
-    if freshness["overall_status"] == "fresh":
+    if freshness["overall_status"] == "fresh" and not args.type:
         print("所有数据已是最新，无需同步。")
         db.close()
         return 0
 
-    # 加载全市场股票列表
-    all_codes = load_all_market_codes(db)
-    if not all_codes:
-        print("[ERROR] 无法加载股票列表")
-        db.close()
-        return 2
-    print(f"全市场股票: {len(all_codes)} 只")
+    # 加载全市场股票列表（只在需要时加载）
+    if args.type and args.type in {"moneyflow_hsgt", "moneyflow_stock", "daily_indicator"}:
+        all_codes = []
+        print(f"指定类型 {args.type}，跳过全市场股票加载")
+    else:
+        all_codes = load_all_market_codes(db)
+        if not all_codes:
+            print("[ERROR] 无法加载股票列表")
+            db.close()
+            return 2
+        print(f"全市场股票: {len(all_codes)} 只")
 
     # 时间预算
     max_minutes = getattr(args, 'max_minutes', 45) or 45
@@ -1851,9 +1868,13 @@ def run_sync(args) -> int:
 
     # === Phase 10: moneyflow_hsgt（北向资金）===
     if args.type in (None, "all", "moneyflow_hsgt"):
+        force = args.type == "moneyflow_hsgt"  # 指定类型时强制全量回填
+        # 全量回填需要更多时间预算
+        min_budget = 30 if force else 10
         budget = total_budget - (time.time() - start_time)
-        if budget > 10:
-            sync_results["moneyflow_hsgt"] = sync_moneyflow_hsgt(db, trading_days, latest_td)
+        if budget > min_budget or force:
+            sync_results["moneyflow_hsgt"] = sync_moneyflow_hsgt(
+                db, trading_days, latest_td, force_backfill=force)
         else:
             print(f"\n  [10/13] 北向资金 — 时间不足，跳过")
 
