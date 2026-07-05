@@ -31,6 +31,9 @@ data/raw/
 cc-connect.toml
 .cc-connect.toml.lock
 
+# LLM配置（含API Key）
+data/llm_config.json
+
 # 微信扫码二维码（临时生成，不需存档）
 wechat_qr_*.png
 data/checkpoints/

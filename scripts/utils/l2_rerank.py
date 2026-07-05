@@ -12,11 +12,15 @@ L2 LLM相对排序引擎 — 借鉴 AlphaSift L2 设计
 L2 管线位置：
     L1: 8因子评分 → L2: LLM/规则重排序 → L3: Scorecard + Risk Overlay
 
-环境变量配置（在 .claude/settings.local.json 的 env 中设置）：
-    LLM_PROVIDER="openai"               # litellm支持的provider名
-    LLM_MODEL="gpt-4o-mini"              # 模型名
-    LLM_API_KEY=os.getenv('LLM_API_KEY', 'your-key-here')  # API Key
-    LLM_API_BASE="https://api.openai.com/v1"  # API地址（兼容OpenAI格式）
+LLM配置方式（优先级：环境变量 > 配置文件 > 降级规则排序）：
+    1. data/llm_config.json  — 持久化配置（推荐）
+    2. 环境变量（settings.local.json 或 export）— 临时覆盖
+
+    配置字段：
+        provider    litellm provider名（openai/deepseek/gemini/claude）
+        model       模型名（gpt-4o-mini/deepseek-chat/claude-sonnet-5-20251001）
+        api_key     API Key
+        api_base    API地址（如 https://api.openai.com/v1）
 
 D3异常处理表：
 | 触发条件 | 一线修复 | 仍失败兜底 |
@@ -39,13 +43,43 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 def get_llm_config() -> dict:
-    """从环境变量获取LLM配置"""
-    return {
-        "provider": os.getenv("LLM_PROVIDER", "").strip(),
-        "model": os.getenv("LLM_MODEL", "").strip(),
-        "api_key": os.getenv("LLM_API_KEY", "").strip(),
-        "api_base": os.getenv("LLM_API_BASE", "").strip(),
+    """
+    获取LLM配置（优先配置文件，环境变量覆盖）
+
+    读取顺序:
+        1. data/llm_config.json（持久化配置文件）
+        2. 环境变量 LLM_PROVIDER / LLM_MODEL / LLM_API_KEY / LLM_API_BASE（临时覆盖）
+
+    都为空时返回空配置 → is_llm_available()=False → 降级规则排序。
+    """
+    cfg = {"provider": "", "model": "", "api_key": "", "api_base": ""}
+
+    # 1. 从配置文件读取
+    config_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "llm_config.json")
+    try:
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                file_cfg = json.load(f)
+            for k in cfg:
+                v = file_cfg.get(k, "")
+                if v:
+                    cfg[k] = str(v).strip()
+    except Exception as e:
+        logger.debug(f"[L2] 读取llm_config.json失败: {e}")
+
+    # 2. 环境变量覆盖（临时生效）
+    env_map = {
+        "LLM_PROVIDER": "provider",
+        "LLM_MODEL": "model",
+        "LLM_API_KEY": "api_key",
+        "LLM_API_BASE": "api_base",
     }
+    for env_key, cfg_key in env_map.items():
+        ev = os.getenv(env_key, "").strip()
+        if ev:
+            cfg[cfg_key] = ev
+
+    return cfg
 
 
 def is_llm_available() -> bool:

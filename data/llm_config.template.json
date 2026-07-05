@@ -1,0 +1,27 @@
+{
+  "说明": "L2 LLM排序配置（模板）— 复制为 llm_config.json 并填入真实值",
+  "更新日期": "2026-07-05",
+  "配置说明": "支持多provider，留空则降级到规则启发式排序。填入真实API Key后，L2排序会用LLM替代规则。",
+  "provider": "",
+  "model": "",
+  "api_key": "",
+  "api_base": "",
+  "可用provider示例": {
+    "openai": {
+      "model": "gpt-4o-mini",
+      "api_base": "https://api.openai.com/v1"
+    },
+    "deepseek": {
+      "model": "deepseek-chat",
+      "api_base": "https://api.deepseek.com/v1"
+    },
+    "claude": {
+      "model": "claude-sonnet-5-20251001",
+      "api_base": "https://api.anthropic.com/v1"
+    },
+    "gemini": {
+      "model": "gemini-2.0-flash",
+      "api_base": "https://generativelanguage.googleapis.com/v1beta"
+    }
+  }
+}
