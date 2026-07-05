@@ -32,6 +32,7 @@
 | [政策分析策略.md](策略/政策分析策略.md) | 📜 政策分类框架、四类政策影响评估方法、政策→板块映射、持仓关联分析 | Agent8+Agent4 | `data/portfolio.json`, `data/watchlist.json` | 2026-07-05 |
 | [游资追踪策略.md](策略/游资追踪策略.md) | 🔥 龙虎榜基础、游资席位识别方法、资金情绪指数计算、与各策略联动 | Agent9+Agent4 | `scripts/utils/eastmoney_get.py` | 2026-07-05 |
 | [a-stock-data借鉴分析.md](策略/a-stock-data借鉴分析.md) | 🏗️ a-stock-data技术方案吸收记录：mootdx/em_get()/多级优先级/TradingAgents-astock | 全员 | `scripts/utils/mootdx_provider.py`, `scripts/utils/eastmoney_get.py`, `scripts/utils/data_provider.py` | 2026-07-05 |
+| [数据源优先级.md](策略/数据源优先级.md) | 🔌 全局数据源优先级策略(12数据域主/备/兜底+10Agent映射+限流策略) | 全员 | `scripts/utils/_proxy.py`, `scripts/utils/data_provider.py` | 2026-07-05 |
 
 ## 📁 复盘记录目录
 
