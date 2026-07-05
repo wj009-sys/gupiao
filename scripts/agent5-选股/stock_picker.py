@@ -1262,8 +1262,8 @@ def intraday_picks(top_n: int, config: dict, today: str) -> dict:
         if hsgt is not None and not hsgt.empty:
             last = hsgt.iloc[-1]
             result["capital_flow_summary"]["北向资金"] = {
-                "net": float(last.get("net_hsgt", 0)),
-                "south_net": float(last.get("net_hsgt", 0)),
+                "net": float(last.get("north_money", last.get("north_net", 0))),
+                "south_net": float(last.get("south_money", 0)),
             }
             net_val = result["capital_flow_summary"]["北向资金"]["net"]
             direction = "净流入" if net_val > 0 else "净流出"
@@ -1434,7 +1434,7 @@ def noon_picks(top_n: int, config: dict, today: str) -> dict:
         hsgt = pro.moneyflow_hsgt(start_date=today, end_date=today)
         if hsgt is not None and not hsgt.empty:
             last = hsgt.iloc[-1]
-            result["morning_summary"]["北向资金"] = round(float(last.get("net_hsgt", 0)), 0)
+            result["morning_summary"]["北向资金"] = round(float(last.get("north_money", last.get("north_net", 0))), 0)
     except Exception as e:
         print(f"  ⚠️ 北向资金数据获取失败: {e}")
 

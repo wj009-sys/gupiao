@@ -9,6 +9,7 @@
 
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
+| 2026-07-05 | 📝 fix | scripts/agent5-选股/stock_picker.py | HIGH修复: net_hsgt→north_money字段名修复(北向资金盘中/午盘模式始终为0) |
 | 2026-07-05 | 📝 fix | scripts/utils/db_manager.py | MEDIUM修复: daily_indicator CREATE TABLE同步更新28列(rsi_oversold/rsi_overbought/obv系/boll_break系) |
 | 2026-07-05 | 📝 fix | scripts/agent_ask/ask.py | MEDIUM修复: 移除rsi_6残留引用(DB只有rsi_14，rsi_6永远fallback到rsi14，导致短期=长期错误结论) |
 | 2026-07-05 | 📝 fix | scripts/utils/auto_sync.py | CRITICAL修复: INDICATOR_COLS/BOOL_COLS/STR_COLS缺少OBV等10列，每日同步不填充OBV |
