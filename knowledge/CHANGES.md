@@ -15,6 +15,7 @@
 | 2026-07-05 | chore | .claude/scheduled_tasks.json | 达尔文16.0: 自动同步任务ID重命名 |
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
+| 2026-07-05 | 📝 feat | policy_analyst.py | Agent8持仓影响分析上线 — DeepSeek LLM驱动(24只全覆盖+分批+容错解析) |
 | 2026-07-05 | 📝 feat | l2_rerank.py | L2 LLM排序配置持久化 — data/llm_config.json + CLI配置工具 |
 | 2026-07-05 | 📝 feat | policy_analyst.py | Agent8上线完成 — SOCKS代理修复+证券时报新闻抓取fallback+自选股加载修复 |
 | 2026-07-05 | 📝 feat | auto_sync.py | 达尔文16.0续 — moneyflow_stock全量历史回填(49K行, 20只持仓股从2014起全覆盖) |

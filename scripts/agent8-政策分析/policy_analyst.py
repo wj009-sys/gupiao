@@ -220,16 +220,375 @@ def get_recent_policy_events(days: int = 7) -> list:
         return []
 
 
+def analyze_holdings_impact(policy_events: list, holdings: list) -> list:
+    """
+    用LLM分析政策对持仓的影响
+
+    输入当前日政策事件和持仓列表，让LLM匹配政策→持仓关联，
+    输出结构化影响分析（每只持仓受影响政策+影响方向+理由）。
+
+    D3: LLM不可用/调用失败 → 规则匹配降级 → 仍失败则返回空分析
+    """
+    if not policy_events or not holdings:
+        return []
+
+    # 尝试LLM分析（分批，每批最多8只降低JSON复杂度）
+    batch_size = 8
+    all_results = []
+    for batch_start in range(0, len(holdings), batch_size):
+        batch = holdings[batch_start:batch_start + batch_size]
+        result = _llm_holdings_analysis(policy_events, batch)
+        if result:
+            all_results.extend(result)
+            logger.info(f"[政策] LLM分析批次 {batch_start//batch_size + 1}: {len(result)} 只")
+        else:
+            # 某批失败，用规则补充
+            fallback = _rule_holdings_analysis(policy_events, batch)
+            all_results.extend(fallback)
+            logger.info(f"[政策] 规则补充批次 {batch_start//batch_size + 1}: {len(fallback)} 只")
+        import time as _t
+        _t.sleep(0.5)  # 批次间隔避免限流
+
+    if all_results:
+        return all_results
+
+    # 全量降级：规则匹配
+    logger.info("[政策] LLM全失败，降级到规则匹配")
+    return _rule_holdings_analysis(policy_events, holdings)
+
+
+def _extract_json(text: str):
+    """健壮地从文本中提取JSON对象/数组"""
+    import re as _re
+    if not text:
+        return None
+
+    # 提取 ```json ... ``` 代码块
+    code_match = _re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
+    if code_match:
+        text = code_match.group(1).strip()
+
+    # 定位JSON起始
+    start = text.find('[')
+    if start == -1:
+        start = text.find('{')
+    if start < 0:
+        return None
+
+    text = text[start:]
+    # 找最可能的结束位置
+    depth = 0
+    in_str = False
+    escape = False
+    end = -1
+    for i, ch in enumerate(text):
+        if escape:
+            escape = False
+            continue
+        if ch == '\\':
+            escape = True
+            continue
+        if ch == '"' and not escape:
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch in ('[', '{'):
+            depth += 1
+        elif ch in (']', '}'):
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
+
+    if end > 0:
+        json_str = text[:end]
+    else:
+        json_str = text
+
+    # 尝试解析
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        pass
+
+    # 如果主JSON解析失败，尝试找闭合结构
+    try:
+        # 尝试找 { } 包裹的对象
+        obj_start = text.find('{')
+        if obj_start >= 0:
+            obj_text = text[obj_start:]
+            # 简化：直接用 json.loads 尝试
+            for end_char in ('}', ']'):
+                idx = obj_text.rfind(end_char)
+                if idx > 0:
+                    try:
+                        return json.loads(obj_text[:idx + 1])
+                    except json.JSONDecodeError:
+                        continue
+    except Exception:
+        pass
+
+    return None
+
+
+def _llm_holdings_analysis(policy_events: list, holdings: list) -> list:
+    """用LLM分析持仓影响"""
+    try:
+        sys.path.insert(0, PROJECT_ROOT)
+        from scripts.utils.l2_rerank import get_llm_config, is_llm_available
+        if not is_llm_available():
+            return []
+        cfg = get_llm_config()
+        from litellm import completion
+    except ImportError:
+        logger.warning("[政策] litellm未安装")
+        return []
+    except Exception:
+        return []
+
+    # 构建持仓摘要
+    holding_lines = []
+    for h in holdings:
+        holding_lines.append(f"- {h.get('代码','?')} {h.get('名称','?')} "
+                             f"[{h.get('类型','股票')}] 仓位{h.get('仓位比例',0):.1f}%")
+    holdings_text = "\n".join(holding_lines)
+
+    # 构建政策摘要（转义特殊字符防JSON破坏）
+    policy_lines = []
+    for i, p in enumerate(policy_events, 1):
+        title = p["title"].replace('"', "'").replace('"', "'").replace("\n", " ")
+        policy_lines.append(f"  [{i}] [{p['category']}] {title}")
+    policies_text = "\n".join(policy_lines)
+
+    prompt = f"""今天是{datetime.now().strftime('%Y-%m-%d')}。
+
+## 今日政策事件（{len(policy_events)}条）
+{policies_text}
+
+## 持仓组合（{len(holdings)}只）
+{holdings_text}
+
+请逐只分析上述每只持仓受哪些政策事件影响，输出JSON数组：
+[
+  {{
+    "code": "600388.SH",
+    "name": "龙净环保",
+    "impact": "利好/利空/中性",        // 整体影响方向
+    "confidence": "高/中/低",           // 信心程度
+    "affected_by": ["相关政策标题..."],  // 关联的具体政策
+    "reason": "简要分析（20字内）"
+  }}
+]"""
+
+    try:
+        model_name = f"{cfg['provider']}/{cfg['model']}" if "/" not in cfg["model"] else cfg["model"]
+        kwargs = {}
+        if cfg.get("api_base"): kwargs["api_base"] = cfg["api_base"]
+        if cfg.get("api_key"): kwargs["api_key"] = cfg["api_key"]
+
+        response = completion(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": "你是A股政策分析师。逐只分析持仓受今日政策影响，输出JSON。"},
+                {"role": "user", "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+            max_tokens=2048,
+            temperature=0.1,
+            timeout=30,
+            **kwargs,
+        )
+
+        content = response.choices[0].message.content
+        if not content:
+            return []
+
+        # 容错JSON提取：正则逐条匹配而非全量解析
+        # DeepSeek有时在长列表JSON末尾产生格式问题，逐条解析更稳
+        import re as _re
+        # 替换破坏JSON的中文标点
+        clean = content.replace('“', '"').replace('”', '"')
+        clean = clean.replace("'", '"')
+        # 提取每条 { ... } 记录
+        items = _re.findall(
+            r'\{\s*"code"\s*:\s*"([^"]+)"\s*,'
+            r'\s*"name"\s*:\s*"([^"]*)"\s*,'
+            r'\s*"impact"\s*:\s*"([^"]+)"\s*,'
+            r'\s*"confidence"\s*:\s*"([^"]*)"\s*,'
+            r'\s*"affected_by"\s*:\s*\[(.*?)\]\s*,?'
+            r'\s*"reason"\s*:\s*"([^"]*)"\s*\}',
+            clean, _re.DOTALL
+        )
+        result = []
+        for code, name, impact, confidence, affected_raw, reason in items:
+            affected = [a.strip().strip('"') for a in affected_raw.split(',') if a.strip()]
+            result.append({
+                "code": code.strip(),
+                "name": name.strip(),
+                "impact": impact.strip(),
+                "confidence": confidence.strip() or "中",
+                "affected_by": affected,
+                "reason": reason.strip(),
+            })
+        if result:
+            logger.info(f"[政策] LLM持仓分析(正则提取): {len(result)} 只")
+            return result
+
+        # 正则提取失败，回退到标准JSON解析
+        try:
+            parsed = json.loads(clean)
+        except json.JSONDecodeError:
+            # 截断到最近的闭合括号
+            for closer in (']', '}'):
+                idx = clean.rfind(closer)
+                if idx > 0:
+                    try:
+                        parsed = json.loads(clean[:idx+1])
+                        break
+                    except json.JSONDecodeError:
+                        continue
+            else:
+                logger.warning(f"[政策] LLM JSON完全解析失败")
+                return []
+
+        if isinstance(parsed, list):
+            result = parsed
+        elif isinstance(parsed, dict):
+            result = (parsed.get("holdings") or parsed.get("analysis")
+                      or parsed.get("results") or parsed.get("data")
+                      or next((v for v in parsed.values() if isinstance(v, list)), []))
+        else:
+            return []
+        if isinstance(parsed, list):
+            result = parsed
+        elif isinstance(parsed, dict):
+            # json_object模式可能包装在对象里
+            result = (parsed.get("holdings") or parsed.get("analysis")
+                      or parsed.get("results") or parsed.get("data")
+                      or next((v for v in parsed.values() if isinstance(v, list)), []))
+        else:
+            return []
+
+        # 验证格式
+        valid = []
+        for item in result:
+            if item.get("code") and item.get("impact"):
+                valid.append(item)
+        if valid:
+            logger.info(f"[政策] LLM持仓分析: {len(valid)} 只")
+            return valid
+        return []
+
+    except Exception as e:
+        logger.warning(f"[政策] LLM分析失败: {e}")
+        return []
+
+
+# ---------- 规则匹配降级 ----------
+
+# 行业/主题 → 持仓代码映射（自动从持仓构建）
+_SECTOR_HOLDING_MAP = None
+
+def _build_sector_map(holdings: list) -> dict:
+    """构建行业→持仓的映射表"""
+    mapping = {
+        "环保": [], "新能源": [], "碳中和": [], "光伏": [], "风电": [],
+        "芯片": [], "半导体": [], "AI": [], "人工智能": [], "数字经济": [],
+        "消费": [], "白酒": [], "食品": [],
+        "医药": [], "医疗": [], "创新药": [],
+        "银行": [], "券商": [], "保险": [], "金融": [],
+        "地产": [], "基建": [], "建材": [],
+        "有色": [], "黄金": [], "稀土": [],
+        "汽车": [], "新能源车": [], "锂电池": [],
+        "通信": [], "5G": [], "算力": [],
+        "军工": [], "航天": [],
+        "煤炭": [], "钢铁": [], "电力": [],
+        "国债": [], "债券": [], "利率": [], "货币": [],
+    }
+    # 从持仓名称提取关键词匹配
+    name_map = {h.get("代码", ""): h.get("名称", "") for h in holdings}
+    for sector in mapping:
+        for code, name in name_map.items():
+            if any(kw in name for kw in [sector]):
+                mapping[sector].append(code)
+    return mapping
+
+
+def _rule_holdings_analysis(policy_events: list, holdings: list) -> list:
+    """规则降级：关键词匹配政策→持仓"""
+    global _SECTOR_HOLDING_MAP
+    if _SECTOR_HOLDING_MAP is None:
+        _SECTOR_HOLDING_MAP = _build_sector_map(holdings)
+
+    result = []
+    for h in holdings:
+        code = h.get("代码", "")
+        name = h.get("名称", "")
+        affected = []
+        directions = set()
+
+        for p in policy_events:
+            title = p.get("title", "")
+            category = p.get("category", "")
+            matched = False
+
+            # 检查政策分类是否匹配
+            if category == "宏观调控" and any(kw in title for kw in ["利率", "货币", "降准", "降息", "流动性"]):
+                for bond_kw in ["国债", "债券", "利率"]:
+                    if bond_kw in name:
+                        affected.append(p["title"])
+                        directions.add("利好" if any(kw in title for kw in ["降准", "降息", "宽松"]) else "中性")
+                        matched = True
+                        break
+                if not matched:
+                    affected.append(p["title"])
+                    directions.add("中性")
+                    matched = True
+
+            if category == "产业政策":
+                for sector, codes in _SECTOR_HOLDING_MAP.items():
+                    if code in codes:
+                        affected.append(p["title"])
+                        directions.add("利好")
+                        matched = True
+                        break
+                if not matched and any(kw in title for kw in ["产业", "扶持", "补贴", "规划"]):
+                    affected.append(p["title"])
+                    directions.add("中性")
+                    matched = True
+
+            if category == "监管动态":
+                if any(kw in title for kw in ["退市", "IPO", "减持"]):
+                    affected.append(p["title"])
+                    directions.add("中性")
+                    matched = True
+
+        if affected:
+            impact = "利好" if "利好" in directions else ("利空" if "利空" in directions else "中性")
+            result.append({
+                "code": code,
+                "name": h.get("名称", ""),
+                "impact": impact,
+                "confidence": "低",
+                "affected_by": affected[:3],
+                "reason": f"规则匹配{len(affected)}条政策",
+            })
+
+    logger.info(f"[政策] 规则持仓分析: {len(result)} 只")
+    return result
+
+
 def classify_policy(title: str, content: str) -> str:
     """粗略的政策分类（关键词匹配，LLM会在后续报告中细化）"""
     text = (title + " " + content).lower()
-    if any(kw in text for kw in ["央行", "降准", "降息", "加息", "MLF", "逆回购", "货币", "利率", "流动性"]):
+    if any(kw in text for kw in ["央行", "降准", "降息", "加息", "MLF", "逆回购", "货币", "利率", "流动性", "美联储", "议息", "通胀"]):
         return "宏观调控"
-    if any(kw in text for kw in ["证监会", "监管", "立案", "处罚", "退市", "IPO", "再融资", "减持"]):
+    if any(kw in text for kw in ["证监会", "监管", "立案", "处罚", "退市", "IPO", "再融资", "减持", "交易规则", "新规"]):
         return "监管动态"
     if any(kw in text for kw in ["税收", "税率", "增值税", "所得税", "关税", "减免税", "退税"]):
         return "税收政策"
-    if any(kw in text for kw in ["产业", "扶持", "补贴", "规划", "新能源", "芯片", "AI", "数字经济", "碳中和"]):
+    if any(kw in text for kw in ["产业", "扶持", "补贴", "规划", "新能源", "芯片", "AI", "人工智能", "数字经济", "碳中和", "存储芯片", "半导体", "算力", "创新药", "光模块"]):
         return "产业政策"
     return "宏观政策"
 
@@ -262,10 +621,14 @@ def generate_policy_analysis(trade_date: str = None) -> dict:
     data["watchlist"] = load_watchlist()
     print(f"  {ok} 持仓: {len(data['holdings'])} 只, 自选: {len(data['watchlist'])} 只")
 
-    # 2. 获取历史政策事件（去重用）
+    # 2. 获取历史政策事件（去重用，排除同日的避免自去重）
     data["recent_policies"] = get_recent_policy_events(7)
-    recent_titles = {p["title"].strip()[:40] for p in data["recent_policies"]}
-    print(f"  {ok} 历史政策: {len(data['recent_policies'])} 条（近7天）")
+    recent_titles = {
+        p["title"].strip()[:40] for p in data["recent_policies"]
+        if p.get("date", "") != trade_date  # 不排除同日数据（本轮采集会覆盖）
+    }
+    print(f"  {ok} 历史政策: {len(data['recent_policies'])} 条（近7天）"
+          f"{'（不含今日' + str(len([p for p in data['recent_policies'] if p.get('date','')==trade_date])) + '条）' if any(p.get('date','')==trade_date for p in data['recent_policies']) else ''}")
 
     # 3. 采集今日政策新闻（多源fallback）
     news = []
@@ -334,10 +697,26 @@ def generate_policy_analysis(trade_date: str = None) -> dict:
         data["errors"].append(f"北向资金获取失败: {e}")
         print(f"  {fail} 北向资金: {e}")
 
-    # 5. 写入数据库
+    # 5. LLM政策×持仓关联分析
+    if data["policy_events"] and data["holdings"]:
+        try:
+            print(f"  [政策] 分析持仓影响...")
+            impact = analyze_holdings_impact(data["policy_events"], data["holdings"])
+            if impact:
+                data["holdings_impact"] = impact
+                impacted = len(impact)
+                print(f"  {ok} 持仓影响分析: {impacted}/{len(data['holdings'])} 只有关联")
+            else:
+                print(f"  {warn} 持仓影响分析: 无匹配")
+        except Exception as e:
+            data["errors"].append(f"持仓影响分析失败: {e}")
+            print(f"  {fail} 持仓影响分析: {e}")
+    data.setdefault("holdings_impact", [])
+
+    # 6. 写入数据库
     _save_policy_to_db(data)
 
-    # 6. D4-CP: 错误汇总
+    # 7. D4-CP: 错误汇总
     if data["errors"]:
         print(f"  {warn} 采集完成，共 {len(data['errors'])} 个错误")
         for err in data["errors"]:
@@ -395,7 +774,7 @@ def generate_markdown_report(data: dict) -> str:
     lines = []
     lines.append(f"# 📜 政策分析报告 — {date_fmt}")
     lines.append("")
-    lines.append("> 数据源：东方财富 | 财联社 | Tushare")
+    lines.append("> 数据源：证券时报 | 东方财富 | Tushare")
     lines.append("")
 
     # 宏观政策
@@ -454,16 +833,32 @@ def generate_markdown_report(data: dict) -> str:
     lines.append(f"| 深股通 | {nm.get('sgt', 0):.2f} 亿 |")
     lines.append("")
 
-    # 持仓关联（由LLM在后面阶段填写）
+    # 持仓关联（LLM/规则分析）
     holdings = data.get("holdings", [])
+    impact_map = {item["code"]: item for item in data.get("holdings_impact", [])}
     if holdings:
         lines.append("## 🔗 对持仓的潜在影响")
-        lines.append("> ⚠️ 以下分析需要LLM结合政策内容逐条评估")
+        if impact_map:
+            lines.append("> 基于今日政策事件的 LLM 影响分析")
+        else:
+            lines.append("> ⚠️ 暂无政策事件与持仓的自动关联")
         lines.append("")
-        lines.append("| 持仓 | 代码 | 关联政策 | 影响方向 |")
-        lines.append("|:----|:----|:--------|:--------|")
+        lines.append("| 持仓 | 代码 | 关联政策 | 影响方向 | 信心 | 简析 |")
+        lines.append("|:----|:----|:--------|:--------|:----|:----|")
         for h in holdings:
-            lines.append(f"| {h.get('名称', '?')} | {h.get('代码', '?')} | （待LLM分析） | ⏳ |")
+            code = h.get("代码", "?")
+            imp = impact_map.get(code)
+            if imp:
+                policies = imp.get("affected_by", [])
+                pol_str = "; ".join(policies[:2])
+                if len(policies) > 2:
+                    pol_str += f"..."
+                direction = imp.get("impact", "⏳")
+                conf = imp.get("confidence", "低")
+                reason = imp.get("reason", "")
+                lines.append(f"| {h.get('名称', '?')} | {code} | {pol_str} | {direction} | {conf} | {reason} |")
+            else:
+                lines.append(f"| {h.get('名称', '?')} | {code} | — | ⏳ | — | 无直接关联 |")
         lines.append("")
 
     # 待关注事件
