@@ -9,6 +9,11 @@
 
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
+| 2026-07-05 | 📝 fix | scripts/utils/db_manager.py | MEDIUM修复: daily_indicator CREATE TABLE同步更新28列(rsi_oversold/rsi_overbought/obv系/boll_break系) |
+| 2026-07-05 | 📝 fix | scripts/agent_ask/ask.py | MEDIUM修复: 移除rsi_6残留引用(DB只有rsi_14，rsi_6永远fallback到rsi14，导致短期=长期错误结论) |
+| 2026-07-05 | 📝 fix | scripts/utils/auto_sync.py | CRITICAL修复: INDICATOR_COLS/BOOL_COLS/STR_COLS缺少OBV等10列，每日同步不填充OBV |
+| 2026-07-05 | 📝 fix | scripts/utils/backfill_indicators.py | CRITICAL修复: INDICATOR_COLS缺少10列(包含obv/obv_ma20/obv_trend/obv_divergence等)，运行backfill也不填充OBV数据 |
+| 2026-07-05 | 📝 fix | scripts/utils/risk_overlay.py | CRITICAL修复: MacdWeakCheck字段名错误(MACD_diff→macd_diff, MACD_dea→macd_signal)导致MACD风控永远返回0分 |
 | 2026-07-05 | 📝 修复 | skills/agent8-政策分析师/SKILL.md | D4 CHECKPOINT删除重复CP5条目(5章节vs6章节矛盾) |
 | 2026-07-05 | 📝 修复 | skills/agent7-投资领导/SKILL.md | 质量审核标准新增Agent8+Agent9专属审核项+描述更新(Agent1-9+问股) |
 | 2026-07-05 | 📝 修复 | skills/agent4-复盘师/SKILL.md | 关联Agent表新增Agent8+Agent9上游输入 |

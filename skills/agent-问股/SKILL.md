@@ -183,6 +183,32 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001 --strategy 综合 --mode b
 - `data/stocks.db` — 股票行情数据库（问股分析的行情数据源）
 - `knowledge/策略/交易执行规则.md` — 买卖规则参考（用于建议部分的合规校验，避免给出违规建议）
 
+### 增强数据源（a-stock-data 接入）
+
+`ask.py` 已自动接入腾讯实时行情和同花顺一致预期EPS，输出中会包含：
+
+```python
+# 1. 实时估值（无Token，覆盖所有股票）
+from scripts.utils.tencent_provider import tencent_quote
+q = tencent_quote(["600519"])  
+# → 返回 PE(TTM)、PB、市值、换手率、涨停跌停价
+
+# 2. 机构一致预期EPS（同花顺）
+from scripts.utils.ths_provider import ths_eps_forecast
+df = ths_eps_forecast("688017")
+# → 返回当年度/下年度 EPS 预测 + 机构覆盖数
+
+# 3. 新浪财报三表（利润表/资产负债表/现金流量表）
+from scripts.utils.eastmoney_plus import sina_financial_report
+lrb = sina_financial_report("600519", "lrb")  # 利润表
+fzb = sina_financial_report("600519", "fzb")  # 资产负债表
+
+# 4. 个股概念板块归属
+from scripts.utils.eastmoney_plus import eastmoney_concept_blocks
+blocks = eastmoney_concept_blocks("688017")
+# → 返回该股所属的全部行业/概念/地域板块
+```
+
 ## 触发方式
 
 - `/问股 600519` 或 `/分析 300750` — 默认综合策略分析

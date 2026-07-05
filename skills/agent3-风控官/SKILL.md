@@ -78,6 +78,14 @@ python -X utf8 scripts/agent3-风控/risk_check.py
 > **三级风控委员会**（TradingAgents借鉴）：投资领导可依次运行3个档位，综合3份报告决策。
 > 主运行为 `neutral`（默认），复检时补充 `conservative` 和 `aggressive`。
 
+> **实时行情验证（a-stock-data 接入）：** 可用 `tencent_quote()` 免费验证涨跌停价、实时PE/PB/市值，无需Tushare Token：
+> ```python
+> from scripts.utils.tencent_provider import tencent_quote
+> q = tencent_quote(["600519"])  # 返回限价、PE、PB 等 18 个字段
+> # limit_up=258.01, limit_down=172.01, pe_ttm=18.05, pb=6.41
+> ```
+> 风控官可用此验证操盘手计划中的买入价格是否在涨跌停范围内、持仓估值是否异常。
+
 示例：
 ```bash
 # 标准风控（中性）

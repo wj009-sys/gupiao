@@ -71,13 +71,16 @@ INDICATOR_COLS = [
     "macd", "macd_signal", "macd_diff",
     "macd_golden_cross", "macd_death_cross",
     "kdj_k", "kdj_d", "kdj_j", "kdj_golden_cross",
-    "rsi_14",
+    "rsi_14", "rsi_oversold", "rsi_overbought",
     "boll_upper", "boll_mid", "boll_lower", "boll_width",
+    "boll_break_upper", "boll_break_lower",
+    "obv", "obv_ma20", "obv_trend", "obv_divergence",
     "ma_5", "ma_10", "ma_20", "ma_60",
 ]
 
-BOOL_COLS = {"macd_golden_cross", "macd_death_cross", "kdj_golden_cross"}
-STR_COLS = {"ts_code", "trade_date"}
+BOOL_COLS = {"macd_golden_cross", "macd_death_cross", "kdj_golden_cross",
+             "rsi_oversold", "rsi_overbought", "boll_break_upper", "boll_break_lower"}
+STR_COLS = {"ts_code", "trade_date", "obv_trend", "obv_divergence"}
 
 PLACEHOLDERS = ", ".join(["?" for _ in INDICATOR_COLS])
 COLS_STR = ", ".join(INDICATOR_COLS)

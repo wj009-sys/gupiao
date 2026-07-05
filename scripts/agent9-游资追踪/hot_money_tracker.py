@@ -26,6 +26,8 @@ D3异常处理表：
 | 个股资金流向获取超时 | 单个股票跳过，继续处理下一个 | 在报告中标注部分资金数据缺失 |
 | 知名席位识别失败（席位数不在库中） | 按席位类型（机构/普通）默认归类 | 标注"未知席位"并补充到席位库 |
 | 数据库写入失败 | 打印警告，继续生成报告 | 数据仅保存到JSON文件 |
+| 涨停板池API失败 | 捕获异常，跳过打板情绪 | 只显示龙虎榜部分 |
+| 同花顺热榜API失败 | 捕获异常，跳过热榜 | 只显示其他数据 |
 """
 import os
 import sys
@@ -40,6 +42,21 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from scripts.utils.tushare_client import pro
 from scripts.utils.eastmoney_get import em_get, get_dragon_tiger, get_moneyflow_stock
+
+# ── a-stock-data 新数据源（优雅降级） ──
+try:
+    from scripts.utils.limit_up_board import (
+        em_zt_pool, em_zb_pool, em_dt_pool,
+        limit_up_sentiment, sentiment_summary_text
+    )
+    _HAS_LIMIT_UP = True
+except Exception:
+    _HAS_LIMIT_UP = False
+try:
+    from scripts.utils.ths_provider import ths_hot_list
+    _HAS_THS = True
+except Exception:
+    _HAS_THS = False
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -238,6 +255,7 @@ def generate_hot_money_tracking(trade_date: str = None) -> dict:
 
     ok = "[OK]"
     fail = "[FAIL]"
+    warn = "[WARN]"
 
     print(f"[游资追踪师] 分析日期: {trade_date}")
 
@@ -248,6 +266,10 @@ def generate_hot_money_tracking(trade_date: str = None) -> dict:
         "sentiment": {},
         "holdings_moneyflow": [],
         "holdings": [],
+        # a-stock-data 新数据
+        "limit_up_sentiment": {},      # 涨停打板情绪
+        "limit_up_summary_text": "",   # 情绪文字摘要
+        "ths_hot_list": [],            # 同花顺热榜
         "errors": [],
     }
 
@@ -314,7 +336,38 @@ def generate_hot_money_tracking(trade_date: str = None) -> dict:
         data["errors"].append(f"情绪指数计算失败: {e}")
         data["sentiment"] = {"rating": "计算失败", "score": 0}
 
-    # 5. 持仓资金流向（用 Tushare moneyflow）
+    # 5. 打板情绪数据（a-stock-data 接入）
+    if _HAS_LIMIT_UP:
+        try:
+            # 尝试最近的交易日
+            from datetime import date as _d
+            for offset in range(7):
+                ds = (_d.today() - timedelta(days=offset)).strftime("%Y%m%d")
+                zt_test = em_zt_pool(ds)
+                if zt_test:
+                    data["limit_up_sentiment"] = limit_up_sentiment(ds)
+                    data["limit_up_summary_text"] = sentiment_summary_text(ds)
+                    data["limit_up_date"] = ds
+                    data["limit_up_zt_count"] = len(zt_test)
+                    data["limit_up_zb_count"] = len(em_zb_pool(ds))
+                    data["limit_up_dt_count"] = len(em_dt_pool(ds))
+                    print(f"  {ok} 打板情绪: {data['limit_up_zt_count']}涨停 "
+                          f"{data['limit_up_zb_count']}炸板 {data['limit_up_dt_count']}跌停")
+                    break
+        except Exception as e:
+            logger.warning(f"打板情绪获取失败: {e}")
+
+    # 6. 同花顺热榜（a-stock-data 接入）
+    if _HAS_THS:
+        try:
+            hot_list = ths_hot_list("day")
+            if hot_list:
+                data["ths_hot_list"] = hot_list[:20]  # TOP 20
+                print(f"  {ok} 同花顺热榜: {len(data['ths_hot_list'])} 只")
+        except Exception as e:
+            logger.warning(f"热榜获取失败: {e}")
+
+    # 7. 持仓资金流向（用 Tushare moneyflow）
     for h in data["holdings"]:
         code = h.get("代码", "")
         if not code:
@@ -493,6 +546,31 @@ def generate_markdown_report(data: dict) -> str:
     lines.append(f"| 龙虎榜跌停 | {sentiment.get('down_count', '—')} |")
     lines.append(f"| 净买入总额 | {sentiment.get('total_net', '—')} 亿 |")
     lines.append("")
+
+    # 打板情绪（a-stock-data 接入）
+    limit_up_text = data.get("limit_up_summary_text", "")
+    if limit_up_text:
+        lines.append("## 🚀 涨停打板情绪")
+        for l in limit_up_text.split("\n"):
+            lines.append(l)
+        lines.append("")
+
+    # 同花顺热榜（a-stock-data 接入）
+    hot_list = data.get("ths_hot_list", [])
+    if hot_list:
+        lines.append("## 🔥 市场人气热榜 TOP10")
+        lines.append("| 排名 | 股票 | 热度 | 涨跌幅% | 概念标签 |")
+        lines.append("|:----|:----|:----|:-------|:--------|")
+        for s in hot_list[:10]:
+            concepts = ", ".join((s.get("concepts") or [])[:3])
+            lines.append(
+                f"| #{s.get('rank', '?')} "
+                f"| {s.get('name', '?')} "
+                f"| {s.get('heat', '—')} "
+                f"| {s.get('pct', '—')} "
+                f"| {concepts} |"
+            )
+        lines.append("")
 
     # 持仓资金面监控
     mf = data.get("holdings_moneyflow", [])

@@ -35,6 +35,18 @@ import numpy as np
 
 from scripts.utils.tushare_client import pro
 
+# ── a-stock-data 估值数据源（优雅降级） ──
+try:
+    from scripts.utils.tencent_provider import tencent_quote, normalize_code
+    _HAS_TENCENT = True
+except Exception:
+    _HAS_TENCENT = False
+try:
+    from scripts.utils.ths_provider import ths_eps_forecast
+    _HAS_THS_EPS = True
+except Exception:
+    _HAS_THS_EPS = False
+
 
 # ============================================================
 #  数据获取
@@ -495,10 +507,9 @@ class RsiStrategy(StrategyTemplate):
         if not indicators or "rsi_14" not in indicators:
             return {"conclusion": "RSI数据不足", "signals": [], "detail": ""}
         rsi14 = indicators["rsi_14"]
-        rsi6 = indicators.get("rsi_6", rsi14)
 
         signals = []
-        detail_parts = [f"RSI(14)={rsi14}, RSI(6)={rsi6}"]
+        detail_parts = [f"RSI(14)={rsi14}"]
 
         if rsi14 > 80:
             signals.append("overbought")
@@ -516,17 +527,17 @@ class RsiStrategy(StrategyTemplate):
             signals.append("oversold")
             detail_parts.append("⭐ RSI<30，超卖区域，关注反弹机会")
 
-        # RSI背离 (简化)
-        if rsi6 > rsi14:
-            detail_parts.append("短期RSI>长期RSI，短期动能偏强")
+        # RSI趋势判断（对比中性值50）
+        if rsi14 > 50:
+            detail_parts.append("RSI>50，整体偏强")
         else:
-            detail_parts.append("短期RSI<长期RSI，短期动能偏弱")
+            detail_parts.append("RSI≤50，整体偏弱")
 
         return {
             "conclusion": detail_parts[-1] if len(detail_parts) > 1 else detail_parts[0],
             "signals": signals,
             "detail": "\n".join(detail_parts),
-            "data": {"rsi_14": rsi14, "rsi_6": rsi6},
+            "data": {"rsi_14": rsi14},
         }
 
 
@@ -737,6 +748,52 @@ def ask(code: str, strategy_name: str = "综合", mode: str = "standard") -> dic
     # 执行分析
     result = strategy.analyze(ts_code, df, indicators)
 
+    # ── 实时估值数据（a-stock-data 接入） ──
+    valuation = {}
+    if _HAS_TENCENT:
+        try:
+            raw_code = normalize_code(ts_code)
+            q = tencent_quote([raw_code])
+            if raw_code in q:
+                vi = q[raw_code]
+                valuation = {
+                    "pe_ttm": vi.get("pe_ttm"),
+                    "pb": vi.get("pb"),
+                    "mcap_yi": vi.get("mcap_yi"),
+                    "float_mcap_yi": vi.get("float_mcap_yi"),
+                    "turnover_pct": vi.get("turnover_pct"),
+                    "limit_up": vi.get("limit_up"),
+                    "limit_down": vi.get("limit_down"),
+                    "high": vi.get("high"),
+                    "low": vi.get("low"),
+                    "amount_wan": vi.get("amount_wan"),
+                }
+        except Exception:
+            pass
+
+    # ── 一致预期EPS（a-stock-data 接入） ──
+    eps_forecast = {}
+    if _HAS_THS_EPS:
+        try:
+            eps_df = ths_eps_forecast(normalize_code(ts_code))
+            if not eps_df.empty and len(eps_df.columns) >= 4:
+                rows_list = []
+                for _, row in eps_df.iterrows():
+                    row_dict = {}
+                    for col in eps_df.columns:
+                        try:
+                            row_dict[str(col)] = float(row[col]) if row[col] is not None else None
+                        except (ValueError, TypeError):
+                            row_dict[str(col)] = str(row[col]) if row[col] is not None else None
+                    rows_list.append(row_dict)
+                eps_forecast = {
+                    "data": rows_list,
+                    "latest_eps": rows_list[0].get("均值") if rows_list else None,
+                    "analyst_count": rows_list[0].get("预测机构数") if rows_list else 0,
+                }
+        except Exception:
+            pass
+
     # 构建输出
     output = {
         "ts_code": ts_code,
@@ -751,6 +808,9 @@ def ask(code: str, strategy_name: str = "综合", mode: str = "standard") -> dic
         "signals": result.get("signals", []),
         "detail": result.get("detail", ""),
         "mode": mode,
+        # a-stock-data 估值数据
+        "valuation": valuation if valuation else None,
+        "eps_forecast": eps_forecast if eps_forecast else None,
     }
 
     if mode == "brief":
@@ -797,6 +857,28 @@ def format_result(result: dict) -> str:
         }
         signals_str = ", ".join([sig_map.get(s, s) for s in result["signals"]])
         lines.append(f"  信号: {signals_str}")
+
+    # ── 实时估值（a-stock-data 接入） ──
+    val = result.get("valuation")
+    if val and val.get("pe_ttm"):
+        lines.extend([
+            "",
+            f"  📊 实时估值:",
+            f"    PE(TTM): {val.get('pe_ttm', '?')}x | PB: {val.get('pb', '?')}x",
+            f"    总市值: {val.get('mcap_yi', '?')}亿 | 换手率: {val.get('turnover_pct', '?')}%",
+            f"    涨停: {val.get('limit_up', '?')} | 跌停: {val.get('limit_down', '?')}",
+        ])
+
+    # ── 一致预期EPS（a-stock-data 接入） ──
+    eps = result.get("eps_forecast")
+    if eps and eps.get("data"):
+        lines.append("")
+        lines.append("  📈 机构一致预期EPS:")
+        for row in eps["data"]:
+            year = row.get("年度", row.get("报告期", "?"))
+            eps_val = row.get("均值", "—")
+            analysts = row.get("预测机构数", "")
+            lines.append(f"    {year}: EPS={eps_val} (覆盖{analysts}家)")
 
     if result.get("detail") and result.get("mode") != "brief":
         lines.extend(["", f"  📊 详细分析:", ""])

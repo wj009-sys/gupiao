@@ -46,6 +46,18 @@ sys.path.insert(0, PROJECT_ROOT)
 from scripts.utils.tushare_client import pro, get_ths_index
 from scripts.utils.technical_analysis import add_all_indicators, generate_signal_summary
 
+# ── a-stock-data 增强数据源（优雅降级） ──
+try:
+    from scripts.utils.tencent_provider import tencent_quote, normalize_code as tc_normalize
+    _HAS_TENCENT = True
+except Exception:
+    _HAS_TENCENT = False
+try:
+    from scripts.utils.eastmoney_plus import industry_comparison, eastmoney_concept_blocks
+    _HAS_EM_SECTOR = True
+except Exception:
+    _HAS_EM_SECTOR = False
+
 # RPS相对价格强度（导入失败不影响主流程）
 try:
     from scripts.utils import rps as rps_engine

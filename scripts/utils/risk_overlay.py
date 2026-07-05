@@ -114,12 +114,13 @@ class MacdWeakCheck(RiskCheck):
             if df_with_ind is None or df_with_ind.empty:
                 return {"penalty": 0, "veto": False, "reason": "指标计算失败"}
             latest = df_with_ind.iloc[-1]
-            macd_diff = latest.get("MACD_diff")
-            macd_dea = latest.get("MACD_dea")
-            if macd_diff is not None and macd_dea is not None:
-                if macd_diff < 0 and macd_dea < 0 and macd_dea < macd_diff:
+            # ⚠️ 使用小写字段名：add_all_indicators()输出全小写（macd_diff/macd_signal），非大写MACD_diff/MACD_dea
+            macd_diff = latest.get("macd_diff")
+            macd_signal = latest.get("macd_signal")
+            if macd_diff is not None and macd_signal is not None:
+                if macd_diff < 0 and macd_signal < 0 and macd_signal < macd_diff:
                     return {"penalty": 15, "veto": False,
-                            "reason": f"MACD弱势(diff={macd_diff:.2f}, dea={macd_dea:.2f})，惩罚-15分"}
+                            "reason": f"MACD弱势(diff={macd_diff:.2f}, signal={macd_signal:.2f})，惩罚-15分"}
                 if macd_diff < 0:
                     return {"penalty": 8, "veto": False,
                             "reason": f"MACD偏弱(diff={macd_diff:.2f})，惩罚-8分"}

@@ -190,6 +190,28 @@ python -X utf8 scripts/agent2-技术分析/analyze.py [YYYYMMDD]
 - Tushare Pro：A股日线行情、板块数据
 - Technical Analysis Library (ta)：MACD/KDJ/RSI/布林带
 - 情报摘要：今日重要资讯（reports/日报/情报/）
+- **腾讯财经行情**（a-stock-data / scripts/utils/tencent_provider.py）：免费实时PE/PB/市值/涨停跌停价，无需Token
+- **同花顺热点**（scripts/utils/ths_provider.py）：当日强势股+题材归因 reason tags
+- **东方财富板块归属**（scripts/utils/eastmoney_plus.py）：个股所属板块+行业排名
+- **新浪财报三表**（scripts/utils/eastmoney_plus.py）：资产负债表/利润表/现金流量表
+```
+
+### 第五步（可选）：用新数据源补充
+
+如果 Tushare 板块数据（ths_daily）不可用，可用免Key数据源补充：
+
+```python
+# 1. 行业板块排名（东财 push2 — 替代 Tushare ths_daily）
+from scripts.utils.eastmoney_plus import industry_comparison
+comp = industry_comparison(20)  # 全行业涨跌排名
+
+# 2. 实时估值（腾讯，不封IP）
+from scripts.utils.tencent_provider import tencent_quote
+q = tencent_quote(["000001", "399006"])  # 上证/创业板实时PE/PB
+
+# 3. 个股板块归属
+from scripts.utils.eastmoney_plus import eastmoney_concept_blocks
+blocks = eastmoney_concept_blocks("688017")
 ```
 
 ### 第六步：推送通知到手机

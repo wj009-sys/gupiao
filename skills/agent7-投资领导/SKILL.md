@@ -183,6 +183,27 @@ python -X utf8 scripts/agent2-技术分析/analyze.py YYYYMMDD
 
 > ⚠️ **重做标记规则**：Agent在完成重做后，必须在报告末尾添加一行 `#REWORKED` 标记，否则系统会认为尚未重做。这个标记让 leader.py 脚本能自动判断是否已重做。
 
+### 快速验证工具（a-stock-data 接入）
+
+审核各Agent输出时，可用以下无Key数据源快速验证：
+
+```python
+# 1. 实时估值验证（腾讯财经，不封IP）
+from scripts.utils.tencent_provider import tencent_quote
+q = tencent_quote(["600519", "000858"])
+# → 免费获取实时 PE/PB/市值/涨跌停价，验证分析师/操盘手的数据
+
+# 2. 题材热度验证（同花顺热点）
+from scripts.utils.ths_provider import ths_hot_reason
+df = ths_hot_reason()
+# → 验证选股机器人的热点题材判断
+
+# 3. 涨停打板情绪验证
+from scripts.utils.limit_up_board import limit_up_sentiment
+s = limit_up_sentiment("20260703")
+# → 验证游资追踪师的打板情绪分析
+```
+
 ### 第六步：冲突仲裁
 
 风控官的操盘审查报告会标注出所有与操盘手的意见分歧。以下是你的仲裁原则：

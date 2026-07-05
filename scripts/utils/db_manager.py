@@ -156,6 +156,7 @@ CREATE_TABLES_SQL = [
     """,
 
     # 7. daily_indicator — 技术指标（本地计算）
+    # ⚠️ 建表语句必须与 DAILY_INDICATOR_COLS 完全一致
     """
     CREATE TABLE IF NOT EXISTS daily_indicator (
         ts_code           TEXT NOT NULL,
@@ -170,10 +171,18 @@ CREATE_TABLES_SQL = [
         kdj_j             REAL,
         kdj_golden_cross  INTEGER DEFAULT 0,
         rsi_14            REAL,
+        rsi_oversold      INTEGER DEFAULT 0,
+        rsi_overbought    INTEGER DEFAULT 0,
         boll_upper        REAL,
         boll_mid          REAL,
         boll_lower        REAL,
         boll_width        REAL,
+        boll_break_upper  INTEGER DEFAULT 0,
+        boll_break_lower  INTEGER DEFAULT 0,
+        obv               REAL,
+        obv_ma20          REAL,
+        obv_trend         TEXT,
+        obv_divergence    TEXT,
         ma_5              REAL,
         ma_10             REAL,
         ma_20             REAL,

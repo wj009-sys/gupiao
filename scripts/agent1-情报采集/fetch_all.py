@@ -1,6 +1,6 @@
 """
 Agent1 情报员 - 数据采集核心脚本
-一键获取：大盘行情 + 龙虎榜 + 资金流向 + 板块涨跌
+一键获取：大盘行情 + 龙虎榜 + 资金流向 + 板块涨跌 + 热点题材 + 全球资讯 + 公告
 
 用法：
     source venv/Scripts/activate
@@ -25,6 +25,9 @@ D3异常处理表：
 | 涨跌家数统计失败 | 捕获异常，打印错误 | 返回{up:0, down:0, flat:0, total:0} |
 | 当天是非交易日 | get_last_trade_day往前找7天 | 找到最近交易日的数据，标注"非最新交易日" |
 | JSON序列化numpy类型 | 使用default=str处理不可序列化类型 | 字符串化所有特殊类型 |
+| 同花顺热点题材API失败 | 捕获异常，仅做警告 | 跳过热点题材章节 |
+| 东财全球资讯API失败 | 捕获异常，仅做警告 | 跳过全球资讯章节 |
+| 巨潮公告查询失败 | 捕获异常，逐个跳过 | 跳过公告章节 |
 
 D4 CHECKPOINT:
 - CP1-交易日验证：调用get_last_trade_day确认有数据，非交易日则往前回溯
@@ -41,6 +44,23 @@ from datetime import datetime, timedelta
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.tushare_client import pro, get_ths_index
+
+# ── a-stock-data 新数据源（优雅降级） ──
+try:
+    from scripts.utils.ths_provider import ths_hot_reason, hot_reason_tag_ranking
+    _HAS_THS = True
+except Exception:
+    _HAS_THS = False
+try:
+    from scripts.utils.eastmoney_plus import eastmoney_global_news, eastmoney_concept_blocks
+    _HAS_EM = True
+except Exception:
+    _HAS_EM = False
+try:
+    from scripts.utils.cninfo_sentiment import cninfo_announcements
+    _HAS_CNINFO = True
+except Exception:
+    _HAS_CNINFO = False
 
 # 数据库管理器（尽力而为，导入失败不影响报告生成）
 try:
@@ -171,6 +191,7 @@ def generate_data_json(trade_date: str = None) -> dict:
     # Windows GBK 兼容输出
     ok = "[OK]"
     fail = "[FAIL]"
+    warn = "[WARN]"
 
     print(f"[情报员] 采集日期: {trade_date}")
 
@@ -183,6 +204,10 @@ def generate_data_json(trade_date: str = None) -> dict:
         "top_losers": [],
         "limit_list": [],
         "ths_hot": [],
+        "hot_reason": [],          # 同花顺热点题材归因（a-stock-data）
+        "hot_reason_ranking": [],  # 题材热度排名
+        "global_news": [],         # 东财全球资讯（a-stock-data）
+        "watch_announcements": [], # 自选股最新公告（a-stock-data）
         "errors": [],
     }
 
@@ -235,13 +260,77 @@ def generate_data_json(trade_date: str = None) -> dict:
         data["errors"].append(f"板块排名获取失败: {e}")
         print(f"  {fail} 板块排名: {e}")
 
+    # ── 6. 同花顺热点题材归因（a-stock-data 接入） ──
+    if _HAS_THS:
+        try:
+            df_reason = ths_hot_reason(trade_date)
+            if not df_reason.empty:
+                data["hot_reason"] = df_reason.to_dict("records")
+                data["hot_reason_count"] = len(df_reason)
+                # 词频统计：题材热度排名 TOP15
+                ranking = hot_reason_tag_ranking(df_reason)
+                data["hot_reason_ranking"] = [{"tag": t, "count": c} for t, c in ranking[:15]]
+                print(f"  {ok} 热点题材: {len(df_reason)} 只个股, {len(ranking)} 个题材标签")
+        except Exception as e:
+            print(f"  {warn} 热点题材: {e}")
+    else:
+        print(f"  {warn} ths_provider 不可用, 跳过热点题材")
+
+    # ── 7. 东财全球财经资讯（a-stock-data 接入） ──
+    if _HAS_EM:
+        try:
+            news = eastmoney_global_news(10)
+            if news:
+                data["global_news"] = news
+                print(f"  {ok} 全球资讯: {len(news)} 条")
+        except Exception as e:
+            print(f"  {warn} 全球资讯: {e}")
+
+    # ── 8. 持仓/自选股公告（a-stock-data 接入） ──
+    if _HAS_CNINFO:
+        try:
+            # 读取持仓和自选股
+            portfolio_file = os.path.join(os.path.dirname(__file__), "..", "..", "data", "portfolio.json")
+            watchlist_file = os.path.join(os.path.dirname(__file__), "..", "..", "data", "watchlist.json")
+            watch_codes = []
+
+            for pf_path in [portfolio_file, watchlist_file]:
+                if os.path.exists(pf_path):
+                    with open(pf_path, "r", encoding="utf-8") as f:
+                        pf_data = json.load(f)
+                    if isinstance(pf_data, list):
+                        watch_codes.extend([str(s.get("code", "")).replace(".SH", "").replace(".SZ", "").replace(".BJ", "")
+                                            for s in pf_data if s.get("code")])
+                    elif isinstance(pf_data, dict):
+                        watch_codes.extend([str(s.get("code", "")).replace(".SH", "").replace(".SZ", "").replace(".BJ", "")
+                                            for s in pf_data.values() if isinstance(s, dict) and s.get("code")])
+
+            ann_list = []
+            for code in set(watch_codes):
+                if not code or not code.isdigit():
+                    continue
+                try:
+                    anns = cninfo_announcements(code, page_size=3)
+                    for a in anns:
+                        a["watch_code"] = code
+                    ann_list.extend(anns)
+                except Exception:
+                    continue
+            if ann_list:
+                # 按日期排序取最新 20 条
+                ann_list.sort(key=lambda x: x.get("date", ""), reverse=True)
+                data["watch_announcements"] = ann_list[:20]
+                print(f"  {ok} 自选股公告: {len(data['watch_announcements'])} 条")
+        except Exception as e:
+            print(f"  {warn} 自选股公告: {e}")
+
     # D4-CP3: 错误汇总
     if data["errors"]:
         print(f"  [WARN] 采集完成，共 {len(data['errors'])} 个错误")
         for err in data["errors"]:
             print(f"    - {err}")
 
-    # 6. 写入数据库（尽力而为）
+    # 9. 写入数据库（尽力而为）
     _save_to_db(data)
 
     return data
