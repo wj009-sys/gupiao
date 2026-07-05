@@ -18,8 +18,6 @@
 """
 
 import logging
-import time
-import random
 from datetime import datetime
 from typing import Optional, List, Dict
 
@@ -27,27 +25,19 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36")
+# ── 共享限流网关 + 代理（跨模块协调请求间隔，避免IP封禁） ──
+from scripts.utils._proxy import rate_limited_get, get_session_with_proxy
 
-# ── 限流：复用 eastmoney_get 的设计模式 ──
-_EM_SESSION = requests.Session()
-_EM_SESSION.headers.update({"User-Agent": UA})
-_EM_LAST_CALL = [0.0]
-EM_MIN_INTERVAL = 1.0
+_EM_SESSION = get_session_with_proxy()
+EM_MIN_INTERVAL = 1.1
 
 
 def _em_get(url: str, params: dict = None, headers: dict = None,
             timeout: int = 15, **kwargs) -> requests.Response:
-    """东财统一限流请求（内部使用）"""
-    wait = EM_MIN_INTERVAL - (time.time() - _EM_LAST_CALL[0])
-    if wait > 0:
-        time.sleep(wait + random.uniform(0.1, 0.5))
-    try:
-        return _EM_SESSION.get(url, params=params, headers=headers,
-                               timeout=timeout, **kwargs)
-    finally:
-        _EM_LAST_CALL[0] = time.time()
+    """东财统一限流请求（使用共享网关，跨模块协调）"""
+    return rate_limited_get(_EM_SESSION, url, params=params,
+                            headers=headers, timeout=timeout,
+                            min_interval=EM_MIN_INTERVAL)
 
 
 # ═══════════════════════════════════════════════════════════════════════

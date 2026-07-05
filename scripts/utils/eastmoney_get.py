@@ -67,16 +67,12 @@ EASTMONEY_BASES = {
 
 
 def _get_session() -> requests.Session:
-    """获取/创建全局 Session（Keep-Alive）"""
+    """获取/创建全局 Session（Keep-Alive + SOCKS代理）"""
     global _session
     if _session is None:
-        _session = requests.Session()
+        from scripts.utils._proxy import get_session_with_proxy
+        _session = get_session_with_proxy()
         _session.headers.update({
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/125.0.0.0 Safari/537.36"
-            ),
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             "Connection": "keep-alive",

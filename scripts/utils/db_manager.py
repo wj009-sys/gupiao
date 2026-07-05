@@ -1703,6 +1703,25 @@ class DatabaseManager:
             print(f"[DB] get_sector_ranking 失败: {e}")
             return pd.DataFrame()
 
+    def get_moneyflow_stock(self, ts_code: str, trade_date: str) -> dict:
+        """获取某只股票在某日的资金流向（从moneyflow_stock表）"""
+        if not self._ensure_conn():
+            return {}
+
+        try:
+            cur = self.conn.cursor()
+            cur.execute(
+                "SELECT * FROM moneyflow_stock WHERE ts_code = ? AND trade_date = ?",
+                (ts_code, trade_date)
+            )
+            row = cur.fetchone()
+            if row:
+                cols = [d[0] for d in cur.description]
+                return dict(zip(cols, row))
+        except Exception as e:
+            print(f"[DB] get_moneyflow_stock 失败 ({ts_code}): {e}")
+        return {}
+
     def get_moneyflow_hsgt(self, trade_date: str) -> dict:
         """获取某日北向资金流向"""
         if not self._ensure_conn():

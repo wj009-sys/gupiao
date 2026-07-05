@@ -9,6 +9,11 @@
 
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
+| 2026-07-05 | 📝 add | knowledge/策略/数据源优先级.md | DS-49: 全局数据源优先级文档(各数据域主/备/兜底+Agent映射+限流策略) |
+| 2026-07-05 | 📝 add | scripts/utils/_proxy.py | DS-48: 共享限流网关+代理抽取为scripts/utils/_proxy.py，跨模块协调东财请求间隔 |
+| 2026-07-05 | 📝 fix | scripts/agent7-决策/leader.py | DF-26: detect_conflicts/市场判断优先读结构化JSON(data/raw/)，后降级Markdown正则 |
+| 2026-07-05 | 📝 fix | scripts/agent5-选股/stock_picker.py | DF-23/24: score_technical优先读daily_indicator缓存，score_sentiment优先读moneyflow_stock缓存 |
+| 2026-07-05 | 📝 fix | scripts/utils/tushare_client.py | HIGH修复: 延迟初始化(pro→get_pro()懒加载)，无Token时导入不崩溃，返回空DataFrame降级 |
 | 2026-07-05 | 📝 fix | scripts/agent5-选股/stock_picker.py | HIGH修复: net_hsgt→north_money字段名修复(北向资金盘中/午盘模式始终为0) |
 | 2026-07-05 | 📝 fix | scripts/utils/db_manager.py | MEDIUM修复: daily_indicator CREATE TABLE同步更新28列(rsi_oversold/rsi_overbought/obv系/boll_break系) |
 | 2026-07-05 | 📝 fix | scripts/agent_ask/ask.py | MEDIUM修复: 移除rsi_6残留引用(DB只有rsi_14，rsi_6永远fallback到rsi14，导致短期=长期错误结论) |

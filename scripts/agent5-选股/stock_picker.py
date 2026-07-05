@@ -641,8 +641,65 @@ def score_momentum(ts_code: str) -> dict:
 
 
 def score_technical(ts_code: str) -> dict:
-    """技术面因子评分（0-100）- DB优先读取 + OBV量能加分"""
+    """技术面因子评分（0-100）- DB优先读取(daily_indicator) + OBV量能加分"""
     try:
+        # === 路径A: 优先从 daily_indicator 缓存读取 ===
+        indicator_data = _db.get_latest_indicator(ts_code) if _db else {}
+        if indicator_data and indicator_data.get("ma_20") is not None:
+            ma20 = indicator_data["ma_20"]
+            # 需要从daily_price获取最新价格（indicator表没有价格）
+            df_price = get_daily_price_db_first(ts_code, days_back=5)
+            if df_price is not None and not df_price.empty:
+                current = float(df_price.iloc[0]["close"])
+                # MA20评分
+                if current > ma20 * 1.05:
+                    score = 80
+                    detail = f"价格({current:.2f}) > MA20({ma20:.2f}) +5%"
+                elif current > ma20:
+                    score = 65
+                    detail = f"价格({current:.2f}) > MA20({ma20:.2f})"
+                else:
+                    score = 35
+                    detail = f"价格({current:.2f}) < MA20({ma20:.2f})"
+
+                # 成交量比（从daily_price判断）
+                vol_score = 0
+                if df_price is not None and not df_price.empty and "vol" in df_price.columns:
+                    vol_vals = df_price["vol"].values[:8]
+                    if len(vol_vals) >= 8:
+                        recent_avg = sum(vol_vals[:3]) / 3
+                        prev_avg = sum(vol_vals[3:8]) / 5
+                        if prev_avg > 0 and recent_avg > prev_avg * 1.3:
+                            vol_score = 15
+                            detail += "，放量"
+
+                # OBV量能加分（从daily_indicator缓存读取）
+                obv_bonus = 0
+                obv_detail = ""
+                obv = indicator_data.get("obv")
+                obv_ma20 = indicator_data.get("obv_ma20")
+                obv_trend = indicator_data.get("obv_trend", "")
+                if obv is not None and obv_ma20 is not None:
+                    if obv > obv_ma20:
+                        obv_bonus += 10
+                        obv_detail += "OBV>MA20(量能偏多)"
+                    else:
+                        obv_bonus -= 5
+                        obv_detail += "OBV<MA20(量能偏空)"
+                    if obv_trend == "上升":
+                        obv_bonus += 5
+                        obv_detail += "，量能上升"
+                    elif obv_trend == "下降":
+                        obv_bonus -= 5
+                        obv_detail += "，量能下降"
+                if obv_detail:
+                    detail += f" | {obv_detail}"
+
+                final_score = max(0, min(100, score + vol_score + obv_bonus))
+                return {"score": final_score,
+                        "details": {"summary": detail, "source": "daily_indicator"}}
+
+        # === 路径B: daily_indicator无数据，fallback到自行计算 ===
         df = get_daily_price_db_first(ts_code, days_back=30)
         if df is None or df.empty or len(df) < 30:
             return {"score": 50, "details": {"reason": "技术数据不足"}}
@@ -673,16 +730,13 @@ def score_technical(ts_code: str) -> dict:
                 vol_score = 15
                 detail += "，放量"
 
-        # === OBV 量能加分（基于累积成交量） ===
-        # df是降序（最新在前），OBV计算需要升序（最旧在前）
+        # === OBV 量能加分（fallback自算） ===
         obv_bonus = 0
         obv_detail = ""
         try:
             if volumes is not None and len(volumes) >= 10:
-                # 反转成升序计算OBV
                 close_asc = closes[::-1]
                 vol_asc = volumes[::-1]
-
                 obv_vals = np.zeros(len(close_asc))
                 for i in range(1, len(close_asc)):
                     if close_asc[i] > close_asc[i - 1]:
@@ -692,21 +746,15 @@ def score_technical(ts_code: str) -> dict:
                     else:
                         obv_vals[i] = obv_vals[i - 1]
 
-                # 最新OBV值（降序的最新 = 升序的最后）
                 latest_obv = obv_vals[-1]
-                # OBV的10日均线
                 if len(obv_vals) >= 10:
                     obv_ma10 = np.mean(obv_vals[-10:])
-
-                    # OBV > MA10 → 量能偏多
                     if latest_obv > obv_ma10:
                         obv_bonus += 10
                         obv_detail += "OBV>MA10(量能偏多)"
                     else:
                         obv_bonus -= 5
                         obv_detail += "OBV<MA10(量能偏空)"
-
-                    # 最近5日OBV趋势
                     if len(obv_vals) >= 15:
                         recent_obv_slope = obv_vals[-1] - obv_vals[-6]
                         if recent_obv_slope > 0:
@@ -715,46 +763,65 @@ def score_technical(ts_code: str) -> dict:
                         elif recent_obv_slope < 0:
                             obv_bonus -= 5
                             obv_detail += "，量能下降"
-
                 if obv_detail:
                     detail += f" | {obv_detail}"
-
         except Exception as e:
-            print(f"  [WARN] OBV量能加分计算失败: {e}")  # OBV加分失败不影响主评分
+            print(f"  [WARN] OBV量能加分计算失败: {e}")
 
         final_score = max(0, min(100, score + vol_score + obv_bonus))
-        return {"score": final_score, "details": {"summary": detail}}
+        return {"score": final_score,
+                "details": {"summary": detail, "source": "self_calc"}}
     except Exception as e:
         print(f"  [WARN] 技术评分{ts_code}失败: {e}")
         return {"score": 50, "details": {"reason": "技术评分异常"}}
 
 
 def score_sentiment(ts_code: str, trade_date: str = None) -> dict:
-    """情绪因子评分（0-100）— 基于资金流向"""
-    try:
-        if trade_date:
-            df = pro.moneyflow(ts_code=ts_code, start_date=trade_date, end_date=trade_date)
-            if df is not None and not df.empty:
-                row = df.iloc[0]
-                net = float(row.get("net_amount", 0))
+    """情绪因子评分（0-100）— DB优先(moneyflow_stock)→Tushare API→涨跌幅兜底"""
+    if not trade_date:
+        import datetime
+        trade_date = datetime.date.today().strftime("%Y%m%d")
+
+    # === 路径A: 优先从 moneyflow_stock DB读取 ===
+    if _db:
+        try:
+            mf = _db.get_moneyflow_stock(ts_code, trade_date)
+            if mf and mf.get("net_amount") is not None:
+                net = float(mf["net_amount"])
                 if net > 0:
-                    return {"score": 65, "details": {"reason": f"主力资金净流入{net:.0f}万"}}
+                    return {"score": 65,
+                            "details": {"reason": f"主力资金净流入{net:.0f}万", "source": "moneyflow_stock"}}
                 elif net < 0:
-                    return {"score": 40, "details": {"reason": f"主力资金净流出{abs(net):.0f}万"}}
+                    return {"score": 40,
+                            "details": {"reason": f"主力资金净流出{abs(net):.0f}万", "source": "moneyflow_stock"}}
+        except Exception as e:
+            print(f"  [WARN] {ts_code} moneyflow_stock DB读取失败: {e}")
+
+    # === 路径B: Tushare API ===
+    try:
+        df = pro.moneyflow(ts_code=ts_code, start_date=trade_date, end_date=trade_date)
+        if df is not None and not df.empty:
+            row = df.iloc[0]
+            net = float(row.get("net_amount", 0))
+            if net > 0:
+                return {"score": 65, "details": {"reason": f"主力资金净流入{net:.0f}万", "source": "tushare_api"}}
+            elif net < 0:
+                return {"score": 40, "details": {"reason": f"主力资金净流出{abs(net):.0f}万", "source": "tushare_api"}}
     except Exception as e:
-        print(f"  ⚠️ {ts_code} 主力资金数据获取失败: {e}")
-    # 兜底：用涨跌幅判断情绪（优先DB）
+        print(f"  ⚠️ {ts_code} Tushare moneyflow失败: {e}")
+
+    # === 路径C: 用涨跌幅判断情绪（兜底） ===
     try:
         df = get_daily_price_db_first(ts_code, days_back=5)
         if df is not None and not df.empty and len(df) >= 5:
             recent = df["pct_chg"].iloc[:5].mean()
             if recent > 3:
-                return {"score": 65, "details": {"reason": f"近5日涨幅{recent:.1f}%，情绪积极"}}
+                return {"score": 65, "details": {"reason": f"近5日涨幅{recent:.1f}%，情绪积极", "source": "price_fallback"}}
             elif recent < -3:
-                return {"score": 35, "details": {"reason": f"近5日跌幅{recent:.1f}%，情绪悲观"}}
+                return {"score": 35, "details": {"reason": f"近5日跌幅{recent:.1f}%，情绪悲观", "source": "price_fallback"}}
     except Exception as e:
         print(f"  ⚠️ {ts_code} 情绪评分价格数据获取失败: {e}")
-    return {"score": 50, "details": {"reason": "无资金流数据，中性评分"}}
+    return {"score": 50, "details": {"reason": "无资金流数据，中性评分", "source": "neutral"}}
 
 
 def score_rps(ts_code: str, trade_date: str = None) -> dict:

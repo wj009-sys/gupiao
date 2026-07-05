@@ -177,37 +177,84 @@ def assess_team_readiness(agent_status: dict) -> dict:
     }
 
 
+def load_stock_raw_data() -> dict:
+    """读取选股机器人最新原始数据（含选股明细等结构化数据）"""
+    raw_dir = os.path.join(PROJECT_ROOT, "data", "raw")
+    pattern = os.path.join(raw_dir, "选股原始数据_*.json")
+    files = sorted(glob.glob(pattern), reverse=True)
+    if not files:
+        return {}
+    try:
+        with open(files[0], "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[WARN] 加载选股原始数据失败: {e}")
+        return {}
+
+
 def detect_conflicts(reports: dict) -> list:
-    """检测各Agent报告之间的冲突"""
+    """检测各Agent报告之间的冲突 — 优先结构化JSON，回退Markdown正则"""
     conflicts = []
 
-    risk_text = reports.get("风控", "")
-    trading_text = reports.get("操盘", "")
+    # === 路径A: 优先从结构化JSON检测冲突 ===
+    risk_data = load_risk_raw_data()
+    trade_data = load_trade_raw_data()
+    stock_data = load_stock_raw_data()
 
-    # 风控 HIGH 但操盘建议买入 → 冲突
-    # 使用 \b 单词边界避免 "非HIGH" 被误匹配
-    if risk_text and trading_text:
-        risk_is_high = bool(re.search(r'\bHIGH\b', risk_text)) or "CRITICAL" in risk_text
-        if risk_is_high and "买入" in trading_text:
-            conflicts.append({
-                "type": "风险-交易冲突",
-                "detail": "风控报告为HIGH风险，但操盘手建议买入",
-                "severity": "HIGH",
-                "suggestion": "以风控为准，取消或缩减买入计划",
-            })
+    # A1: 从风控原始数据中的 trade_conflicts 检测
+    trade_conflicts = risk_data.get("trade_conflicts", [])
+    for tc in trade_conflicts:
+        conflicts.append({
+            "type": "风险-交易冲突",
+            "detail": f"{tc.get('type', '')}: {tc.get('name', '')}({tc.get('code', '')}) "
+                      f"风控={tc.get('risk_view', '')} vs 操盘={tc.get('trader_view', '')}",
+            "severity": tc.get("severity", "HIGH"),
+            "suggestion": tc.get("suggestion", "以风控为准"),
+            "source": "structured_json",
+        })
 
-    # 选股推荐 vs 风控限制
-    stock_text = reports.get("选股", "")
-    if stock_text and risk_text:
-        risk_is_weak = ("震荡" in risk_text or "调整" in risk_text or "中等" in risk_text)
-        has_strong_buy = bool(re.search(r'强烈推荐|强力推荐|重点推荐', stock_text))
-        if risk_is_weak and has_strong_buy:
+    # A2: 从风控 risk_level 和选股推荐检测
+    risk_level = risk_data.get("risk_level", "")
+    stock_picks = stock_data.get("stock_picks", []) or stock_data.get("recommended", [])
+    if risk_level in ("HIGH", "CRITICAL") and stock_picks:
+        has_buy = any(s.get("action", "") in ("买入", "买", "buy") or s.get("score", 0) >= 75
+                      for s in stock_picks)
+        if has_buy:
             conflicts.append({
                 "type": "选股-风控冲突",
-                "detail": "风控判断市场偏弱，但选股机器人有强烈推荐",
-                "severity": "MEDIUM",
-                "suggestion": "降低买入仓位，严格控制止损",
+                "detail": f"风控风险等级={risk_level}，但选股机器人有{len(stock_picks)}只推荐（含买入建议）",
+                "severity": "HIGH",
+                "suggestion": "降低买入仓位，严格止损",
+                "source": "structured_json",
             })
+
+    # === 路径B: Markdown正则回退（JSON不可用时） ===
+    if not trade_conflicts:
+        risk_text = reports.get("风控", "")
+        trading_text = reports.get("操盘", "")
+        if risk_text and trading_text:
+            risk_is_high = bool(re.search(r'\bHIGH\b', risk_text)) or "CRITICAL" in risk_text
+            if risk_is_high and "买入" in trading_text:
+                conflicts.append({
+                    "type": "风险-交易冲突",
+                    "detail": "风控报告为HIGH风险，但操盘手建议买入",
+                    "severity": "HIGH",
+                    "suggestion": "以风控为准，取消或缩减买入计划",
+                    "source": "markdown_regex",
+                })
+
+        stock_text = reports.get("选股", "")
+        if stock_text and risk_text:
+            risk_is_weak = ("震荡" in risk_text or "调整" in risk_text or "中等" in risk_text)
+            has_strong_buy = bool(re.search(r'强烈推荐|强力推荐|重点推荐', stock_text))
+            if risk_is_weak and has_strong_buy:
+                conflicts.append({
+                    "type": "选股-风控冲突",
+                    "detail": "风控判断市场偏弱，但选股机器人有强烈推荐",
+                    "severity": "MEDIUM",
+                    "suggestion": "降低买入仓位，严格控制止损",
+                    "source": "markdown_regex",
+                })
 
     return conflicts
 
@@ -641,25 +688,44 @@ def make_decision() -> dict:
     else:
         result["rework_status"] = []
 
-    # 7. 市场判断（使用整词匹配避免误判）
+    # 7. 市场判断（优先结构化JSON→Markdown正则）
     risk_text = report_contents.get("风控官", "")
     analysis_text = report_contents.get("分析师", "")
 
-    has_critical = re.search(r'\bCRITICAL\b', risk_text) if risk_text else None
-    has_high = re.search(r'\bHIGH\b', risk_text) if risk_text else None
-    has_warning = re.search(r'\bWARNING\b', risk_text) if risk_text else None
-    has_low = re.search(r'\bLOW\b', risk_text) if risk_text else None
+    # 路径A: 从风控原始数据的risk_level判断
+    if risk_raw_data:
+        rl = risk_raw_data.get("risk_level", "")
+        ma = risk_raw_data.get("market_assessment", "")
+        if rl == "CRITICAL":
+            result["market_assessment"] = "极端风险 — 建议空仓"
+            result["market_assessment_source"] = "structured_json"
+        elif rl == "HIGH":
+            result["market_assessment"] = "高风险 — 建议减仓防御"
+            result["market_assessment_source"] = "structured_json"
+        elif rl == "MEDIUM":
+            result["market_assessment"] = "中等风险 — 谨慎操作"
+            result["market_assessment_source"] = "structured_json"
+        elif rl == "LOW":
+            result["market_assessment"] = "低风险 — 可积极操作"
+            result["market_assessment_source"] = "structured_json"
+    # 路径B: Markdown正则回退
+    if "market_assessment" not in result:
+        has_critical = re.search(r'\bCRITICAL\b', risk_text) if risk_text else None
+        has_high = re.search(r'\bHIGH\b', risk_text) if risk_text else None
+        has_warning = re.search(r'\bWARNING\b', risk_text) if risk_text else None
+        has_low = re.search(r'\bLOW\b', risk_text) if risk_text else None
 
-    if has_critical or "极端" in risk_text:
-        result["market_assessment"] = "极端风险 — 建议空仓"
-    elif has_high or "熊市" in risk_text:
-        result["market_assessment"] = "高风险 — 建议减仓防御"
-    elif has_warning:
-        result["market_assessment"] = "中等风险 — 谨慎操作"
-    elif has_low and "牛市" in risk_text:
-        result["market_assessment"] = "低风险 — 可积极操作"
-    else:
-        result["market_assessment"] = "震荡市 — 控制仓位"
+        if has_critical or "极端" in (risk_text or ""):
+            result["market_assessment"] = "极端风险 — 建议空仓"
+        elif has_high or "熊市" in (risk_text or ""):
+            result["market_assessment"] = "高风险 — 建议减仓防御"
+        elif has_warning:
+            result["market_assessment"] = "中等风险 — 谨慎操作"
+        elif has_low and "牛市" in (risk_text or ""):
+            result["market_assessment"] = "低风险 — 可积极操作"
+        else:
+            result["market_assessment"] = "震荡市 — 控制仓位"
+        result["market_assessment_source"] = "markdown_regex"
 
     print(f"  {ok} 市场判断: {result['market_assessment']}")
 

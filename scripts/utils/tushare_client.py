@@ -35,12 +35,78 @@ import pandas as pd
 import tushare as ts
 
 # ===== 配置 =====
-# 优先从环境变量读取 token，否则在这里填入
-TOKEN = os.getenv("TUSHARE_TOKEN")
-if not TOKEN:
-    raise ValueError("请设置环境变量 TUSHARE_TOKEN")
+# 优先从环境变量读取 token
+# ⚠️ 延迟初始化：不在此处直接调用 ts.pro_api()，避免模块导入即崩溃
+# 使用 get_pro() 函数按需初始化
+_TOKE = os.getenv("TUSHARE_TOKEN", "")
+_pro_instance = None
 
-pro = ts.pro_api(TOKEN)
+
+def has_token() -> bool:
+    """检查Tushare Token是否已配置（安全调用，不触发初始化）"""
+    return bool(_TOKE)
+
+
+def get_pro():
+    """
+    获取 Tushare Pro 实例（延迟初始化）
+
+    首次调用时初始化，后续复用缓存实例。
+    若Token未配置，打印警告并返回 None。
+    调用方需判断返回 None 时降级到 DataProvider 多源fallback。
+    """
+    global _pro_instance
+    if _pro_instance is not None:
+        return _pro_instance
+    if not _TOKE:
+        print("[tushare] TUSHARE_TOKEN 未配置，Tushare数据不可用。"
+              "设置环境变量 TUSHARE_TOKEN 或使用 DataProvider 多源fallback。")
+        return None
+    try:
+        _pro_instance = ts.pro_api(_TOKE)
+        return _pro_instance
+    except Exception as e:
+        print(f"[tushare] Tushare初始化失败: {e}")
+        return None
+
+
+# 兼容旧代码：通过 get_pro() 按需获取实例
+def _lazy_pro():
+    """兼容旧接口 pro.xxx() 调用的延迟属性"""
+    inst = get_pro()
+    if inst is None:
+        raise RuntimeError("Tushare Pro不可用（Token未配置或初始化失败）")
+    return inst
+
+
+# 提供向后兼容的 pro 对象（仅在调用时才检查Token）
+class _LazyTushare:
+    """延迟加载的Tushare代理 — 调用属性时才初始化"""
+
+    def __getattr__(self, name):
+        inst = get_pro()
+        if inst is None:
+            # Token缺失时返回一个mock，所有API调用返回空DataFrame
+            return _EmptyAPI(name)
+        return getattr(inst, name)
+
+
+class _EmptyAPI:
+    """Token缺失时的静默降级代理 — 所有API调用返回空DataFrame"""
+
+    def __init__(self, name=""):
+        self._name = name
+
+    def __getattr__(self, name):
+        return _EmptyAPI(f"{self._name}.{name}")
+
+    def __call__(self, *args, **kwargs):
+        print(f"[tushare] Token未配置，{self._name}() 返回空DataFrame（降级）")
+        return pd.DataFrame()
+
+
+# pro 对象：有Token时正常，无Token时所有API返回空DataFrame
+pro = _LazyTushare()
 
 
 def get_daily(ts_code: str, start_date: str, end_date: str) -> pd.DataFrame:
