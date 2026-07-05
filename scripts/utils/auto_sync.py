@@ -25,8 +25,10 @@
   7. fina_indicator — pro.fina_indicator(ts_code=X)    仅季度缺口
   8. dividend       — pro.dividend(ts_code=X)          很少需要
   9. ths_daily      — pro.ths_daily(trade_date=X)      快
-  10. quality_check — 覆盖度检查+多源回补+数据清洗     快速
-  11. daily_indicator — 全市场技术指标计算              快速
+  10. moneyflow_hsgt — pro.moneyflow_hsgt() 北向资金    ⚡ 1次/天
+  11. moneyflow_stock — pro.moneyflow(ts_code=X) 持仓  慢（仅限持仓+自选）
+  12. quality_check — 覆盖度检查+多源回补+数据清洗     快速
+  13. daily_indicator — 全市场技术指标计算              快速
 
 D3异常处理表:
 | 触发条件 | 一线修复 | 仍失败兜底 |
@@ -1037,7 +1039,7 @@ def load_all_market_codes(db: DatabaseManager) -> list:
 def post_sync_data_check(db: DatabaseManager, trading_days: list,
                           latest_td: str) -> dict:
     """
-    同步后数据质量检查 — 覆盖度 + 多源回补 + 数据清洗（Phase 10）
+    同步后数据质量检查 — 覆盖度 + 多源回补 + 数据清洗（Phase 12）
 
     三阶段:
       A. 覆盖度检查 — stock/ETF/index 数量与预期对比，标记缺失
@@ -1355,10 +1357,157 @@ def post_sync_data_check(db: DatabaseManager, trading_days: list,
     return result
 
 
+def sync_moneyflow_hsgt(db: DatabaseManager, trading_days: list,
+                         latest_td: str) -> dict:
+    """
+    同步北向资金流向（Phase 10）
+
+    从 pro.moneyflow_hsgt() 批拉取缺失交易日数据。
+    D3异常:
+        API失败 → 跳过该日期
+        空数据 → 正常跳过
+    """
+    import time
+    t0 = time.time()
+    result = {"rows_inserted": 0, "errors": 0, "elapsed_sec": 0.0}
+
+    # 获取DB最新日期
+    try:
+        cur = db.conn.cursor()
+        cur.execute("SELECT MAX(trade_date) FROM moneyflow_hsgt")
+        row = cur.fetchone()
+        db_max = row[0] if row and row[0] else ""
+    except Exception as e:
+        print(f"  [10/13] 查询北向资金最新日期失败: {e}")
+        db_max = ""
+
+    missing = []
+    if db_max:
+        missing = [d for d in trading_days if db_max < d <= latest_td]
+    else:
+        # 空表：从2014-01-01起全量拉取
+        missing = [d for d in trading_days if "20140101" <= d <= latest_td]
+
+    if not missing:
+        print(f"  [10/13] 北向资金 — 已是最新，跳过")
+        result["elapsed_sec"] = round(time.time() - t0, 1)
+        return result
+
+    print(f"  [10/13] 北向资金 (moneyflow_hsgt) — 缺失 {len(missing)} 天", flush=True)
+
+    from scripts.utils.tushare_client import pro as tushare_pro
+
+    pulled = 0
+    for i, td in enumerate(missing):
+        try:
+            df = tushare_pro.moneyflow_hsgt(start_date=td, end_date=td)
+            if df is not None and not df.empty:
+                row = df.iloc[0]
+                data = {
+                    "north_money": float(row.get("north_money", 0)),
+                    "south_money": float(row.get("south_money", 0)),
+                    "hgt": float(row.get("hgt", 0)),
+                    "sgt": float(row.get("sgt", 0)),
+                    "north_net": float(row.get("north_money", 0)),  # 无直接north_net，近似
+                }
+                if db.upsert_moneyflow_hsgt(td, data):
+                    pulled += 1
+        except Exception as e:
+            result["errors"] += 1
+            if result["errors"] <= 3:
+                print(f"    [10/13] {td} 失败: {e}", flush=True)
+
+        if (i + 1) % 50 == 0:
+            print(f"    [10/13] {i+1}/{len(missing)}", flush=True)
+
+        if (i + 1) < len(missing):
+            import time as _t; _t.sleep(0.15)
+
+    result["rows_inserted"] = pulled
+    result["elapsed_sec"] = round(time.time() - t0, 1)
+    print(f"  ✅ [10/13] moneyflow_hsgt: {pulled}天 ({result['elapsed_sec']:.0f}s)", flush=True)
+    return result
+
+
+def sync_moneyflow_stock_portfolio(db: DatabaseManager, latest_td: str) -> dict:
+    """
+    同步持仓/自选股资金流向（Phase 11）
+
+    读取 portfolio.json 和 watchlist.json，为持仓股拉取每日资金流向。
+    仅同步最新交易日数据（避免全市场逐个API调用的配额消耗）。
+
+    D3异常:
+        配置文件缺失 → 跳过，输出警告
+        API失败 → 跳过该股票
+    """
+    import time, json
+    t0 = time.time()
+    result = {"rows_inserted": 0, "errors": 0, "pulled_stocks": 0, "elapsed_sec": 0.0}
+
+    # 读取配置文件
+    project_root = os.path.join(os.path.dirname(__file__), "..", "..")
+    portfolio_path = os.path.join(project_root, "data", "portfolio.json")
+    watchlist_path = os.path.join(project_root, "data", "watchlist.json")
+
+    codes = set()
+    for fpath in (portfolio_path, watchlist_path):
+        if os.path.exists(fpath):
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    for item in data:
+                        code = item.get("ts_code", item.get("code", ""))
+                        if code: codes.add(code)
+                elif isinstance(data, dict):
+                    for key in ("holdings", "positions", "watchlist", "stocks"):
+                        items = data.get(key, [])
+                        if isinstance(items, list):
+                            for item in items:
+                                code = item.get("ts_code", item.get("code", ""))
+                                if code: codes.add(code)
+            except Exception:
+                pass
+
+    if not codes:
+        print(f"  [11/13] 持仓资金流向 — 无持仓/自选股配置，跳过", flush=True)
+        result["elapsed_sec"] = round(time.time() - t0, 1)
+        return result
+
+    print(f"  [11/13] 持仓资金流向 (moneyflow_stock) — {len(codes)} 只", flush=True)
+
+    from scripts.utils.tushare_client import pro as tushare_pro
+
+    pulled = 0
+    for i, code in enumerate(sorted(codes)):
+        try:
+            df = tushare_pro.moneyflow(ts_code=code,
+                                       start_date=latest_td,
+                                       end_date=latest_td)
+            if df is not None and not df.empty:
+                n = db.upsert_moneyflow_stock(df)
+                if n > 0:
+                    pulled += n
+                    result["pulled_stocks"] += 1
+        except Exception as e:
+            result["errors"] += 1
+            if result["errors"] <= 3:
+                print(f"    [11/13] {code} 失败: {e}", flush=True)
+
+        if (i + 1) < len(codes):
+            import time as _t; _t.sleep(0.12)
+
+    result["rows_inserted"] = pulled
+    result["elapsed_sec"] = round(time.time() - t0, 1)
+    print(f"  ✅ [11/13] moneyflow_stock: {result['pulled_stocks']}只, {pulled}行 "
+          f"({result['elapsed_sec']:.0f}s)", flush=True)
+    return result
+
+
 def sync_daily_indicators(db: DatabaseManager, latest_td: str,
                            lookback_days: int = 80) -> dict:
     """
-    全市场技术指标增量计算（Phase 11）
+    全市场技术指标增量计算（Phase 13）
 
     读取最近 lookback_days 天的价格数据，计算 MACD/KDJ/RSI/BOLL/MA 指标，
     写入 daily_indicator 表。
@@ -1374,7 +1523,7 @@ def sync_daily_indicators(db: DatabaseManager, latest_td: str,
     t0 = time.time()
     result = {"rows_inserted": 0, "elapsed_sec": 0.0}
 
-    print(f"  [11/11] 技术指标计算 — 回看 {lookback_days} 天...", flush=True)
+    print(f"  [13/13] 技术指标计算 — 回看 {lookback_days} 天...", flush=True)
 
     lookback_sql = f"""
         SELECT ts_code, trade_date, open, high, low, close, vol
@@ -1385,7 +1534,7 @@ def sync_daily_indicators(db: DatabaseManager, latest_td: str,
 
     df = pd.read_sql_query(lookback_sql, db.conn)
     if df.empty:
-        print(f"  [11/11] 无新价格数据，跳过", flush=True)
+        print(f"  [13/13] 无新价格数据，跳过", flush=True)
         return result
 
     if "vol" in df.columns and "volume" not in df.columns:
@@ -1432,7 +1581,7 @@ def sync_daily_indicators(db: DatabaseManager, latest_td: str,
 
         processed += 1
         if processed % 200 == 0:
-            print(f"    [11/11] {processed}/{total_stocks}, 累计 {len(all_rows)} 行",
+            print(f"    [13/13] {processed}/{total_stocks}, 累计 {len(all_rows)} 行",
                   flush=True)
 
     # 批量写入
@@ -1452,7 +1601,7 @@ def sync_daily_indicators(db: DatabaseManager, latest_td: str,
     elapsed = time.time() - t0
     result["elapsed_sec"] = round(elapsed, 1)
 
-    print(f"  ✅ [11/11] daily_indicator 完成: {result['rows_inserted']}行 "
+    print(f"  ✅ [13/13] daily_indicator 完成: {result['rows_inserted']}行 "
           f"(覆盖{total_stocks}只, 跳过{skipped}只, {elapsed:.0f}s)", flush=True)
     return result
 
@@ -1691,16 +1840,32 @@ def run_sync(args) -> int:
     if args.type in (None, "all", "ths_daily"):
         budget = total_budget - (time.time() - start_time)
         if budget > 10:  # 只需要很少时间（约6秒）
-            print(f"\n  [9/11] 概念板块 (ths_daily)")
+            print(f"\n  [9/13] 概念板块 (ths_daily)")
             try:
                 from scripts.utils.sync_sector_moneyflow import sync_ths_daily
                 sync_results["ths_daily"] = sync_ths_daily(db, latest_td)
             except Exception as e:
-                print(f"  [9/11] 板块数据同步失败: {e}")
+                print(f"  [9/13] 板块数据同步失败: {e}")
         else:
-            print(f"\n  [9/11] 概念板块 — 时间不足，跳过")
+            print(f"\n  [9/13] 概念板块 — 时间不足，跳过")
 
-    # === Phase 10: Post-Sync Quality Check ===
+    # === Phase 10: moneyflow_hsgt（北向资金）===
+    if args.type in (None, "all", "moneyflow_hsgt"):
+        budget = total_budget - (time.time() - start_time)
+        if budget > 10:
+            sync_results["moneyflow_hsgt"] = sync_moneyflow_hsgt(db, trading_days, latest_td)
+        else:
+            print(f"\n  [10/13] 北向资金 — 时间不足，跳过")
+
+    # === Phase 11: moneyflow_stock（持仓资金流向）===
+    if args.type in (None, "all", "moneyflow_stock"):
+        budget = total_budget - (time.time() - start_time)
+        if budget > 20:
+            sync_results["moneyflow_stock"] = sync_moneyflow_stock_portfolio(db, latest_td)
+        else:
+            print(f"\n  [11/13] 持仓资金流向 — 时间不足，跳过")
+
+    # === Phase 12: Post-Sync Quality Check ===
     if args.type in (None, "all", "quality_check"):
         if any(r.get("rows_inserted", 0) > 0 for r in sync_results.values() if isinstance(r, dict)):
             budget = total_budget - (time.time() - start_time)
@@ -1708,22 +1873,22 @@ def run_sync(args) -> int:
                 qc_result = post_sync_data_check(db, trading_days, latest_td)
                 sync_results["quality_check"] = qc_result
             else:
-                print(f"\n  [10/11] 数据质量检查 — 时间不足，跳过")
+                print(f"\n  [12/13] 数据质量检查 — 时间不足，跳过")
         else:
-            print(f"\n  [10/11] 数据质量检查 — 无新数据，跳过")
+            print(f"\n  [12/13] 数据质量检查 — 无新数据，跳过")
 
-    # === Phase 11: daily_indicator（全市场技术指标计算）===
+    # === Phase 13: daily_indicator（全市场技术指标计算）===
     if args.type in (None, "all", "daily_indicator"):
         budget = total_budget - (time.time() - start_time)
         if budget > 30:
-            print(f"\n  [11/11] 全市场技术指标 (daily_indicator)")
+            print(f"\n  [13/13] 全市场技术指标 (daily_indicator)")
             try:
                 ind_result = sync_daily_indicators(db, latest_td)
                 sync_results["daily_indicator"] = ind_result
             except Exception as e:
-                print(f"  [11/11] 技术指标计算失败: {e}")
+                print(f"  [13/13] 技术指标计算失败: {e}")
         else:
-            print(f"\n  [11/11] 技术指标计算 — 时间不足，跳过")
+            print(f"\n  [13/13] 技术指标计算 — 时间不足，跳过")
 
     # === 汇总 ===
     elapsed_total = time.time() - start_time
@@ -1782,7 +1947,8 @@ def main():
     parser.add_argument("--type", type=str, default=None,
                         choices=["all", "daily_price", "adj_factor", "daily_basic",
                                  "fina_indicator", "dividend", "index_daily",
-                                 "ths_daily", "daily_indicator"],
+                                 "ths_daily", "daily_indicator",
+                                 "moneyflow_hsgt", "moneyflow_stock"],
                         help="只同步特定类型（默认 all）")
     parser.add_argument("--max-minutes", type=int, default=30,
                         help="最大时间预算（分钟，默认30）")

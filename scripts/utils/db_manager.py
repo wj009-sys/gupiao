@@ -113,7 +113,7 @@ CREATE_TABLES_SQL = [
         grossprofit_margin  REAL,               -- 毛利率 %
         debt_to_assets      REAL,               -- 资产负债率 %
         current_ratio       REAL,               -- 流动比率
-        revenue_yoy         REAL,               -- 营收同比增长率 %
+        revenue_yoy         REAL,               -- 营收同比增长率 %（废弃列，Tushare无此字段，用 or_yoy）
         profit_dedt_yoy     REAL,               -- 净利同比增长率 %
         or_yoy              REAL,               -- 营收同比增长率 %（备用名）
         updated_at          TEXT,
@@ -404,13 +404,15 @@ CREATE_TABLES_SQL = [
         ts_code         TEXT NOT NULL,
         trade_date      TEXT NOT NULL,
         net_amount      REAL,           -- 净流入(万元)
-        buy_lg_amount   REAL,           -- 超大单买入(万元)
-        sell_lg_amount  REAL,           -- 超大单卖出(万元)
-        buy_md_amount   REAL,           -- 大单买入(万元)
-        sell_md_amount  REAL,           -- 大单卖出(万元)
-        buy_sm_amount   REAL,           -- 中单买入(万元)
-        sell_sm_amount  REAL,           -- 中单卖出(万元)
-        net_lg_amount   REAL,           -- 超大单净额(万元)
+        buy_lg_amount   REAL,           -- 大单买入(万元)
+        sell_lg_amount  REAL,           -- 大单卖出(万元)
+        buy_md_amount   REAL,           -- 中单买入(万元)
+        sell_md_amount  REAL,           -- 中单卖出(万元)
+        buy_sm_amount   REAL,           -- 小单买入(万元)
+        sell_sm_amount  REAL,           -- 小单卖出(万元)
+        net_lg_amount   REAL,           -- 大单净额(万元)
+        buy_elg_amount  REAL,           -- 超大单买入(万元)
+        sell_elg_amount REAL,           -- 超大单卖出(万元)
         UNIQUE(ts_code, trade_date)
     )
     """,
@@ -551,7 +553,7 @@ FINA_INDICATOR_COL_MAP = {
 FINA_INDICATOR_DB_COLS = [
     "ts_code", "end_date", "revenue", "profit_dedt", "roe", "roa",
     "grossprofit_margin", "debt_to_assets", "current_ratio",
-    "revenue_yoy", "profit_dedt_yoy", "or_yoy",
+    "profit_dedt_yoy", "or_yoy",
 ]
 
 
@@ -662,6 +664,16 @@ class DatabaseManager:
                     cur.execute(sql)
                 except Exception as e:
                     print(f'  [DB] 建索引失败: {e}')  # 索引创建失败不阻塞主流程
+            # ── Schema 迁移: 为已有表添加新列 ──
+            _migrations = [
+                "ALTER TABLE moneyflow_stock ADD COLUMN buy_elg_amount REAL",
+                "ALTER TABLE moneyflow_stock ADD COLUMN sell_elg_amount REAL",
+            ]
+            for mm in _migrations:
+                try:
+                    cur.execute(mm)
+                except Exception:
+                    pass  # 列已存在时忽略
             self.conn.commit()
         except Exception as e:
             print(f"[DB] 建表失败: {e}")
@@ -1195,6 +1207,108 @@ class DatabaseManager:
             return True
         except Exception as e:
             print(f"[DB] moneyflow_hsgt 写入失败: {e}")
+            return False
+
+    def upsert_moneyflow_stock(self, df: pd.DataFrame) -> int:
+        """批量写入个股资金流向（来自 Tushare moneyflow API）
+
+        Tushare API 字段映射（值单位：万元）:
+            ts_code, trade_date → DB 同名字段
+            net_mf_amount → net_amount
+            buy_lg_amount → buy_lg_amount
+            sell_lg_amount → sell_lg_amount
+            buy_md_amount → buy_md_amount
+            sell_md_amount → sell_md_amount
+            buy_sm_amount → buy_sm_amount
+            sell_sm_amount → sell_sm_amount
+            buy_lg_amount - sell_lg_amount → net_lg_amount (计算)
+        """
+        if not self._ensure_conn():
+            return 0
+        if df is None or df.empty:
+            return 0
+
+        rows = []
+        for _, row in df.iterrows():
+            ts_code = str(row.get("ts_code", ""))
+            trade_date = str(row.get("trade_date", ""))
+            if not ts_code or not trade_date:
+                continue
+            buy_lg = _safe_float(row.get("buy_lg_amount"), 0)
+            sell_lg = _safe_float(row.get("sell_lg_amount"), 0)
+            rows.append((
+                ts_code, trade_date,
+                _safe_float(row.get("net_mf_amount"), 0),
+                buy_lg, sell_lg,
+                _safe_float(row.get("buy_md_amount"), 0),
+                _safe_float(row.get("sell_md_amount"), 0),
+                _safe_float(row.get("buy_sm_amount"), 0),
+                _safe_float(row.get("sell_sm_amount"), 0),
+                buy_lg - sell_lg,  # net_lg_amount
+                _safe_float(row.get("buy_elg_amount"), None),
+                _safe_float(row.get("sell_elg_amount"), None),
+            ))
+
+        if not rows:
+            return 0
+
+        try:
+            cur = self.conn.cursor()
+            sql = """INSERT OR IGNORE INTO moneyflow_stock
+                (ts_code, trade_date, net_amount,
+                 buy_lg_amount, sell_lg_amount,
+                 buy_md_amount, sell_md_amount,
+                 buy_sm_amount, sell_sm_amount,
+                 net_lg_amount,
+                 buy_elg_amount, sell_elg_amount)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+            cur.executemany(sql, rows)
+            self.conn.commit()
+            return len(rows)
+        except Exception as e:
+            print(f"[DB] moneyflow_stock 批量写入失败: {e}")
+            return 0
+
+    def upsert_moneyflow_mkt(self, row: dict) -> bool:
+        """写入大盘资金流向单行（来自 Tushare moneyflow_mkt_dc / 东财 API）
+
+        字段映射: trade_date, ts_code, net_amount,
+                  buy_elg_amount, sell_elg_amount,
+                  buy_lg_amount, sell_lg_amount,
+                  buy_md_amount, sell_md_amount,
+                  buy_sm_amount, sell_sm_amount
+        """
+        if not self._ensure_conn():
+            return False
+        if not row or not row.get("trade_date"):
+            return False
+
+        try:
+            cur = self.conn.cursor()
+            sql = """INSERT OR REPLACE INTO moneyflow_mkt
+                (trade_date, ts_code, net_amount,
+                 buy_elg_amount, sell_elg_amount,
+                 buy_lg_amount, sell_lg_amount,
+                 buy_md_amount, sell_md_amount,
+                 buy_sm_amount, sell_sm_amount)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+            cur.execute(sql, (
+                str(row["trade_date"]),
+                str(row.get("ts_code", "")),
+                _safe_float(row.get("net_amount")),
+                _safe_float(row.get("buy_elg_amount")),
+                _safe_float(row.get("sell_elg_amount")),
+                _safe_float(row.get("buy_lg_amount")),
+                _safe_float(row.get("sell_lg_amount")),
+                _safe_float(row.get("buy_md_amount")),
+                _safe_float(row.get("sell_md_amount")),
+                _safe_float(row.get("buy_sm_amount")),
+                _safe_float(row.get("sell_sm_amount")),
+            ))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB] moneyflow_mkt 写入失败: {e}")
             return False
 
     def upsert_ths_daily(self, df: pd.DataFrame) -> int:

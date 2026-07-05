@@ -2,25 +2,122 @@
 {% block title %}数据库信息{% endblock %}
 
 {% block content %}
-<div class="card">
-    <div class="card-header"><i class="bi bi-database me-1"></i>数据库详情</div>
-    <div class="card-body">
-        {% if db_info.exists %}
-        <p>大小: {{ db_info.size_mb }} MB</p>
-        <p>表数量: {{ db_info.tables|length }}</p>
-        <table class="table">
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="mb-1" style="color:#c8d6e5;"><i class="bi bi-database me-2" style="color:#4fc3f7;"></i>数据库信息</h3>
+        <p class="text-secondary mb-0" style="font-size:0.85rem;">
+            <i class="bi bi-hdd me-1"></i> {{ db_info.size_mb }} MB · {{ db_info.tables|length }} 张表
+        </p>
+    </div>
+    <button class="btn btn-outline-info btn-sm" onclick="location.reload()">
+        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+    </button>
+</div>
+
+<!-- 概要统计 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body text-center py-3">
+                <div class="stat-value">{{ db_info.table_count }}</div>
+                <div class="stat-label">数据库表</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body text-center py-3">
+                <div class="stat-value">{{ "{:,.0f}".format(db_info.total_rows) }}</div>
+                <div class="stat-label">总行数</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body text-center py-3">
+                <div class="stat-value">{{ db_info.stock_count }}</div>
+                <div class="stat-label">股票总数</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body text-center py-3">
+                <div class="stat-value" style="color:{% if db_info.obv_pct >= 90 %}#4caf50{% elif db_info.obv_pct >= 50 %}#ff9800{% else %}#f44336{% endif %}">
+                    {{ db_info.obv_pct }}%
+                </div>
+                <div class="stat-label">OBV 指标覆盖</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 数据同步状态 -->
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-arrow-repeat me-1"></i>数据同步状态</div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
             <thead>
-                <tr><th>表名</th><th>行数</th></tr>
+                <tr>
+                    <th>表名</th>
+                    <th>行数</th>
+                    <th>最新日期</th>
+                    <th>覆盖度</th>
+                    <th>同步状态</th>
+                </tr>
             </thead>
             <tbody>
-                {% for tbl, cnt in db_info.table_info.items() %}
-                <tr><td>{{ tbl }}</td><td>{{ cnt }}</td></tr>
+                {% for t in db_info.sync_status %}
+                <tr>
+                    <td><code>{{ t.name }}</code></td>
+                    <td>{{ "{:,.0f}".format(t.rows) }}</td>
+                    <td style="font-size:0.8rem;">{{ t.latest_date }}</td>
+                    <td>
+                        {% if t.pct >= 90 %}
+                        <span class="text-success">{{ t.pct }}%</span>
+                        {% elif t.pct >= 50 %}
+                        <span class="text-warning">{{ t.pct }}%</span>
+                        {% else %}
+                        <span class="text-danger">{{ t.pct }}%</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if t.status == 'fresh' %}
+                        <span class="text-success"><i class="bi bi-check-circle-fill"></i> 最新</span>
+                        {% elif t.status == 'partial' %}
+                        <span class="text-warning"><i class="bi bi-exclamation-triangle-fill"></i> 部分</span>
+                        {% elif t.status == 'empty' %}
+                        <span class="text-danger"><i class="bi bi-x-circle-fill"></i> 待同步</span>
+                        {% else %}
+                        <span class="text-secondary">{{ t.status }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
                 {% endfor %}
             </tbody>
         </table>
-        {% else %}
-        <p>数据库不存在</p>
-        {% endif %}
+    </div>
+</div>
+
+<!-- 完整表列表 -->
+<div class="card">
+    <div class="card-header"><i class="bi bi-list-columns-reverse me-1"></i>所有表详情</div>
+    <div class="card-body p-0">
+        <div style="max-height:500px;overflow-y:auto;">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr><th>表名</th><th>行数</th></tr>
+                </thead>
+                <tbody>
+                    {% for tbl, cnt in db_info.table_info.items() %}
+                    <tr>
+                        <td><code>{{ tbl }}</code></td>
+                        <td>{{ "{:,.0f}".format(cnt) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 {% endblock %}

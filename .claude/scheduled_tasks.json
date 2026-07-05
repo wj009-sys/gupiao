@@ -43,7 +43,7 @@
       "description": "Agent5 午盘选股 — 每日12:00"
     },
     {
-      "id": "5896aa55",
+      "id": "auto-sync",
       "cron": "3 18 * * 1-5",
       "prompt": "source venv/Scripts/activate && python -u -X utf8 scripts/utils/auto_sync.py --auto-sync --max-minutes 45",
       "recurring": true,

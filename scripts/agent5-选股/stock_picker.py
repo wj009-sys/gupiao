@@ -985,7 +985,7 @@ def score_growth(ts_code: str, trade_date: str) -> dict:
         score = 50
         details = {}
 
-        rev_growth = fina_data.get("or_yoy") or fina_data.get("revenue_yoy")
+        rev_growth = fina_data.get("or_yoy")
         if rev_growth is not None:
             if rev_growth > 30:
                 score += 25
@@ -1056,7 +1056,7 @@ def score_growth(ts_code: str, trade_date: str) -> dict:
         score = 50
         details = {}
 
-        rev_growth = row.get("or_yoy") or row.get("revenue_yoy")
+        rev_growth = row.get("or_yoy")
         if rev_growth is not None:
             if rev_growth > 30:
                 score += 25

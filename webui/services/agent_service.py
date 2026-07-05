@@ -53,6 +53,18 @@ AGENTS = {
         "desc": "复盘 + 偏差分析 + 知识库更新",
         "timeout": 300,
     },
+    "政策": {
+        "script": "scripts/agent8-政策分析/policy_analyst.py",
+        "label": "📜 政策分析师",
+        "desc": "政策影响分析 + 宏观解读",
+        "timeout": 300,
+    },
+    "游资": {
+        "script": "scripts/agent9-游资追踪/hot_money_tracker.py",
+        "label": "🔥 游资追踪师",
+        "desc": "龙虎榜分析 + 游资追踪 + 资金情绪",
+        "timeout": 300,
+    },
 }
 
 # ── 运行状态跟踪 ────────────────────────────────────────────────────
@@ -171,8 +183,8 @@ def run_batch(agent_keys: list[str]) -> list[dict]:
 
 
 def run_pipeline() -> dict:
-    """运行完整流水线: 情报→分析→选股→风控→操盘→决策→复盘"""
-    pipeline_order = ["情报", "分析", "选股", "风控", "操盘", "决策", "复盘"]
+    """运行完整流水线: 情报→政策→游资→分析→选股→风控→操盘→决策→复盘"""
+    pipeline_order = ["情报", "政策", "游资", "分析", "选股", "风控", "操盘", "决策", "复盘"]
     started = []
     for key in pipeline_order:
         result = run_agent(key)

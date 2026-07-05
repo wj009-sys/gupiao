@@ -125,7 +125,7 @@ def fetch_financials(codes: list, db: DatabaseManager) -> dict:
                 end_date=today,
                 fields="ts_code,end_date,revenue,profit_dedt,roe,roa,"
                        "grossprofit_margin,debt_to_assets,current_ratio,"
-                       "revenue_yoy,profit_dedt_yoy,or_yoy"
+                       "profit_dedt_yoy,or_yoy"
             )
             if df is not None and not df.empty:
                 n = db.upsert_fina_indicator(df)

@@ -18,8 +18,8 @@ from webui.routers import dashboard, reports, agents, config_router, ask
 # ── FastAPI App ──────────────────────────────────────────────────────
 app = FastAPI(
     title="股票投研自动化管理界面",
-    description="7 Agent 投研团队 Web 管理界面 - 报告浏览 / Agent 控制 / 配置管理 / 策略问股",
-    version="9.0.0",
+    description="10 Agent 投研团队 Web 管理界面 - 报告浏览 / Agent 控制 / 配置管理 / 策略问股 / 数据库监控",
+    version="16.0.0",
 )
 
 # ── 静态文件 ─────────────────────────────────────────────────────────

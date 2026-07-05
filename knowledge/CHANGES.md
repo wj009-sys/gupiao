@@ -7,6 +7,12 @@
 
 ### 7月
 
+| 2026-07-05 | feat | scripts/utils/auto_sync.py | 达尔文16.0: moneyflow_hsgt/stock同步阶段(Phase 10/11) + argparse |
+| 2026-07-05 | feat | scripts/utils/db_manager.py | 达尔文16.0: upsert_moneyflow_stock/mkt + buy_elg_amount列迁移 |
+| 2026-07-05 | fix | scripts/utils/_proxy.py | 达尔文16.0: SOCKS代理不可用自动降级直连 |
+| 2026-07-05 | fix | scripts/utils/fetch_*.py | 达尔文16.0: 移除无效revenue_yoy字段引用 |
+| 2026-07-05 | feat | webui/ | 达尔文16.0: WEBUI升级(Agent8/9+数据库监控+版本16.0) |
+| 2026-07-05 | chore | .claude/scheduled_tasks.json | 达尔文16.0: 自动同步任务ID重命名 |
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
 | 2026-07-05 | 📝 add | knowledge/策略/数据源优先级.md | DS-49: 全局数据源优先级文档(各数据域主/备/兜底+Agent映射+限流策略) |

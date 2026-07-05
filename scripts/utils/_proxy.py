@@ -77,12 +77,40 @@ def get_proxies() -> Optional[Dict[str, str]]:
     return None
 
 
+_direct_session = None  # 直连Session缓存（代理降级用）
+
+
+def _get_direct_session(timeout: int = 15, retries: int = 3) -> object:
+    """创建无代理直连 Session"""
+    global _direct_session
+    if _direct_session is not None:
+        return _direct_session
+    import requests as _req
+    session = _req.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    })
+    try:
+        adapter = HTTPAdapter(max_retries=Retry(
+            total=retries, connect=retries, backoff_factor=0.6,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST"],
+        ))
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+    except Exception:
+        pass
+    _direct_session = session
+    return session
+
+
 def get_session_with_proxy(timeout: int = 15, retries: int = 3) -> object:
     """
     创建带代理和重试机制的 requests Session
 
     集成:
-    - SOCKS_PROXY 代理（如有配置）
+    - SOCKS_PROXY 代理（如有配置，自动降级直连）
     - 连接级自动重试（3次）
     - 统一超时设置
 
@@ -94,16 +122,30 @@ def get_session_with_proxy(timeout: int = 15, retries: int = 3) -> object:
         requests.Session 实例（已配置代理和重试）
     """
     import requests as _req
+    import logging
+    _logger = logging.getLogger(__name__)
+
     session = _req.Session()
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     })
 
-    # 代理
+    # 代理（SOCKSProxyManager 不可用时自动降级到直连）
     proxies = get_proxies()
     if proxies:
-        session.proxies.update(proxies)
+        try:
+            # 尝试验证代理可用性
+            test_session = _req.Session()
+            test_session.proxies.update(proxies)
+            test_session.get("https://datacenter.eastmoney.com",
+                              timeout=5, proxies=proxies)
+            session.proxies.update(proxies)
+            _logger.debug("[proxy] SOCKS proxy OK")
+        except Exception as e:
+            _logger.warning(f"[proxy] SOCKS代理不可用 ({e})，降级直连")
+            # 降级到直连
+            pass
 
     # 连接重试
     try:

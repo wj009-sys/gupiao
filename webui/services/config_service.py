@@ -100,7 +100,7 @@ def get_config_meta(name: str) -> Optional[dict]:
 
 # ── DB 信息 ──────────────────────────────────────────────────────────
 def get_db_info() -> dict:
-    """获取数据库基本信息"""
+    """获取数据库基本信息（含同步状态和覆盖度）"""
     db_path = DATA_DIR / "stocks.db"
     if not db_path.exists():
         return {"exists": False, "size": 0, "tables": [], "message": "数据库文件不存在"}
@@ -110,21 +110,96 @@ def get_db_info() -> dict:
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         tables = [row[0] for row in cursor.fetchall()]
+
         # 各表行数
         table_info = {}
+        total_rows = 0
         for t in tables:
             try:
                 cursor.execute(f"SELECT COUNT(*) FROM [{t}]")
-                table_info[t] = cursor.fetchone()[0]
+                cnt = cursor.fetchone()[0]
+                table_info[t] = cnt
+                total_rows += cnt
             except Exception:
                 table_info[t] = -1
+
+        # 股票总数
+        cursor.execute("SELECT COUNT(DISTINCT ts_code) FROM daily_price")
+        stock_count = cursor.fetchone()[0]
+
+        # OBV 覆盖度
+        cursor.execute("SELECT COUNT(*), COUNT(obv) FROM daily_indicator")
+        obv_total, obv_have = cursor.fetchone()
+        obv_pct = round(obv_have * 100 / obv_total, 1) if obv_total else 0
+
+        # 同步状态（关键表）
+        sync_tables = [
+            ("daily_price", "日线行情"),
+            ("daily_basic", "每日估值"),
+            ("adj_factor", "复权因子"),
+            ("daily_indicator", "技术指标"),
+            ("fina_indicator", "财报数据"),
+            ("dividend", "分红数据"),
+            ("ths_daily", "概念板块"),
+            ("moneyflow_hsgt", "北向资金"),
+            ("moneyflow_stock", "个股资金"),
+            ("moneyflow_mkt", "大盘资金"),
+            ("policy_events", "政策事件"),
+        ]
+        sync_status = []
+        for tname, tlabel in sync_tables:
+            if tname in table_info:
+                rows = table_info[tname]
+                cursor.execute(f"SELECT MAX(trade_date) FROM [{tname}]")
+                row = cursor.fetchone()
+                latest = row[0] if row and row[0] else "—"
+                if tname in ("fina_indicator", "dividend"):
+                    cursor.execute(f"SELECT MAX(end_date) FROM [{tname}]")
+                    row = cursor.fetchone()
+                    latest = row[0] if row and row[0] else "—"
+                    pct = 100 if rows > 1000 else int(rows / 5000 * 100) if rows else 0
+                elif tname == "daily_price":
+                    cursor.execute("SELECT MAX(trade_date), COUNT(DISTINCT ts_code) FROM daily_price")
+                    r2 = cursor.fetchone()
+                    pct = int(r2[1] / stock_count * 100) if stock_count else 0
+                elif tname == "daily_indicator":
+                    pct = obv_pct
+                elif tname == "moneyflow_hsgt":
+                    pct = 100 if rows > 100 else int(rows / 2000 * 100)
+                elif tname in ("moneyflow_stock", "moneyflow_mkt"):
+                    pct = min(int(rows / 50000 * 100), 100) if rows > 100 else int(rows / 100 * 100)
+                elif tname == "policy_events":
+                    pct = 100 if rows > 50 else 0
+                else:
+                    pct = 100 if rows > 100 else int(rows / 100 * 100) if rows else 0
+
+                if rows == 0:
+                    status = "empty"
+                    pct = 0
+                elif pct >= 90:
+                    status = "fresh"
+                elif pct >= 10:
+                    status = "partial"
+                else:
+                    status = "empty"
+
+                sync_status.append({
+                    "name": f"{tname} ({tlabel})", "rows": rows,
+                    "latest_date": latest, "pct": pct, "status": status,
+                })
+
         conn.close()
         return {
             "exists": True,
             "size": db_path.stat().st_size,
             "size_mb": round(db_path.stat().st_size / 1024 / 1024, 1),
             "tables": tables,
+            "table_count": len(tables),
+            "total_rows": total_rows,
+            "stock_count": stock_count,
+            "obv_pct": obv_pct,
             "table_info": table_info,
+            "sync_status": sync_status,
         }
     except Exception as e:
         return {"exists": True, "size": db_path.stat().st_size, "error": str(e)}
