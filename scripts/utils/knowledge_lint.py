@@ -219,6 +219,10 @@ def _check_broken_refs(files: dict) -> list:
                         })
                 elif target.startswith(("data/", "skills/")):
                     if target not in existing_outer:
+                        # 检查是否为存在的目录（非文件路径）
+                        target_path = os.path.join(PROJECT_ROOT, target)
+                        if os.path.isdir(target_path):
+                            continue  # 目录存在，不是断裂引用
                         broken.append({
                             "source": rel,
                             "target": target,

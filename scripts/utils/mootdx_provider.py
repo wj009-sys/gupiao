@@ -80,20 +80,20 @@ class MootdxProvider:
         转换 ts_code 为 mootdx 参数格式
 
         Returns:
-            (market, code) market: 0=深交所, 1=上交所
+            (market, code_str) market: 0=深交所, 1=上交所; code_str: 6位代码字符串
         """
         if "." in ts_code:
             code_part = ts_code[:6]
             market_part = ts_code[7:]
         else:
-            code_part = ts_code[:6]
+            code_part = ts_code[:6].zfill(6)
             market_part = "SZ" if (ts_code[:2] in ["00", "30", "15", "16", "18"]) else "SH"
 
         # market: 0=深圳, 1=上海
         if market_part in ("SH", "sh"):
-            return (1, int(code_part))
+            return (1, code_part)
         else:
-            return (0, int(code_part))
+            return (0, code_part)
 
     def daily(self, ts_code: str,
               start_date: str = None,
@@ -114,9 +114,9 @@ class MootdxProvider:
             return pd.DataFrame()
 
         try:
-            market, code = self._ts_code_to_tdx(ts_code)
+            market, code_str = self._ts_code_to_tdx(ts_code)
             # frequency=9 表示日线
-            bars = self._quotes.bars(symbol=code, frequency=9, market=market)
+            bars = self._quotes.bars(symbol=code_str, frequency=9)
 
             if bars is None or bars.empty:
                 logger.debug(f"[Mootdx] {ts_code} 无数据")
@@ -125,24 +125,25 @@ class MootdxProvider:
             # 转换 mootdx 格式为标准 Tushare 格式
             df = bars.copy()
 
-            # 列名映射
+            # 列名映射 (mootdx 原生已有 vol 列，volume 是冗余列)
+            df = df.drop(columns=["volume"], errors="ignore")
             col_map = {
-                "date": "trade_date",
+                "datetime": "trade_date",
                 "open": "open",
                 "high": "high",
                 "low": "low",
                 "close": "close",
-                "volume": "vol",
                 "amount": "amount",
             }
             df = df.rename(columns={c: col_map[c] for c in df.columns if c in col_map})
+            # 去除 mootdx 冗余列
+            drop_cols = [c for c in ["year", "month", "day", "hour", "minute"] if c in df.columns]
+            if drop_cols:
+                df = df.drop(columns=drop_cols, errors="ignore")
 
             if "trade_date" in df.columns:
-                # mootdx 日期格式为 Timestamp 或 YYYYMMDD
-                if df["trade_date"].dtype == "int64":
-                    df["trade_date"] = df["trade_date"].astype(str)
-                else:
-                    df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.strftime("%Y%m%d")
+                # mootdx 日期格式为 Timestamp
+                df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.strftime("%Y%m%d")
 
             # 计算涨跌幅
             if "close" in df.columns:
@@ -208,39 +209,35 @@ class MootdxProvider:
             return pd.DataFrame()
 
         try:
-            # 指数特殊处理
-            code_map = {
-                "000001.SH": ("sh", "000001"),
-                "399001.SZ": ("sz", "399001"),
-                "399006.SZ": ("sz", "399006"),
-                "000688.SH": ("sh", "000688"),
-            }
-            if ts_code not in code_map:
-                logger.warning(f"[Mootdx] 不支持的指数: {ts_code}")
-                return pd.DataFrame()
-
-            market_code = int(ts_code[:6])
+            # 指数特殊处理 — 使用 get_index_bars() 而非 bars()
+            market_code_str = ts_code[:6]
             market = 1 if ts_code.endswith("SH") else 0
 
-            # 指数使用 frequency=9
-            bars = self._quotes.bars(symbol=market_code, frequency=9, market=market)
+            bars_list = self._quotes.client.get_index_bars(9, market, market_code_str, 0, 800)
+            if not bars_list or len(bars_list) == 0:
+                logger.debug(f"[Mootdx] {ts_code} 指数无数据")
+                return pd.DataFrame()
+
+            from mootdx.utils import to_data
+            bars = to_data(bars_list, symbol=market_code_str)
             if bars is None or bars.empty:
                 return pd.DataFrame()
 
             df = bars.copy()
+            df = df.drop(columns=["volume"], errors="ignore")
             col_map = {
-                "date": "trade_date",
+                "datetime": "trade_date",
                 "open": "open", "high": "high",
                 "low": "low", "close": "close",
-                "volume": "vol", "amount": "amount",
+                "amount": "amount",
             }
             df = df.rename(columns={c: col_map[c] for c in df.columns if c in col_map})
+            drop_cols = [c for c in ["year", "month", "day", "hour", "minute"] if c in df.columns]
+            if drop_cols:
+                df = df.drop(columns=drop_cols, errors="ignore")
 
             if "trade_date" in df.columns:
-                if df["trade_date"].dtype == "int64":
-                    df["trade_date"] = df["trade_date"].astype(str)
-                else:
-                    df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.strftime("%Y%m%d")
+                df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.strftime("%Y%m%d")
 
             df["pct_chg"] = df["close"].pct_change() * 100
             df["pct_chg"] = df["pct_chg"].fillna(0)
