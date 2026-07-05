@@ -15,6 +15,7 @@
 | 2026-07-05 | chore | .claude/scheduled_tasks.json | 达尔文16.0: 自动同步任务ID重命名 |
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
+| 2026-07-05 | 📝 feat | policy_analyst.py | Agent8上线完成 — SOCKS代理修复+证券时报新闻抓取fallback+自选股加载修复 |
 | 2026-07-05 | 📝 feat | auto_sync.py | 达尔文16.0续 — moneyflow_stock全量历史回填(49K行, 20只持仓股从2014起全覆盖) |
 | 2026-07-05 | 📝 add | knowledge/策略/数据源优先级.md | DS-49: 全局数据源优先级文档(各数据域主/备/兜底+Agent映射+限流策略) |
 | 2026-07-05 | 📝 add | scripts/utils/_proxy.py | DS-48: 共享限流网关+代理抽取为scripts/utils/_proxy.py，跨模块协调东财请求间隔 |

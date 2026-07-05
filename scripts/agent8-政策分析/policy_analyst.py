@@ -71,12 +71,19 @@ def load_portfolio() -> list:
 
 
 def load_watchlist() -> list:
-    """读取自选股列表"""
+    """读取自选股列表（支持中文分类key格式）"""
     try:
         path = os.path.join(PROJECT_ROOT, "data", "watchlist.json")
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return data.get("自选股列表", data.get("watchlist", []))
+        # 中文分类key格式: {"环保与新能源": ["600388.SH"], "有色金属": [...]}
+        codes = []
+        for key, val in data.items():
+            if isinstance(val, list) and key != "说明":
+                for item in val:
+                    if isinstance(item, str) and "." in item:
+                        codes.append(item)
+        return codes if codes else data.get("watchlist", [])
     except Exception as e:
         logger.warning(f"自选股文件读取失败: {e}")
         return []
@@ -86,52 +93,99 @@ def fetch_eastmoney_news() -> list:
     """
     从东方财富获取当日政策/要闻
 
-    使用 em_get() 限流网关（借鉴 a-stock-data 的反爬策略）
+    D3: 东财API无响应 → 返回空交给CLS fallback
     """
     news_items = []
     try:
-        # 东方财富新闻搜索 API
-        params = {
-            "code": "zhengce",  # 政策频道
-            "pageindex": 1,
-            "pagesize": 20,
-        }
-        data = em_get("/search/api/web/v1/search/web", params=params, base_key="search")
-        if data and "data" in data:
-            articles = data["data"].get("articles", [])
-            for art in articles:
+        params2 = {"type": "yaowen", "page": 1}
+        data2 = em_get("/api/data/v1/get", params={
+            "reportName": "RPT_NEWS_RECENT",
+            "columns": "ALL",
+            "pageNumber": 1,
+            "pageSize": 30,
+        }, base_key="datacenter")
+        if data2 and "data" in data2:
+            items = data2["data"].get("list", data2["data"].get("result", []))
+            for item in items:
                 news_items.append({
-                    "title": art.get("title", ""),
-                    "content": art.get("content", art.get("abstract", "")),
-                    "source": art.get("source", "东方财富"),
-                    "url": art.get("url", ""),
-                    "publish_time": art.get("date", ""),
+                    "title": item.get("title", ""),
+                    "content": item.get("content", item.get("abstract", "")),
+                    "source": item.get("source", "东方财富"),
+                    "url": item.get("art_url", ""),
+                    "publish_time": item.get("date", ""),
                 })
-
-        # 备用：东方财富要闻 API
-        if not news_items:
-            params2 = {"type": "yaowen", "page": 1}
-            data2 = em_get("/api/data/v1/get", params={
-                "reportName": "RPT_NEWS_RECENT",
-                "columns": "ALL",
-                "pageNumber": 1,
-                "pageSize": 30,
-            }, base_key="datacenter")
-            if data2 and "data" in data2:
-                items = data2["data"].get("list", data2["data"].get("result", []))
-                for item in items:
-                    news_items.append({
-                        "title": item.get("title", ""),
-                        "content": item.get("content", item.get("abstract", "")),
-                        "source": item.get("source", "东方财富"),
-                        "url": item.get("art_url", ""),
-                        "publish_time": item.get("date", ""),
-                    })
-
     except Exception as e:
         logger.warning(f"东方财富新闻获取失败: {e}")
 
     return news_items
+
+
+def fetch_web_news(max_items: int = 20) -> list:
+    """
+    从证券时报等金融网站抓取当日要闻（东财API不可用时的备选）
+
+    抓取来源:
+        1. 证券时报 stcn.com（可靠，反爬弱）
+        2. 东方财富 finance.eastmoney.com（页面抓取）
+
+    D3: 所有来源均失败 → 返回空列表
+    """
+    news_items = []
+    seen_titles = set()
+
+    from scripts.utils._proxy import get_session_with_proxy
+    import re
+
+    session = get_session_with_proxy()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "Chrome/120.0.0.0 Safari/537.36"
+    }
+
+    sources = [
+        # 证券时报首页（最可靠）
+        ("证券时报", "https://www.stcn.com/",
+         r'<a[^>]*href="/article/detail/\d+\.html"[^>]*>(.*?)</a>'),
+        # 东方财富财经要闻
+        ("东方财富", "https://finance.eastmoney.com/a/czqyw.html",
+         r'<a[^>]*title="([^"]+)"[^>]*href="https?://finance\.eastmoney\.com/a/'),
+    ]
+
+    for source_name, url, pattern in sources:
+        if len(news_items) >= max_items:
+            break
+        try:
+            resp = session.get(url, timeout=15, headers=headers)
+            if resp.status_code != 200:
+                continue
+
+            html = resp.text
+            found = re.findall(pattern, html, re.DOTALL)
+            for raw_title in found:
+                # 移除内部HTML标签
+                title = re.sub(r'<[^>]+>', '', raw_title).strip()
+                # 清洗HTML实体和多余空格
+                title = title.replace("&nbsp;", " ").replace("&amp;", "&")
+                title = re.sub(r'\s+', ' ', title)
+                if title and len(title) > 6 and title not in seen_titles:
+                    seen_titles.add(title)
+                    news_items.append({
+                        "title": title,
+                        "content": "",
+                        "source": source_name,
+                        "url": "",
+                        "publish_time": "",
+                    })
+                    if len(news_items) >= max_items:
+                        break
+
+            if news_items:
+                logger.info(f"{source_name}: 获取 {len(news_items)} 条新闻")
+        except Exception as e:
+            logger.warning(f"{source_name} 抓取失败: {e}")
+            continue
+
+    return news_items[:max_items]
 
 
 def fetch_north_money(trade_date: str) -> dict:
@@ -213,37 +267,63 @@ def generate_policy_analysis(trade_date: str = None) -> dict:
     recent_titles = {p["title"].strip()[:40] for p in data["recent_policies"]}
     print(f"  {ok} 历史政策: {len(data['recent_policies'])} 条（近7天）")
 
-    # 3. 采集今日政策新闻
+    # 3. 采集今日政策新闻（多源fallback）
+    news = []
+    news_source = ""
+    news_errors = []
+
+    # 3a. 东方财富（主力数据源）
     try:
         news = fetch_eastmoney_news()
         if news:
-            # 去重
-            seen = set()
-            for item in news:
-                key = item["title"].strip()[:40]
-                if key in seen:
-                    continue
-                if key in recent_titles:
-                    continue
-                seen.add(key)
-                category = classify_policy(item["title"], item["content"])
-                data["policy_events"].append({
-                    "title": item["title"],
-                    "content": item["content"][:200],
-                    "source": item.get("source", "东方财富"),
-                    "url": item.get("url", ""),
-                    "category": category,
-                    "impact_score": 0,  # LLM会在报告阶段评分
-                    "impact_sector": "",
-                    "publish_time": item.get("publish_time", ""),
-                })
-            print(f"  {ok} 今日政策新闻: {len(data['policy_events'])} 条（去重后）")
+            news_source = "东方财富"
+            print(f"  {ok} 东方财富新闻: {len(news)} 条")
         else:
-            data["errors"].append("东方财富新闻API无数据")
-            print(f"  {fail} 东方财富新闻: 无数据")
+            news_errors.append("东方财富API无数据")
+            print(f"  {warn} 东方财富新闻: 无数据")
     except Exception as e:
-        data["errors"].append(f"政策新闻采集失败: {e}")
-        print(f"  {fail} 政策新闻采集: {e}")
+        news_errors.append(f"东方财富失败: {e}")
+        print(f"  {warn} 东方财富新闻: {e}")
+
+    # 3b. 网页抓取（东财API失败时的备用数据源）
+    if not news:
+        try:
+            news = fetch_web_news()
+            if news:
+                news_source = news[0].get("source", "网页抓取")
+                print(f"  {ok} 网页抓取新闻: {len(news)} 条（备用数据源: {news_source}）")
+            else:
+                news_errors.append("网页抓取无数据")
+                print(f"  {warn} 网页抓取: 无数据")
+        except Exception as e:
+            news_errors.append(f"网页抓取失败: {e}")
+            print(f"  {warn} 网页抓取: {e}")
+
+    # 处理采集到的新闻
+    if news:
+        seen = set()
+        for item in news:
+            key = item["title"].strip()[:40]
+            if key in seen:
+                continue
+            if key in recent_titles:
+                continue
+            seen.add(key)
+            category = classify_policy(item["title"], item["content"])
+            data["policy_events"].append({
+                "title": item["title"],
+                "content": item["content"][:200],
+                "source": item.get("source", news_source),
+                "url": item.get("url", ""),
+                "category": category,
+                "impact_score": 0,  # LLM会在报告阶段评分
+                "impact_sector": "",
+                "publish_time": item.get("publish_time", ""),
+            })
+        print(f"  {ok} 今日政策新闻: {len(data['policy_events'])} 条（去重后）")
+    else:
+        data["errors"].extend(news_errors)
+        print(f"  {fail} 政策新闻: 所有数据源均不可用")
 
     # 4. 北向资金（流动性观察）
     try:
