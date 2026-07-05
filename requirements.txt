@@ -2,7 +2,7 @@
 # 安装: pip install -r requirements.txt
 
 # ── 数据源 ──
-tushare>=1.11.0           # Tushare Pro A股数据接口
+tushare>=1.4.0            # Tushare Pro A股数据接口（最高1.4.29，1.11.0未发布过）
 
 # ── 数据处理 ──
 pandas>=2.0.0
