@@ -15,6 +15,7 @@
 | 2026-07-05 | chore | .claude/scheduled_tasks.json | 达尔文16.0: 自动同步任务ID重命名 |
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
+| 2026-07-06 | 📝 复盘 | 复盘记录/复盘_20260706.json | 日常复盘：偏差分析 + 策略建议 + 准确率趋势 |
 | 2026-07-06 | 📝 fix | scripts/utils/backfill_ths_daily.py | ths_daily概念板块数据修复: THS AkShare回填55K行/118天+DB-first fallback链 |
 | 2026-07-05 | 📝 feat | policy_analyst.py | Agent8持仓影响分析上线 — DeepSeek LLM驱动(24只全覆盖+分批+容错解析) |
 | 2026-07-05 | 📝 feat | l2_rerank.py | L2 LLM排序配置持久化 — data/llm_config.json + CLI配置工具 |

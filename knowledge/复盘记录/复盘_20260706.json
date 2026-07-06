@@ -1,0 +1,162 @@
+{
+  "date": "2026-07-06",
+  "timestamp": "2026-07-06 20:55",
+  "inputs": {
+    "情报": true,
+    "分析": false,
+    "风控": true,
+    "选股": false,
+    "操盘": false,
+    "决策": true
+  },
+  "predictions": {
+    "market_定性": "",
+    "env_score": null,
+    "bullish_sectors": [],
+    "bearish_sectors": [],
+    "signals": [],
+    "risk_warnings": []
+  },
+  "stock_picks": {
+    "stocks": [],
+    "verified": [],
+    "total": 0
+  },
+  "trade_plan": {
+    "buy": [],
+    "sell": [],
+    "hold": []
+  },
+  "leader": {
+    "sell_decisions": [],
+    "buy_decisions": [],
+    "hold_decisions": [],
+    "conflicts": [
+      {
+        "type": "有分歧",
+        "detail": "Agent6 操盘手 ⭐ 质量通过（部分分歧）"
+      },
+      {
+        "type": "无分歧",
+        "detail": "- ✅ 8项卖出计划（与风控官一致）"
+      },
+      {
+        "type": "无分歧",
+        "detail": "- ✅ 买入计划为空（与选股结果一致）"
+      },
+      {
+        "type": "有分歧",
+        "detail": "- ⚠️ **龙净环保分歧** — 操盘手建议\"持有\"，风控官要求\"减仓\""
+      }
+    ],
+    "rework_items": [],
+    "quality_review": {
+      "passed": 0,
+      "needs_work": 0,
+      "rejected": 0
+    }
+  },
+  "actual": {
+    "date": "20260706",
+    "indices": {
+      "上证指数": {
+        "close": 4041.2382,
+        "pct_chg": -0.0595
+      },
+      "深证成指": {
+        "close": 15416.804,
+        "pct_chg": -1.1586
+      },
+      "创业板指": {
+        "close": 3948.86,
+        "pct_chg": -1.768
+      },
+      "科创50": {
+        "close": 1996.1029,
+        "pct_chg": 1.0378
+      }
+    },
+    "sector_performance": {},
+    "summary": "市场偏弱",
+    "up_down": {
+      "up": 1876,
+      "down": 3541,
+      "total": 5517
+    }
+  },
+  "comparison": {
+    "date": "20260706",
+    "market_定性": {
+      "predicted": "",
+      "actual": "市场偏弱",
+      "correct": null
+    },
+    "env_score": {
+      "predicted": null,
+      "actual": 40,
+      "偏差": null
+    },
+    "sector_accuracy": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 0,
+      "details": []
+    },
+    "大盘方向": {
+      "correct": 0,
+      "wrong": 0,
+      "details": [
+        {
+          "index": "上证指数",
+          "pct_chg": -0.06,
+          "direction": "跌"
+        },
+        {
+          "index": "深证成指",
+          "pct_chg": -1.16,
+          "direction": "跌"
+        },
+        {
+          "index": "创业板指",
+          "pct_chg": -1.77,
+          "direction": "跌"
+        },
+        {
+          "index": "科创50",
+          "pct_chg": 1.04,
+          "direction": "涨"
+        }
+      ]
+    }
+  },
+  "accuracy": {
+    "大盘方向": {
+      "correct": 0,
+      "total": 4,
+      "rate": 0.0
+    },
+    "板块预测": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 0,
+      "verified": 0,
+      "rate": 0,
+      "pending_review": 0,
+      "note": "所有板块预测已自动校验"
+    },
+    "选股准确率": {},
+    "综合准确率": 0.0
+  },
+  "偏差分析": [],
+  "策略建议": [
+    "准确率稳定，可尝试增加新的分析维度"
+  ],
+  "因子建议": [],
+  "errors": [],
+  "accuracy_trend": {
+    "total_days": 5,
+    "avg_accuracy": 0.0,
+    "recent_avg": 0.0,
+    "trend": "持平 →"
+  }
+}
