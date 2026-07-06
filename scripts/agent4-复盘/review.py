@@ -792,6 +792,33 @@ def generate_review_report(trade_date: str = None) -> dict:
         review["inputs"]["决策"] = True
         print(f"  {ok} 投资决策报告已读取")
 
+    # 【达尔文12.0】从DB读取实际行情数据用于精确验证
+    try:
+        from scripts.utils.db_manager import DatabaseManager
+        _db_review = DatabaseManager()
+    except Exception:
+        _db_review = None
+
+    if _db_review:
+        # 读取当日大盘指数和主要持仓的收盘行情
+        try:
+            index_codes = ["000001.SH", "399001.SZ", "399006.SZ", "688001.SH"]
+            db_actual = {}
+            for code in index_codes:
+                df = _db_review.get_daily_price(code, trade_date, trade_date)
+                if df is not None and not df.empty:
+                    db_actual[code] = {
+                        "close": float(df.iloc[0]["close"]),
+                        "pct_chg": float(df.iloc[0].get("pct_chg", 0)),
+                    }
+            review["actual"]["db_index_data"] = db_actual
+            print(f"  {ok} DB行情读取成功: {len(db_actual)}个指数")
+        except Exception as e:
+            print(f"  [WARN] DB行情读取失败: {e}")
+            review["actual"]["db_index_data"] = {}
+    else:
+        review["actual"]["db_index_data"] = {}
+
     # 2. 提取预测
     predictions = extract_predictions(分析)
     review["predictions"] = predictions

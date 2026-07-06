@@ -38,13 +38,18 @@ import tushare as ts
 # 优先从环境变量读取 token
 # ⚠️ 延迟初始化：不在此处直接调用 ts.pro_api()，避免模块导入即崩溃
 # 使用 get_pro() 函数按需初始化
-_TOKE = os.getenv("TUSHARE_TOKEN", "")
+_TOKEN = os.getenv("TUSHARE_TOKEN", "")
+_TOKE = _TOKEN  # 向后兼容别名
 _pro_instance = None
+
+# 东方财富API封锁缓存（达尔文12.0 — 避免每次重复尝试已封锁的API）
+_EASTMONEY_BLOCKED = False
+_EASTMONEY_BLOCKED_AT = None  # 时间戳
 
 
 def has_token() -> bool:
     """检查Tushare Token是否已配置（安全调用，不触发初始化）"""
-    return bool(_TOKE)
+    return bool(_TOKEN)
 
 
 def get_pro():
@@ -203,15 +208,24 @@ def get_ths_index(daily: bool = True, trade_date: str = None) -> pd.DataFrame:
         except Exception as e2:
             print(f"[tushare] DB查询失败: {e2}")
 
-        # 方案3: 尝试东方财富（当前被封锁，快速失败）
-        try:
-            from scripts.utils.eastmoney_client import get_ths_daily_fallback
-            df = get_ths_daily_fallback()
-            if not df.empty:
-                print(f"[tushare] 东方财富回退成功，获取 {len(df)} 个板块")
-                return df
-        except Exception as e3:
-            print(f"[tushare] 东方财富回退失败: {e3}")
+        # 方案3: 尝试东方财富（缓存封锁状态，避免重复尝试）
+        global _EASTMONEY_BLOCKED, _EASTMONEY_BLOCKED_AT
+        import time as _time
+        if _EASTMONEY_BLOCKED:
+            # 每30分钟重置一次，允许偶尔重试
+            if _EASTMONEY_BLOCKED_AT and _time.time() - _EASTMONEY_BLOCKED_AT > 1800:
+                _EASTMONEY_BLOCKED = False
+        if not _EASTMONEY_BLOCKED:
+            try:
+                from scripts.utils.eastmoney_client import get_ths_daily_fallback
+                df = get_ths_daily_fallback()
+                if not df.empty:
+                    print(f"[tushare] 东方财富回退成功，获取 {len(df)} 个板块")
+                    return df
+            except Exception as e3:
+                _EASTMONEY_BLOCKED = True
+                _EASTMONEY_BLOCKED_AT = _time.time()
+                print(f"[tushare] 东方财富回退失败(已缓存封锁状态): {e3}")
 
         # 方案4: THS AkShare回填（仅首次缺失时触发，后续走DB查询）
         try:
@@ -270,7 +284,7 @@ def today_str() -> str:
 # ===== 演示 =====
 if __name__ == "__main__":
     print("Tushare 客户端已加载")
-    print(f"Token 状态: {'已配置' if TOKEN != '你的Token在这里' else '未配置'}")
+    print(f"Token 状态: {'已配置' if _TOKEN != '你的Token在这里' else '未配置'}")
     print()
     print("可用函数:")
     funcs = [n for n in dir() if n.startswith("get_")]

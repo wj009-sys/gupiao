@@ -477,6 +477,11 @@ CREATE_INDEXES_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_fund_status ON fund_basic(status)",
     "CREATE INDEX IF NOT EXISTS idx_fund_type ON fund_basic(fund_type)",
     "CREATE INDEX IF NOT EXISTS idx_index_market ON index_basic(market)",
+    # 达尔文12.0 新增索引
+    "CREATE INDEX IF NOT EXISTS idx_moneyflow_stock_date ON moneyflow_stock(trade_date)",
+    "CREATE INDEX IF NOT EXISTS idx_margin_detail_date ON margin_detail(trade_date)",
+    "CREATE INDEX IF NOT EXISTS idx_dragon_tiger_date ON dragon_tiger_detail(trade_date)",
+    "CREATE INDEX IF NOT EXISTS idx_lockup_date ON lockup_schedule(unlock_date)",
 ]
 
 
@@ -1797,6 +1802,33 @@ class DatabaseManager:
             print(f"[DB] get_daily_basic 失败 ({ts_code}): {e}")
         return {}
 
+    def get_daily_basic_from_db(self, ts_code: str, trade_date: str) -> dict:
+        """
+        直接从 daily_basic 表读取某日估值数据（DB优先，不触发Tushare API）。
+
+        Args:
+            ts_code: 股票代码
+            trade_date: 交易日 YYYYMMDD
+
+        Returns:
+            含 pe/pb/turnover_rate/volume_ratio 等的字典，无数据返回空字典
+        """
+        if not self._ensure_conn():
+            return {}
+        try:
+            cur = self.conn.cursor()
+            cur.execute(
+                "SELECT * FROM daily_basic WHERE ts_code = ? AND trade_date = ?",
+                (ts_code, trade_date)
+            )
+            row = cur.fetchone()
+            if row:
+                cols = [d[0] for d in cur.description]
+                return dict(zip(cols, row))
+        except Exception as e:
+            print(f"[DB] get_daily_basic_from_db 失败 ({ts_code}, {trade_date}): {e}")
+        return {}
+
     def get_sector_ranking(self, trade_date: str, top_n: int = 10) -> pd.DataFrame:
         """获取某日板块涨跌排名"""
         if not self._ensure_conn():
@@ -1854,6 +1886,213 @@ class DatabaseManager:
         except Exception as e:
             print(f"[DB] get_moneyflow_hsgt 失败: {e}")
         return {}
+
+    # ============================================================
+    #  达尔文12.0 新增 — 封装原本散布在Agent脚本中的裸SQL查询
+    # ============================================================
+
+    def get_lockup_schedule(self, ts_code: str, start_date: str = "",
+                            end_date: str = "") -> list:
+        """
+        查询股票限售股解禁日程。
+
+        Args:
+            ts_code: 股票代码
+            start_date: 起始日期 YYYYMMDD
+            end_date: 截止日期 YYYYMMDD
+
+        Returns:
+            解禁记录列表，每项含 unlock_date/unlock_volume/unlock_ratio/holder_name/lockup_type
+        """
+        if not self._ensure_conn():
+            return []
+        try:
+            cur = self.conn.cursor()
+            sql = """SELECT unlock_date, unlock_volume, unlock_ratio, holder_name, lockup_type
+                     FROM lockup_schedule
+                     WHERE ts_code = ? AND unlock_date >= ? AND unlock_date <= ?
+                     ORDER BY unlock_date ASC"""
+            cur.execute(sql, (ts_code, start_date, end_date))
+            rows = cur.fetchall()
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, row)) for row in rows]
+        except Exception as e:
+            print(f"[DB] get_lockup_schedule 失败 ({ts_code}): {e}")
+            return []
+
+    def get_margin_detail(self, ts_code: str, start_date: str = "",
+                          end_date: str = "") -> list:
+        """
+        查询个股融资融券明细。
+
+        Args:
+            ts_code: 股票代码
+            start_date: 起始日期 YYYYMMDD
+            end_date: 截止日期 YYYYMMDD
+
+        Returns:
+            融资融券记录列表（按日期降序）
+        """
+        if not self._ensure_conn():
+            return []
+        try:
+            cur = self.conn.cursor()
+            sql = """SELECT trade_date, rzye, rqye, rzmre, rqmcl, rzrqye
+                     FROM margin_detail
+                     WHERE ts_code = ? AND trade_date >= ? AND trade_date <= ?
+                     ORDER BY trade_date DESC"""
+            cur.execute(sql, (ts_code, start_date, end_date))
+            rows = cur.fetchall()
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, row)) for row in rows]
+        except Exception as e:
+            print(f"[DB] get_margin_detail 失败 ({ts_code}): {e}")
+            return []
+
+    def get_dragon_tiger_detail(self, ts_code: str, start_date: str = "") -> list:
+        """
+        查询龙虎榜明细。
+
+        Args:
+            ts_code: 股票代码
+            start_date: 起始日期 YYYYMMDD
+
+        Returns:
+            龙虎榜记录列表（按日期降序）
+        """
+        if not self._ensure_conn():
+            return []
+        try:
+            cur = self.conn.cursor()
+            sql = """SELECT trade_date, close, pct_chg, amount, buy_amount, sell_amount,
+                            net_amount, buy_seats, sell_seats, reason_type
+                     FROM dragon_tiger_detail
+                     WHERE ts_code = ? AND trade_date >= ?
+                     ORDER BY trade_date DESC"""
+            cur.execute(sql, (ts_code, start_date))
+            rows = cur.fetchall()
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, row)) for row in rows]
+        except Exception as e:
+            print(f"[DB] get_dragon_tiger_detail 失败 ({ts_code}): {e}")
+            return []
+
+    def get_policy_events(self, since_date: str = "", days: int = 30) -> list:
+        """
+        查询政策事件。
+
+        Args:
+            since_date: 起始日期 YYYYMMDD（为空时取 days 天前）
+            days: 回溯天数（since_date 为空时生效）
+
+        Returns:
+            政策事件列表
+        """
+        if not self._ensure_conn():
+            return []
+        try:
+            import datetime as dt
+            if not since_date:
+                since_date = (dt.datetime.now() - dt.timedelta(days=days)).strftime("%Y%m%d")
+            cur = self.conn.cursor()
+            cur.execute(
+                "SELECT title, event_date, category FROM policy_events WHERE event_date >= ? ORDER BY event_date DESC",
+                (since_date,)
+            )
+            rows = cur.fetchall()
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, row)) for row in rows]
+        except Exception as e:
+            print(f"[DB] get_policy_events 失败: {e}")
+            return []
+
+    def upsert_policy_event(self, data: dict) -> bool:
+        """
+        写入一条政策事件。
+
+        Args:
+            data: 含 event_date/title/content/source/category/impact_sector/impact_score/url
+
+        Returns:
+            是否写入成功
+        """
+        if not self._ensure_conn():
+            return False
+        try:
+            cur = self.conn.cursor()
+            cur.execute(
+                """INSERT OR IGNORE INTO policy_events
+                   (event_date, title, content, source, category, impact_sector, impact_score, url)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (data.get("event_date"), data.get("title"), data.get("content"),
+                 data.get("source"), data.get("category"), data.get("impact_sector"),
+                 data.get("impact_score"), data.get("url"))
+            )
+            self.conn.commit()
+            return cur.rowcount > 0
+        except Exception as e:
+            print(f"[DB] upsert_policy_event 失败: {e}")
+            return False
+
+    def upsert_dragon_tiger_detail(self, data: dict) -> bool:
+        """
+        写入一条龙虎榜明细。
+
+        Args:
+            data: 含 trade_date/ts_code/name/close/pct_chg/amount/
+                  buy_amount/sell_amount/net_amount/buy_seats/sell_seats/reason_type
+
+        Returns:
+            是否写入成功
+        """
+        if not self._ensure_conn():
+            return False
+        try:
+            cur = self.conn.cursor()
+            cur.execute(
+                """INSERT OR IGNORE INTO dragon_tiger_detail
+                   (trade_date, ts_code, name, close, pct_chg, amount,
+                    buy_amount, sell_amount, net_amount, buy_seats, sell_seats, reason_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (data.get("trade_date"), data.get("ts_code"), data.get("name"),
+                 data.get("close"), data.get("pct_chg"), data.get("amount"),
+                 data.get("buy_amount"), data.get("sell_amount"), data.get("net_amount"),
+                 json.dumps(data.get("buy_seats", []), ensure_ascii=False) if isinstance(data.get("buy_seats"), list) else data.get("buy_seats"),
+                 json.dumps(data.get("sell_seats", []), ensure_ascii=False) if isinstance(data.get("sell_seats"), list) else data.get("sell_seats"),
+                 data.get("reason_type"))
+            )
+            self.conn.commit()
+            return cur.rowcount > 0
+        except Exception as e:
+            print(f"[DB] upsert_dragon_tiger_detail 失败: {e}")
+            return False
+
+    def upsert_hot_money_seats(self, data: dict) -> bool:
+        """
+        写入一条游资席位记录。
+
+        Args:
+            data: 含 trade_date/seat_name/seat_type/style/active_stocks
+
+        Returns:
+            是否写入成功
+        """
+        if not self._ensure_conn():
+            return False
+        try:
+            cur = self.conn.cursor()
+            cur.execute(
+                """INSERT OR IGNORE INTO hot_money_seats
+                   (trade_date, seat_name, seat_type, style, active_stocks)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (data.get("trade_date"), data.get("seat_name"), data.get("seat_type"),
+                 data.get("style"), data.get("active_stocks"))
+            )
+            self.conn.commit()
+            return cur.rowcount > 0
+        except Exception as e:
+            print(f"[DB] upsert_hot_money_seats 失败: {e}")
+            return False
 
     def get_latest_trade_date(self) -> str:
         """获取数据库中最新交易日"""

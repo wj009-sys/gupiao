@@ -419,69 +419,55 @@ def _save_to_db(data: dict):
     # 写入龙虎榜明细
     for item in data.get("dragon_tiger", []):
         try:
-            _db.conn.execute(
-                """INSERT OR IGNORE INTO dragon_tiger_detail
-                   (trade_date, ts_code, name, close, pct_chg, amount,
-                    buy_amount, sell_amount, net_amount, buy_seats, sell_seats, reason_type)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    trade_date,
-                    item.get("ts_code", ""),
-                    item.get("name", ""),
-                    item.get("close", 0),
-                    item.get("pct_chg", 0),
-                    item.get("amount", 0),
-                    item.get("buy_amount", 0),
-                    item.get("sell_amount", 0),
-                    item.get("net_amount", 0),
-                    str(item.get("buy_seats", "")),
-                    str(item.get("sell_seats", "")),
-                    item.get("reason_type", ""),
-                )
-            )
-            _db.conn.commit()
+            _db.upsert_dragon_tiger_detail({
+                "trade_date": trade_date,
+                "ts_code": item.get("ts_code", ""),
+                "name": item.get("name", ""),
+                "close": item.get("close", 0),
+                "pct_chg": item.get("pct_chg", 0),
+                "amount": item.get("amount", 0),
+                "buy_amount": item.get("buy_amount", 0),
+                "sell_amount": item.get("sell_amount", 0),
+                "net_amount": item.get("net_amount", 0),
+                "buy_seats": item.get("buy_seats", []),
+                "sell_seats": item.get("sell_seats", []),
+                "reason_type": item.get("reason_type", ""),
+            })
         except Exception as e:
             logger.warning(f"龙虎榜写入失败: {e}")
 
     # 写入游资席位
     for seat in data.get("hot_money_seats", []):
         try:
-            _db.conn.execute(
-                """INSERT OR IGNORE INTO hot_money_seats
-                   (trade_date, seat_name, seat_type, style, active_stocks)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (
-                    trade_date,
-                    seat.get("seat_name", ""),
-                    seat.get("type", ""),
-                    seat.get("style", ""),
-                    seat.get("count", 0),
-                )
-            )
-            _db.conn.commit()
+            _db.upsert_hot_money_seats({
+                "trade_date": trade_date,
+                "seat_name": seat.get("seat_name", ""),
+                "seat_type": seat.get("type", ""),
+                "style": seat.get("style", ""),
+                "active_stocks": seat.get("count", 0),
+            })
         except Exception as e:
             logger.warning(f"游资席位写入失败: {e}")
 
-    # 写入个股资金流向
-    for mf in data.get("holdings_moneyflow", []):
+    # 写入个股资金流向（批量化：构建DataFrame调用已有API）
+    mf_list = data.get("holdings_moneyflow", [])
+    if mf_list:
         try:
-            _db.conn.execute(
-                """INSERT OR IGNORE INTO moneyflow_stock
-                   (ts_code, trade_date, net_amount, buy_lg_amount, sell_lg_amount,
-                    buy_sm_amount, sell_sm_amount, net_lg_amount)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    mf.get("ts_code", ""),
-                    trade_date,
-                    mf.get("net_amount", 0),
-                    mf.get("buy_lg_amount", 0),
-                    mf.get("sell_lg_amount", 0),
-                    mf.get("buy_sm_amount", 0),
-                    mf.get("sell_sm_amount", 0),
-                    mf.get("net_amount", 0),  # net_lg_amount 近似
-                )
-            )
-            _db.conn.commit()
+            import pandas as pd
+            mf_rows = []
+            for mf in mf_list:
+                mf_rows.append({
+                    "ts_code": mf.get("ts_code", ""),
+                    "trade_date": trade_date,
+                    "net_amount": mf.get("net_amount", 0),
+                    "buy_lg_amount": mf.get("buy_lg_amount", 0),
+                    "sell_lg_amount": mf.get("sell_lg_amount", 0),
+                    "buy_sm_amount": mf.get("buy_sm_amount", 0),
+                    "sell_sm_amount": mf.get("sell_sm_amount", 0),
+                    "net_lg_amount": mf.get("net_amount", 0),
+                })
+            if mf_rows:
+                _db.upsert_moneyflow_stock(pd.DataFrame(mf_rows))
         except Exception as e:
             logger.warning(f"资金流向写入失败: {e}")
 

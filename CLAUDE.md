@@ -40,7 +40,7 @@
 | **Schema（行为规则）** | `CLAUDE.md` + `skills/*/SKILL.md` | **共同演化**，人+LLM 持续优化 |
 
 > 整个项目本身就是 Karpathy 范式的 A 股投研特化版：
-> 8 Agent 流水线 = 自动化的 ingest → compile → verify → lint 闭环。
+> 10 Agent 流水线 = 自动化的 ingest → compile → verify → lint 闭环。
 > 每日复盘 = 内置的 lint + synthesis 机制。
 
 ## 项目目标
@@ -61,21 +61,24 @@ SessionStart Hook (startup)
   python auto_sync.py --check-only ← 备份：打开时快速检查
   如 STALE → AI 主动触发 --auto-sync
 
-同步流水线（10个阶段）:
-  [0/10] fund_basic     — ETF元数据（仅首次）
-  [1/10] index_basic    — 指数元数据（仅首次）
-  [2/10] daily_basic    — 每日估值（按日期批量 ⚡）
-  [3/10] index_daily    — 全部指数日线（~3.5min/天）
-  [4/10] etf_daily      — ETF日线（~9min/天）
-  [5/10] daily_price    — 股票日线（~22min/天）
-  [6/10] adj_factor     — 复权因子
-  [7/10] fina_indicator — 财报（季度）
-  [8/10] dividend       — 分红
-  [9/10] ths_daily      — 概念板块
-  [10/10] quality_check — 覆盖度检查+多源回补+数据清洗
-                          ├─ A. 覆盖率检查（股票/ETF/指数 vs 预期）
-                          ├─ B. 多源回补（Tushare→mootdx→Akshare）
-                          └─ C. 数据清洗（去重+NULL填充+异常标记）
+同步流水线（13个阶段）:
+  [0/13] fund_basic         — ETF元数据（仅首次）
+  [1/13] index_basic        — 指数元数据（仅首次）
+  [2/13] daily_basic        — 每日估值（按日期批量 ⚡）
+  [3/13] index_daily        — 全部指数日线（~3.5min/天）
+  [4/13] etf_daily          — ETF日线（~9min/天）
+  [5/13] daily_price        — 股票日线（~22min/天）
+  [6/13] adj_factor         — 复权因子
+  [7/13] fina_indicator     — 财报（季度）
+  [8/13] dividend           — 分红
+  [9/13] ths_daily          — 概念板块
+  [10/13] moneyflow_hsgt    — 北向资金
+  [11/13] moneyflow_stock   — 个股资金流向（仅持仓+自选）
+  [12/13] daily_indicator   — 全市场技术指标计算
+  [13/13] quality_check     — 覆盖度检查+多源回补+数据清洗
+                            ├─ A. 覆盖率检查（股票/ETF/指数 vs 预期）
+                            ├─ B. 多源回补（Tushare→mootdx→Akshare）
+                            └─ C. 数据清洗（去重+NULL填充+异常标记）
 ```
 
 ### 手动同步命令
@@ -341,7 +344,7 @@ Agent3（风控官）与 Agent6（操盘手）构成「提案-审查」双轨制
 .env.example         - 环境变量模板
 docs/archive/        - 历史设计文档和过时脚本归档
 data/              - 数据文件（持仓、自选、规则配置、数据库）
-  ├── stocks.db       - SQLite主数据库（~4943万行，24张表）
+  ├── stocks.db       - SQLite主数据库（~7000万行，23张表+20索引）
   ├── trading_calendar.json - 交易日历缓存
   ├── checkpoints/    - 数据同步检查点（gitignored）
   ├── raw/            - 原始数据缓存（gitignored）
@@ -593,7 +596,8 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001.SZ --strategy 均线
 | 2026-07-03 | `auto-optimize/20260627-0020` | **达尔文8.0** — debate.py新增+决策审计日志+三级风控委员会+决策记忆注入+TradingAgents借鉴分析 | 4项架构升级 + 知识库 + CLAUDE.md | 无独立提交（合并到达尔文9.0） |
 | 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文9.0** — 借鉴ZhuLinsen三项目全面架构升级(8因子体系+L1→L2→L3+LLM排序+问股系统) | L2 LLM排序+l2_rerank+agent_ask问股9策略+SKILL+env | 已完成 |
 | 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文10.0** — 全项目全面审计修复101项(27CRITICAL+13HIGH+37MEDIUM+24LOW) | 知识库+data全面审计修复14项+knowledge_lint 2项Bug修复+补录11只指数 | c31188d, 1a83e8f, 26682e1 |
-| 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文11.0** — 全项目全面审计修复105项(8CRITICAL+22HIGH+31MEDIUM+40LOW+4INFO) | 7维度并行审计+交叉引用+38项自动修复+requirements.txt+GHA Agent4补全+Token安全+CLAUDE.md修正 | 当前 |
+| 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文11.0** — 全项目全面审计修复105项(8CRITICAL+22HIGH+31MEDIUM+40LOW+4INFO) | 7维度并行审计+交叉引用+38项自动修复+requirements.txt+GHA Agent4补全+Token安全+CLAUDE.md修正 | c31188d |
+| 2026-07-06 | `auto-optimize/20260627-0020` | **达尔文12.0** — 全项目深度全面优化(3CRITICAL+6HIGH+8MEDIUM+5LOW共22项) | DB层API封装(6个新方法+4索引)+Agent数据访问重构(trader/leader/review DB优先)+裸SQL消除+文档修复+配置同步 | **当前** |
 
 优化内容（第9轮-达尔文9.0）：借鉴ZhuLinsen三项目全面架构升级
 - **L1→L2→L3选股管线**：stock_picker.py重构为三级管线(L1评分→L2重排序→L3后置分析器)
@@ -640,11 +644,11 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001.SZ --strategy 均线
 - **配置修复**：修复止损规则.json的type名重名（大盘联动止损×2→大盘联动止损/大盘联动清仓）
 - **知识库修复**：CHANGES.md路径前缀补全；复盘记录 correct=null→false；knowledge_lint.py stderr AttributeError加注释
 
-### 工具脚本（scripts/utils/ 补充清单 — 共25个脚本）
+### 工具脚本（scripts/utils/ 补充清单 — 共34个脚本）
 
 | 脚本 | 行数 | 用途 |
 |:-----|:----:|:-----|
-| `auto_sync.py` | 1,664 | 自动同步流水线(10阶段) |
+| `auto_sync.py` | 1,664 | 自动同步流水线(13阶段) |
 | `backfill_etf_index.py` | 379 | ETF/指数全量历史回填 |
 | `build_portfolio.py` | 257 | 持仓组合构建工具 |
 | `data_cleaner.py` | 1,062 | 数据审计+清洗+复权工具 |
@@ -669,4 +673,13 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001.SZ --strategy 均线
 | `technical_analysis.py` | 402 | 技术指标计算(MACD/KDJ/RSI/布林带) |
 | `tushare_client.py` | 176 | Tushare Pro API统一客户端 |
 | `wechat_send.py` | 628 | 微信推送(PushPlus/cc-connect) |
+| `backfill_indicators.py` | ~400 | 技术指标历史回填 |
+| `backfill_ths_daily.py` | ~350 | 同花顺概念板块历史回填 |
+| `cninfo_sentiment.py` | ~200 | 巨潮资讯舆情/互动易 |
+| `eastmoney_plus.py` | ~150 | 东方财富增强数据接口 |
+| `limit_up_board.py` | ~300 | 涨停板/打板情绪分析 |
+| `tencent_provider.py` | ~200 | 腾讯K线数据源Provider |
+| `ths_provider.py` | ~250 | 同花顺数据源Provider（热榜/预测） |
+| `llm_config.py` | ~100 | LLM配置管理（L2重排序辅助） |
+| `_proxy.py` | ~80 | SOCKS5代理配置 |
 

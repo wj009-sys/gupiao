@@ -42,7 +42,7 @@ app.include_router(ask.router, prefix="/ask", tags=["ask"])
 # ── 健康检查 ────────────────────────────────────────────────────────
 @app.get("/health")
 async def health():
-    return {"status": "ok", "project": "stock-research", "version": "9.0.0"}
+    return {"status": "ok", "project": "stock-research", "version": "16.0.0"}
 
 
 # ── 直接运行入口 ─────────────────────────────────────────────────────

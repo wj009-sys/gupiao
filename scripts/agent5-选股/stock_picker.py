@@ -308,13 +308,28 @@ def score_liquidity(ts_code: str, trade_date: str, profile: dict = None) -> dict
     if profile is None:
         profile = DEFAULT_SCORING_PROFILE
     try:
-        df = pro.daily_basic(ts_code=ts_code, trade_date=trade_date)
-        if df is None or df.empty:
-            return {"score": 50, "details": {"reason": "无流动性数据，给中性分"}}
+        # DB优先：从 daily_price 获取 amount，从 daily_basic 获取 turnover_rate
+        db_amount = None
+        db_turnover = None
+        if _db:
+            basic = _db.get_daily_basic(ts_code=ts_code, trade_date=trade_date)
+            if basic:
+                db_turnover = basic.get("turnover_rate")
+            price = _db.get_daily_price(ts_code, trade_date, trade_date)
+            if price is not None and not price.empty:
+                db_amount = float(price.iloc[0].get("amount", 0))
 
-        row = df.iloc[0]
-        amount = float(row.get("amount", 0)) / 10000  # 转为万元
-        turnover = float(row.get("turnover_rate", 0))
+        if db_amount is not None and db_turnover is not None:
+            amount = db_amount / 10000  # 转为万元
+            turnover = db_turnover
+        else:
+            # API回退
+            df = pro.daily_basic(ts_code=ts_code, trade_date=trade_date)
+            if df is None or df.empty:
+                return {"score": 50, "details": {"reason": "无流动性数据，给中性分"}}
+            row = df.iloc[0]
+            amount = float(row.get("amount", 0)) / 10000
+            turnover = float(row.get("turnover_rate", 0))
 
         # 成交额评分：log平滑（避免超大市值主导）
         min_amount = profile.get("liquidity_min_amount", 5000.0)
@@ -354,7 +369,17 @@ def score_stability(ts_code: str, trade_date: str, profile: dict = None) -> dict
         profile = DEFAULT_SCORING_PROFILE
     try:
         df = get_daily_price_db_first(ts_code, days_back=20)
-        basic_df = pro.daily_basic(ts_code=ts_code, trade_date=trade_date)
+
+        # DB优先：从 daily_basic 读取基本面数据
+        basic_row = {}
+        if _db:
+            basic = _db.get_daily_basic(ts_code=ts_code, trade_date=trade_date)
+            if basic:
+                basic_row = basic
+        if not basic_row:
+            basic_df = pro.daily_basic(ts_code=ts_code, trade_date=trade_date)
+            if basic_df is not None and not basic_df.empty:
+                basic_row = basic_df.iloc[0].to_dict()
 
         score = 85  # 起始高分（从满分开始扣）
         details = []
@@ -391,23 +416,22 @@ def score_stability(ts_code: str, trade_date: str, profile: dict = None) -> dict
 
         # === 2. 换手率过热惩罚 ===
         extreme_vol_ratio = profile.get("stability_extreme_volume_ratio", 5.0)
-        if basic_df is not None and not basic_df.empty:
-            row = basic_df.iloc[0]
-            turnover = float(row.get("turnover_rate", 0))
+        if basic_row:
+            turnover = float(basic_row.get("turnover_rate", 0))
             if turnover > extreme_vol_ratio:
                 p = _penalty_for_overheating(turnover, extreme_vol_ratio, max_penalty=15)
                 penalties.append(p)
                 details.append(f"换手率{turnover:.1f}%>极端阈值{extreme_vol_ratio}%，惩罚-{p:.0f}分")
 
             # === 3. 负PE惩罚 ===
-            pe = row.get("pe")
+            pe = basic_row.get("pe")
             if pe is not None and pe < 0:
                 penalties.append(20)
                 details.append(f"PE={pe}<0(亏损)，惩罚-20分")
 
         # === 4. 量比异常惩罚 ===
-        if basic_df is not None and not basic_df.empty:
-            vol_ratio = float(row.get("volume_ratio", 1)) if "volume_ratio" in basic_df.columns else 1
+        if basic_row:
+            vol_ratio = float(basic_row.get("volume_ratio", 1))
             if vol_ratio > extreme_vol_ratio + 2:
                 p = min(10, (vol_ratio - extreme_vol_ratio - 2) * 5)
                 penalties.append(p)

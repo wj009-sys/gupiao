@@ -765,16 +765,14 @@ def check_lockup_risk(portfolio: dict) -> list:
                 continue
             name = h.get("名称", "未知")
 
-            rows = db.conn.execute(
-                """SELECT unlock_date, unlock_volume, unlock_ratio, holder_name, lockup_type
-                   FROM lockup_schedule
-                   WHERE ts_code = ? AND unlock_date >= ? AND unlock_date <= ?
-                   ORDER BY unlock_date ASC""",
-                (code, today, cutoff)
-            ).fetchall()
+            rows = db.get_lockup_schedule(code, today, cutoff)
             if rows:
                 for row in rows:
-                    unlock_date, volume, ratio, holder, lu_type = row[:5]
+                    unlock_date = row.get("unlock_date", "")
+                    volume = row.get("unlock_volume")
+                    ratio = row.get("unlock_ratio")
+                    holder = row.get("holder_name", "")
+                    lu_type = row.get("lockup_type", "")
                     ratio_val = float(ratio or 0)
                     level = "WARNING" if ratio_val >= 5 else "INFO"
                     level = "CRITICAL" if ratio_val >= 20 else level
@@ -818,16 +816,13 @@ def check_financial_risk(portfolio: dict) -> list:
                 continue
             name = h.get("名称", "未知")
 
-            rows = db.conn.execute(
-                """SELECT roe, debt_to_assets, current_ratio, grossprofit_margin, end_date
-                   FROM fina_indicator
-                   WHERE ts_code = ? AND end_date IS NOT NULL
-                   ORDER BY end_date DESC LIMIT 1""",
-                (code,)
-            ).fetchall()
-            if rows:
-                row = rows[0]
-                roe, debt, curr_ratio, gross_margin, end_date = (row + [None]*5)[:5]
+            fina = db.get_fina_indicator(code)
+            if fina:
+                roe = fina.get("roe")
+                debt = fina.get("debt_to_assets")
+                curr_ratio = fina.get("current_ratio")
+                gross_margin = fina.get("grossprofit_margin")
+                end_date = fina.get("end_date", "")
                 report_date = end_date or "?"
 
                 # ROE为负 = 不赚钱
@@ -891,20 +886,14 @@ def check_margin_risk(portfolio: dict) -> list:
                 continue
             name = h.get("名称", "未知")
 
-            rows = db.conn.execute(
-                """SELECT trade_date, rzye, rqye, rzmre
-                   FROM margin_detail
-                   WHERE ts_code = ? AND trade_date >= ?
-                   ORDER BY trade_date DESC LIMIT 5""",
-                (code, week_ago)
-            ).fetchall()
-            if rows and len(rows) >= 2:
+            rows = db.get_margin_detail(code, week_ago)
+            if len(rows) >= 2:
                 # 最近两日融资余额变化
                 latest = rows[0]
                 prev = rows[1]
-                rzye_latest = float(latest[1] or 0)
-                rzye_prev = float(prev[1] or 0)
-                rqye_latest = float(latest[2] or 0)
+                rzye_latest = float(latest.get("rzye", 0) or 0)
+                rzye_prev = float(prev.get("rzye", 0) or 0)
+                rqye_latest = float(latest.get("rqye", 0) or 0)
 
                 # 融资余额骤增（>30%）
                 if rzye_prev > 0 and (rzye_latest - rzye_prev) / rzye_prev > 0.3:
@@ -956,17 +945,11 @@ def check_shareholder_risk(portfolio: dict) -> list:
             name = h.get("名称", "未知")
 
             # 检查龙虎榜中该股票的机构卖出
-            rows = db.conn.execute(
-                """SELECT trade_date, sell_amount, sell_seats
-                   FROM dragon_tiger_detail
-                   WHERE ts_code = ? AND trade_date >= ?
-                   ORDER BY trade_date DESC LIMIT 3""",
-                (code, today[:6] + "01")  # 当月
-            ).fetchall()
+            rows = db.get_dragon_tiger_detail(code, today[:6] + "01")
             if rows:
-                total_sell = sum(float(r[1] or 0) for r in rows)
+                total_sell = sum(float(r.get("sell_amount", 0) or 0) for r in rows)
                 if total_sell > 1e7:  # 机构卖出超千万
-                    seats_text = rows[0][2] or ""
+                    seats_text = rows[0].get("sell_seats", "") or ""
                     has_institution = "机构" in seats_text or "基金" in seats_text
                     if has_institution:
                         alerts.append({

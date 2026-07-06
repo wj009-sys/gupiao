@@ -74,6 +74,7 @@
 | `skills/agent9-游资追踪师/SKILL.md` | 游资追踪策略 | 游资追踪师操作规范 |
 | `scripts/utils/eastmoney_get.py` | 全部 | 东方财富限流数据网关（吸收 a-stock-data） |
 | `scripts/utils/mootdx_provider.py` | 全部 | mootdx TCP免费数据源（吸收 a-stock-data） |
+| `knowledge/复盘记录/复盘_20260706.json` | 全部 | 2026-07-06 日度复盘数据 |
 
 ## 🔄 双向引用关系
 
@@ -96,5 +97,4 @@ TradingAgents借鉴分析.md ←→ 全部 (多Agent制衡/决策记忆/三方�
      ↕
 memory/决策反思.md ←─ Agent7次日自动加载 (决策记忆)
 ```
-| [复盘记录/复盘_20260706.json](复盘记录/复盘_20260706.json) | 2026-07-06 | 日常复盘 | — |
 

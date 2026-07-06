@@ -210,11 +210,8 @@ def get_recent_policy_events(days: int = 7) -> list:
         return []
     try:
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
-        rows = _db.conn.execute(
-            "SELECT title, event_date, category FROM policy_events WHERE event_date >= ? ORDER BY event_date DESC",
-            (cutoff,)
-        ).fetchall()
-        return [{"title": r[0], "date": r[1], "category": r[2]} for r in rows] if rows else []
+        rows = _db.get_policy_events(since_date=cutoff)
+        return [{"title": r["title"], "date": r["event_date"], "category": r["category"]} for r in rows] if rows else []
     except Exception as e:
         logger.warning(f"历史政策查询失败: {e}")
         return []
@@ -744,22 +741,16 @@ def _save_policy_to_db(data: dict):
 
     for event in events:
         try:
-            _db.conn.execute(
-                """INSERT OR IGNORE INTO policy_events
-                   (event_date, title, content, source, category, impact_sector, impact_score, url)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    trade_date,
-                    event["title"],
-                    event["content"],
-                    event.get("source", ""),
-                    event.get("category", "宏观政策"),
-                    event.get("impact_sector", ""),
-                    event.get("impact_score", 0),
-                    event.get("url", ""),
-                )
-            )
-            _db.conn.commit()
+            _db.upsert_policy_event({
+                "event_date": trade_date,
+                "title": event["title"],
+                "content": event["content"],
+                "source": event.get("source", ""),
+                "category": event.get("category", "宏观政策"),
+                "impact_sector": event.get("impact_sector", ""),
+                "impact_score": event.get("impact_score", 0),
+                "url": event.get("url", ""),
+            })
         except Exception as e:
             logger.warning(f"政策事件写入失败: {e}")
 

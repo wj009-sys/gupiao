@@ -165,8 +165,12 @@ jobs:
         run: |
           if [ -n "$PUSHPLUS_TOKEN" ]; then
             python scripts/utils/wechat_send.py --report 情报 2>&1 || true
+            python scripts/utils/wechat_send.py --report 政策 2>&1 || true
+            python scripts/utils/wechat_send.py --report 游资 2>&1 || true
             python scripts/utils/wechat_send.py --report 分析 2>&1 || true
             python scripts/utils/wechat_send.py --report 选股 2>&1 || true
+            python scripts/utils/wechat_send.py --report 风控 2>&1 || true
+            python scripts/utils/wechat_send.py --report 操盘 2>&1 || true
             python scripts/utils/wechat_send.py --report 复盘 2>&1 || true
             python scripts/utils/wechat_send.py --report 决策 2>&1 || true
             echo "✅ 推送完成"

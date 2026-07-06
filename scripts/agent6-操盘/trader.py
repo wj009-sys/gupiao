@@ -113,11 +113,25 @@ def extract_top_picks(intelligence_text: str) -> list:
 
 
 def get_stock_real_price(ts_code: str):
-    """获取个股实时/最新行情"""
+    """获取个股实时/最新行情 — DB优先，DB无数据则回退Tushare API"""
     try:
-        df = get_daily(ts_code, f"{datetime.now().year}0101", datetime.now().strftime("%Y%m%d"))
+        today = datetime.now().strftime("%Y%m%d")
+        # DB优先
+        if _db:
+            df = _db.get_daily_price(ts_code, today, today)
+            if df is not None and not df.empty:
+                last = df.iloc[0]
+                return {
+                    "price": float(last["close"]),
+                    "high": float(last.get("high", last["close"])),
+                    "low": float(last.get("low", last["close"])),
+                    "pct_chg": float(last.get("pct_chg", 0)),
+                    "volume": float(last.get("vol", 0)),
+                    "trade_date": last.get("trade_date", ""),
+                }
+        # API回退
+        df = get_daily(ts_code, f"{datetime.now().year}0101", today)
         if df is not None and not df.empty:
-            # Tushare数据按trade_date升序，需降序取最新
             df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
             last = df.iloc[0]
             return {
@@ -169,9 +183,16 @@ def get_limit_prices(ts_code: str, current_price: float) -> dict:
 
 
 def fetch_technical_levels(ts_code: str):
-    """获取技术支撑/压力位"""
+    """获取技术支撑/压力位 — DB优先，DB无数据则回退Tushare API"""
     try:
-        df = get_daily(ts_code, f"{datetime.now().year}0101", datetime.now().strftime("%Y%m%d"))
+        today = datetime.now().strftime("%Y%m%d")
+        year_start = f"{datetime.now().year}0101"
+        # DB优先
+        df = None
+        if _db:
+            df = _db.get_daily_price(ts_code, year_start, today)
+        if df is None or df.empty or len(df) < 20:
+            df = get_daily(ts_code, year_start, today)
         if df is None or df.empty or len(df) < 20:
             return {"support": None, "resistance": None}
 

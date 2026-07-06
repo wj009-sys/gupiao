@@ -608,6 +608,26 @@ def make_decision() -> dict:
     result["readiness"] = readiness
     print(f"  {ok} 团队就绪度: {readiness['readiness_pct']}% ({readiness['level']})")
 
+    # 3. 【达尔文12.0】读取历史决策日志
+    try:
+        from scripts.utils.db_manager import DatabaseManager
+        _dl_db = DatabaseManager()
+        past_decisions = _dl_db.get_decision_history(days=7)
+        if past_decisions is not None and not past_decisions.empty:
+            recent_actions = past_decisions["action"].tolist()
+            recent_risk = past_decisions["risk_level"].tolist() if "risk_level" in past_decisions.columns else []
+            print(f"  {ok} 读取近7天决策日志: {len(past_decisions)}条记录")
+            result["recent_decisions"] = {
+                "count": len(past_decisions),
+                "actions": recent_actions[-5:] if len(recent_actions) > 5 else recent_actions,
+                "risk_trend": recent_risk[-5:] if len(recent_risk) > 5 else recent_risk,
+            }
+        else:
+            result["recent_decisions"] = {"count": 0, "actions": [], "risk_trend": []}
+    except Exception as e:
+        print(f"  [WARN] 读取历史决策日志失败: {e}")
+        result["recent_decisions"] = {"count": 0, "actions": [], "risk_trend": []}
+
     # 3. 读取报告内容
     report_names = ["情报员", "分析师", "选股机器人", "风控官", "操盘手", "复盘师"]
     report_map = {
