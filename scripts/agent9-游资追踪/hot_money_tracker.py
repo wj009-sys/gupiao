@@ -114,18 +114,38 @@ def fetch_limit_list_tushare(trade_date: str) -> pd.DataFrame:
     """
     从 Tushare 获取龙虎榜（涨跌停板）
 
-    优先用 pro.limit_list()，失败后尝试 pro.top_list()
+    Tushare limit_list 返回字段: buy/sell/net（元）
+    内部标准字段: buy_amount/sell_amount/net_amount（万元）
+    需做字段名映射：buy→buy_amount, sell→sell_amount, net→net_amount
     """
     try:
         df = pro.limit_list(trade_date=trade_date)
         if df is not None and not df.empty:
+            # 字段名映射: Tushare API → 内部标准
+            column_rename = {}
+            if "buy" in df.columns and "buy_amount" not in df.columns:
+                column_rename["buy"] = "buy_amount"
+            if "sell" in df.columns and "sell_amount" not in df.columns:
+                column_rename["sell"] = "sell_amount"
+            if "net" in df.columns and "net_amount" not in df.columns:
+                column_rename["net"] = "net_amount"
+            if column_rename:
+                df = df.rename(columns=column_rename)
+
+            # 选择标准列
             cols = [c for c in ["ts_code", "name", "close", "pct_chg", "amount",
                                  "buy_amount", "sell_amount", "net_amount"]
                     if c in df.columns]
             result = df[cols].copy() if cols else df.copy()
-            # 补充净买入
+
+            # 单位转换: Tushare 返回元, 内部用万元
+            for col in ["buy_amount", "sell_amount", "net_amount"]:
+                if col in result.columns:
+                    result[col] = result[col].astype(float) / 1e4
+
+            # 补充净买入（如果 net_amount 仍缺失但 buy/sell 存在）
             if "net_amount" not in result.columns and "buy_amount" in result.columns and "sell_amount" in result.columns:
-                result["net_amount"] = result["buy_amount"] - result["sell_amount"]
+                result["net_amount"] = (result["buy_amount"] - result["sell_amount"]).round(2)
             return result
     except Exception as e:
         logger.warning(f"Tushare limit_list 失败: {e}")
@@ -134,6 +154,21 @@ def fetch_limit_list_tushare(trade_date: str) -> pd.DataFrame:
     try:
         df = pro.top_list(trade_date=trade_date)
         if df is not None and not df.empty:
+            # 字段名映射: top_list 返回 buy/sell(元), 内部用 buy_amount/sell_amount(万元)
+            column_rename = {}
+            if "buy" in df.columns and "buy_amount" not in df.columns:
+                column_rename["buy"] = "buy_amount"
+            if "sell" in df.columns and "sell_amount" not in df.columns:
+                column_rename["sell"] = "sell_amount"
+            if column_rename:
+                df = df.rename(columns=column_rename)
+            # 单位转换 元→万元
+            for col in ["buy_amount", "sell_amount"]:
+                if col in df.columns:
+                    df[col] = df[col].astype(float) / 1e4
+            # 补充 net_amount
+            if "buy_amount" in df.columns and "sell_amount" in df.columns:
+                df["net_amount"] = (df["buy_amount"] - df["sell_amount"]).round(2)
             return df
     except Exception as e:
         logger.warning(f"Tushare top_list 失败: {e}")

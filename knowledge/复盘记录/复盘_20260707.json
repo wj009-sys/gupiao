@@ -1,0 +1,197 @@
+{
+  "date": "2026-07-07",
+  "timestamp": "2026-07-07 23:03",
+  "inputs": {
+    "情报": true,
+    "分析": true,
+    "风控": true,
+    "选股": true,
+    "操盘": true,
+    "决策": true
+  },
+  "predictions": {
+    "market_定性": "",
+    "env_score": 32,
+    "bullish_sectors": [],
+    "bearish_sectors": [],
+    "signals": [
+      "| 上证指数 | 3990.24 | **-1.26%** | 空头(diff<0) | K=10.8 D=23.7 | **41.0**偏弱 | 中轨下方偏空",
+      "| 深证成指 | 15225.11 | **-1.24%** | 空头(diff<0) | **超卖区** | **43.8**偏弱 | 中轨下方偏空 | 均线",
+      "| 创业板指 | 3911.91 | **-0.94%** | 空头(diff<0) | **超卖区** | **43.4**偏弱 | 中轨下方偏空 | 均线缠",
+      "| **科创50** | **2001.59** | **+0.27%** | 死叉信号 | K=25.7 D=26.5 | **57.4**偏强 | **中轨",
+      "- 🔴 上证/深证/创业板：均处于空头趋势，所有指数跌破MA5，仅科创50守住MA20/MA60",
+      "- 🟢 科创50唯一亮点：RSI 57.4偏强，多头排列，是当前最强势指数",
+      "- ⚠️ KDJ 深证/创业板在超卖区（可能反弹），但MACD空头压制反弹空间",
+      "| 中期趋势 | 🔴 **空头** | MACD空头，均线空头排列 |",
+      "| 唯一强势 | 🟢 **科创50** | 多头排列+RSI偏强 |"
+    ],
+    "risk_warnings": []
+  },
+  "stock_picks": {
+    "stocks": [],
+    "verified": [],
+    "total": 0,
+    "vetoed": []
+  },
+  "trade_plan": {
+    "buy": [],
+    "sell": [],
+    "hold": [
+      {
+        "code": "600388.SH"
+      },
+      {
+        "code": "510300.SH"
+      },
+      {
+        "code": "511260.SH"
+      },
+      {
+        "code": "511010.SH"
+      },
+      {
+        "code": "159915.SZ"
+      },
+      {
+        "code": "511360.SH"
+      },
+      {
+        "code": "512890.SH"
+      },
+      {
+        "code": "511380.SH"
+      },
+      {
+        "code": "588050.SH"
+      },
+      {
+        "code": "159755.SZ"
+      },
+      {
+        "code": "400199.SZ"
+      }
+    ]
+  },
+  "leader": {
+    "sell_decisions": [],
+    "buy_decisions": [],
+    "hold_decisions": [],
+    "conflicts": [
+      {
+        "type": "有分歧",
+        "detail": "本次风控官与操盘手**无意见分歧** 🟢"
+      }
+    ],
+    "rework_items": [],
+    "quality_review": {
+      "passed": 0,
+      "needs_work": 0,
+      "rejected": 0
+    }
+  },
+  "actual": {
+    "date": "20260707",
+    "indices": {
+      "上证指数": {
+        "close": 3990.2353,
+        "pct_chg": -1.2621
+      },
+      "深证成指": {
+        "close": 15225.1136,
+        "pct_chg": -1.2434
+      },
+      "创业板指": {
+        "close": 3911.9075,
+        "pct_chg": -0.9358
+      },
+      "科创50": {
+        "close": 2001.5859,
+        "pct_chg": 0.2747
+      }
+    },
+    "sector_performance": {},
+    "summary": "市场极弱",
+    "up_down": {
+      "up": 693,
+      "down": 4797,
+      "total": 5517
+    }
+  },
+  "comparison": {
+    "date": "20260707",
+    "market_定性": {
+      "predicted": "",
+      "actual": "市场极弱",
+      "correct": null
+    },
+    "env_score": {
+      "predicted": 32,
+      "actual": 25,
+      "偏差": -7,
+      "correct": true,
+      "note": "预测为中期趋势评分，实际为单日情绪评分，两者维度不同"
+    },
+    "sector_accuracy": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 0,
+      "details": []
+    },
+    "大盘方向": {
+      "correct": 0,
+      "wrong": 0,
+      "details": [
+        {
+          "index": "上证指数",
+          "pct_chg": -1.26,
+          "direction": "跌"
+        },
+        {
+          "index": "深证成指",
+          "pct_chg": -1.24,
+          "direction": "跌"
+        },
+        {
+          "index": "创业板指",
+          "pct_chg": -0.94,
+          "direction": "跌"
+        },
+        {
+          "index": "科创50",
+          "pct_chg": 0.27,
+          "direction": "涨"
+        }
+      ]
+    }
+  },
+  "accuracy": {
+    "大盘方向": {
+      "correct": 0,
+      "total": 4,
+      "rate": 0.0
+    },
+    "板块预测": {
+      "correct": 0,
+      "wrong": 0,
+      "total": 0,
+      "verified": 0,
+      "rate": 0,
+      "pending_review": 0,
+      "note": "所有板块预测已自动校验"
+    },
+    "选股准确率": {},
+    "综合准确率": 0.0
+  },
+  "偏差分析": [],
+  "策略建议": [
+    "准确率稳定，可尝试增加新的分析维度"
+  ],
+  "因子建议": [],
+  "errors": [],
+  "accuracy_trend": {
+    "total_days": 6,
+    "avg_accuracy": 0.0,
+    "recent_avg": 0.0,
+    "trend": "持平 →"
+  }
+}

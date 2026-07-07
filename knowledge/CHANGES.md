@@ -15,6 +15,15 @@
 | 2026-07-05 | chore | .claude/scheduled_tasks.json | 达尔文16.0: 自动同步任务ID重命名 |
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
+| 2026-07-07 | 📝 update | 参考/Tushare-Pro-API参考.md | Document/1完整学情编译：平台概述+演进历史+MCP Server+Skills+HTTP API+多语言SDK+Web调试工具+分类更新225接口 |
+| 2026-07-07 | 🔧 新增 | scripts/utils/tushare_client.py | 新增7个API封装: get_pro_bar(通用行情P0)/margin/hk_hold/forecast/index_global/limit_list_d |
+| 2026-07-07 | 📝 更新 | 参考/Tushare-Pro-API参考.md | 扩展为18大类220+API完整目录+项目使用对照+P0/P1建议接入清单 |
+| 2026-07-07 | 🔧 新增 | scripts/utils/tushare_client.py | 新增7个API封装: get_adj_factor/dividend/stock_basic/share_float/ths_member/top_list/moneyflow_dc |
+| 2026-07-07 | 📝 修复 | scripts/agent9-游资追踪/hot_money_tracker.py | 修复limit_list字段映射(buy→buy_amount/sell→sell_amount/net→net_amount)+单位转换(元→万元)+top_list同构修复 |
+| 2026-07-07 | 📝 修复 | scripts/utils/knowledge_lint.py | 添加参考/路径前缀支持（孤页检测+INDEX一致性+矛盾排除） |
+| 2026-07-07 | 📝 修复 | INDEX.md | 修复孤行+新增参考目录+复盘记录补全 |
+| 2026-07-07 | 🔧 新增 | 参考/Tushare-Pro-API参考.md | 编译Tushare Pro 12个核心API接口参考手册（参数/返回字段/积分要求/注意事项） |
+| 2026-07-07 | 📝 复盘 | 复盘记录/复盘_20260707.json | 日常复盘：偏差分析 + 策略建议 + 准确率趋势 |
 | 2026-07-07 | 📝 upgrade | skills/agent-问股/SKILL.md + skills/agent2-分析师/SKILL.md | 新增第零步B数据新鲜度验证步骤：分析前先用腾讯实时行情校验数据是否最新 |
 | 2026-07-07 | 📝 upgrade | scripts/agent_ask/ask.py | 新增数据新鲜度自动校验：启动时用tencent_quote实时价 vs DB收盘价比较，差异>0.5%自动警告 |
 | 2026-07-07 | 📝 upgrade | scripts/utils/auto_sync.py | check_freshness增强：每日逐股滞后检查从条件内移到条件外，新增持仓/自选股覆盖率抽查，缺失>5%自动降级stale |

@@ -121,7 +121,7 @@ def _extract_references(text: str, source_file: str, inside_knowledge: bool = Tr
             # 保留项目内引用
             if target.startswith(("data/", "skills/", "knowledge/")):
                 refs.append({"raw": m.group(0), "target": target, "type": "markdown"})
-            elif inside_knowledge and target.startswith(("策略/", "复盘记录/", "CHANGES.md", "INDEX.md", "LLM-Wiki")):
+            elif inside_knowledge and target.startswith(("策略/", "复盘记录/", "CHANGES.md", "INDEX.md", "LLM-Wiki", "参考/")):
                 # knowledge/ 内文件的相对引用
                 refs.append({"raw": m.group(0), "target": "knowledge/" + target, "type": "markdown"})
     except Exception as e:
@@ -303,7 +303,7 @@ def _check_contradictions(texts: dict) -> list:
 
     # 检查3: 停牌处理规则 — 复盘记录是现状记录，不需要兜底逻辑；只检查策略文件
     for fname, text in texts.items():
-        if fname in ("INDEX.md", "CHANGES.md") or fname.startswith("复盘记录/"):
+        if fname in ("INDEX.md", "CHANGES.md") or fname.startswith("复盘记录/") or fname.startswith("参考/"):
             continue
         if "停牌" in text and not any(kw in text for kw in ["停牌状态未知", "停牌/退市", "停牌中", "数据因停牌", "停牌处理"]):
             contradictions.append({
@@ -334,7 +334,7 @@ def _check_index_consistency(files: dict) -> dict:
     index_files = set()
     for m in re.finditer(r'\[([^\]]+)\]\(([^\)]+)\)', content):
         target = m.group(2).strip()
-        if target.startswith(("策略/", "复盘记录/", "CHANGES.md", "LLM-Wiki")):
+        if target.startswith(("策略/", "复盘记录/", "CHANGES.md", "LLM-Wiki", "参考/")):
             index_files.add(target)
 
     # 实际文件系统中的知识库文件（不含 INDEX.md 自身）

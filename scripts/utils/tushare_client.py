@@ -275,6 +275,337 @@ def get_stk_limit(ts_code: str, trade_date: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def get_adj_factor(ts_code: str = None, trade_date: str = None,
+                   start_date: str = None, end_date: str = None) -> pd.DataFrame:
+    """获取复权因子（doc_id=7）
+
+    返回字段: ts_code, trade_date, adj_factor
+    积分: 2000起，5000高频
+    单次最多: 3000条
+    更新时间: 每天9:30
+
+    复权计算:
+        前复权价 = close × (adj_factor / latest_adj_factor)
+        后复权价 = close × adj_factor
+    """
+    try:
+        kwargs = {}
+        if ts_code:
+            kwargs["ts_code"] = ts_code
+        if trade_date:
+            kwargs["trade_date"] = trade_date
+        if start_date:
+            kwargs["start_date"] = start_date
+        if end_date:
+            kwargs["end_date"] = end_date
+        return pro.adj_factor(**kwargs) if kwargs else pd.DataFrame()
+    except Exception as e:
+        print(f"[tushare] get_adj_factor 失败({ts_code}): {e}")
+        return pd.DataFrame()
+
+
+def get_dividend(ts_code: str = None, ex_date: str = None,
+                 ann_date: str = None) -> pd.DataFrame:
+    """获取分红送股数据（doc_id=9）
+
+    关键返回字段:
+        ts_code, end_date(分红年度), div_proc(实施进度),
+        stk_div(每股送转), cash_div(每股分红税后),
+        ex_date(除权除息日), record_date(股权登记日)
+    积分: 300起
+    单次最多: 10000条
+    """
+    try:
+        kwargs = {}
+        if ts_code:
+            kwargs["ts_code"] = ts_code
+        if ex_date:
+            kwargs["ex_date"] = ex_date
+        if ann_date:
+            kwargs["ann_date"] = ann_date
+        return pro.dividend(**kwargs) if kwargs else pd.DataFrame()
+    except Exception as e:
+        print(f"[tushare] get_dividend 失败({ts_code}): {e}")
+        return pd.DataFrame()
+
+
+def get_stock_basic(ts_code: str = None, list_status: str = "L",
+                    exchange: str = None, market: str = None,
+                    is_hs: str = None) -> pd.DataFrame:
+    """获取股票基础信息（doc_id=122）
+
+    关键返回字段:
+        ts_code, name, industry(所属行业), market(市场类型),
+        list_date(上市日期), delist_date(退市日期),
+        is_hs(沪深港通), act_name(实控人)
+    积分: 基础
+    """
+    try:
+        kwargs = {"list_status": list_status}
+        if ts_code:
+            kwargs["ts_code"] = ts_code
+        if exchange:
+            kwargs["exchange"] = exchange
+        if market:
+            kwargs["market"] = market
+        if is_hs:
+            kwargs["is_hs"] = is_hs
+        return pro.stock_basic(**kwargs)
+    except Exception as e:
+        print(f"[tushare] get_stock_basic 失败({ts_code}): {e}")
+        return pd.DataFrame()
+
+
+def get_share_float(ts_code: str = None, float_date: str = None,
+                    start_date: str = None, end_date: str = None) -> pd.DataFrame:
+    """获取限售股解禁数据（doc_id=450）
+
+    关键返回字段:
+        ts_code, float_date(解禁日期), float_share(流通股份),
+        float_ratio(流通占比%), holder_name(股东名称), share_type(股份类型)
+    积分: 120起
+    单次最多: 6000条
+    """
+    try:
+        kwargs = {}
+        if ts_code:
+            kwargs["ts_code"] = ts_code
+        if float_date:
+            kwargs["float_date"] = float_date
+        if start_date:
+            kwargs["start_date"] = start_date
+        if end_date:
+            kwargs["end_date"] = end_date
+        return pro.share_float(**kwargs) if kwargs else pd.DataFrame()
+    except Exception as e:
+        print(f"[tushare] get_share_float 失败({ts_code}): {e}")
+        return pd.DataFrame()
+
+
+def get_ths_member(ts_code: str = None, con_code: str = None) -> pd.DataFrame:
+    """获取同花顺板块成分股（doc_id=473）
+
+    两种查询模式:
+        1. ts_code=板块代码 → 查该板块所有成分股
+        2. con_code=股票代码 → 查该股票所属所有板块
+    返回字段: trade_date, ts_code(板块), con_code(成分股), name
+    积分: 2000起
+    """
+    try:
+        kwargs = {}
+        if ts_code:
+            kwargs["ts_code"] = ts_code
+        if con_code:
+            kwargs["con_code"] = con_code
+        if not kwargs:
+            return pd.DataFrame()
+        return pro.ths_member(**kwargs)
+    except Exception as e:
+        print(f"[tushare] get_ths_member 失败({ts_code}): {e}")
+        return pd.DataFrame()
+
+
+def get_top_list(ts_code: str = None, trade_date: str = None,
+                 start_date: str = None, end_date: str = None) -> pd.DataFrame:
+    """获取龙虎榜机构/营业部交易明细（doc_id=230）
+
+    返回字段:
+        trade_date, ts_code, name, buy(买入金额), sell(卖出金额),
+        buy_rate(买入占比%), sell_rate(卖出占比%),
+        exalter(营业部/机构名称), exalter_type(类型)
+    积分: 5000起（高级权限）
+    """
+    try:
+        kwargs = {}
+        if ts_code:
+            kwargs["ts_code"] = ts_code
+        if trade_date:
+            kwargs["trade_date"] = trade_date
+        if start_date:
+            kwargs["start_date"] = start_date
+        if end_date:
+            kwargs["end_date"] = end_date
+        return pro.top_list(**kwargs) if kwargs else pd.DataFrame()
+    except Exception as e:
+        print(f"[tushare] get_top_list 失败({ts_code}): {e}")
+        return pd.DataFrame()
+
+
+def get_moneyflow_dc(ts_code: str = None, trade_date: str = None,
+                     start_date: str = None, end_date: str = None) -> pd.DataFrame:
+    """获取个股资金流向（东方财富版 — 更简洁，doc_id=463替代接口）
+
+    相比 moneyflow 经典版:
+        ✅ 含 name(股票名称)、pct_change(涨跌幅)、close(最新价)
+        ✅ 返回净流入额而非买卖分开
+        ⚠️ 无买卖量(手)信息
+    返回字段: trade_date, ts_code, name, pct_change, close,
+              net_amount(主力净流入万元), net_amount_rate(净占比%),
+              buy_elg_amount(超大单), buy_lg_amount(大单)
+    积分: 较低门槛
+    """
+    try:
+        kwargs = {}
+        if ts_code:
+            kwargs["ts_code"] = ts_code
+        if trade_date:
+            kwargs["trade_date"] = trade_date
+        if start_date:
+            kwargs["start_date"] = start_date
+        if end_date:
+            kwargs["end_date"] = end_date
+        return pro.moneyflow_dc(**kwargs) if kwargs else pd.DataFrame()
+    except Exception as e:
+        print(f"[tushare] get_moneyflow_dc 失败({ts_code}): {e}")
+        return pd.DataFrame()
+
+def get_pro_bar(ts_code: str, freq: str = "D", asset: str = "E",
+                start_date: str = None, end_date: str = None,
+                adj: str = None, ma: list = None,
+                factors: list = None) -> pd.DataFrame:
+    """通用行情接口（P0 — 项目最缺失的核心接口）
+
+    统一行情接口，替代 daily/index_daily/fund_daily 等。
+    支持复权(adj)、均线(ma)、换手率/量比(factors)。
+
+    Args:
+        ts_code: 证券代码（不支持多值）
+        freq: D日/W周/M月/1min/5min/15min/30min/60min
+        asset: E股票/I指数/FT期货/FD基金/O期权/CB可转债
+        start_date: 日线YYYYMMDD，分钟线YYYY-MM-DD HH:MM:SS
+        end_date: 结束日期
+        adj: None未复权/qfq前复权/hfq后复权（仅日线）
+        ma: 均线如[5,10,20]→返回ma5/ma10/ma20
+        factors: ['tor']换手率/['vr']量比
+    """
+    try:
+        kwargs = {"ts_code": ts_code, "freq": freq, "asset": asset}
+        if start_date:
+            kwargs["start_date"] = start_date
+        if end_date:
+            kwargs["end_date"] = end_date
+        if adj:
+            kwargs["adj"] = adj
+        if ma:
+            kwargs["ma"] = ma
+        if factors:
+            kwargs["factors"] = factors
+        return ts.pro_bar(**kwargs)
+    except Exception as e:
+        print(f"[tushare] get_pro_bar 失败({ts_code}): {e}")
+        return pd.DataFrame()
+
+
+def get_margin(trade_date: str = None,
+               start_date: str = None, end_date: str = None) -> pd.DataFrame:
+    """获取融资融券交易汇总（P1 — 市场杠杆情绪指标）
+
+    返回: trade_date, exchange, rzye(融资余额), rzmre(融资买入),
+          rzjmr(融资净买入), rqye(融券余额), rqmcl(融券卖出)
+    积分: 基础
+    """
+    try:
+        kwargs = {}
+        if trade_date:
+            kwargs["trade_date"] = trade_date
+        if start_date:
+            kwargs["start_date"] = start_date
+        if end_date:
+            kwargs["end_date"] = end_date
+        return pro.margin(**kwargs) if kwargs else pd.DataFrame()
+    except Exception as e:
+        print(f"[tushare] get_margin 失败: {e}")
+        return pd.DataFrame()
+
+
+def get_hk_hold(ts_code: str = None, trade_date: str = None,
+                start_date: str = None, end_date: str = None) -> pd.DataFrame:
+    """获取沪深港通持股明细（P1 — 外资具体持仓）
+
+    返回: ts_code, name, trade_date, volume(持股数量),
+          ratio(占总股本%), exchange(类型)
+    积分: 2000起
+    """
+    try:
+        kwargs = {}
+        if ts_code:
+            kwargs["ts_code"] = ts_code
+        if trade_date:
+            kwargs["trade_date"] = trade_date
+        if start_date:
+            kwargs["start_date"] = start_date
+        if end_date:
+            kwargs["end_date"] = end_date
+        return pro.hk_hold(**kwargs) if kwargs else pd.DataFrame()
+    except Exception as e:
+        print(f"[tushare] get_hk_hold 失败({ts_code}): {e}")
+        return pd.DataFrame()
+
+
+def get_forecast(ts_code: str = None, start_date: str = None,
+                 end_date: str = None) -> pd.DataFrame:
+    """获取业绩预告（P1 — 选股核心基本面因子）
+
+    返回: ts_code, name, end_date, type(预告类型),
+          p_change_min/p_change_max(净利润变动%)
+    """
+    try:
+        kwargs = {}
+        if ts_code:
+            kwargs["ts_code"] = ts_code
+        if start_date:
+            kwargs["start_date"] = start_date
+        if end_date:
+            kwargs["end_date"] = end_date
+        return pro.forecast(**kwargs) if kwargs else pd.DataFrame()
+    except Exception as e:
+        print(f"[tushare] get_forecast 失败({ts_code}): {e}")
+        return pd.DataFrame()
+
+
+def get_index_global(ts_code: str = None,
+                     start_date: str = None, end_date: str = None) -> pd.DataFrame:
+    """获取全球主要指数行情（P1 — 外围市场联动）
+
+    指数代码: .DJI道指, .IXIC纳指, .SPX标普, .N225日经,
+              .HSI恒生, .FTSE富时, .GDAXI德国DAX
+    返回: ts_code, trade_date, close, pct_chg, vol, amount
+    """
+    try:
+        kwargs = {}
+        if ts_code:
+            kwargs["ts_code"] = ts_code
+        if start_date:
+            kwargs["start_date"] = start_date
+        if end_date:
+            kwargs["end_date"] = end_date
+        return pro.index_global(**kwargs) if kwargs else pd.DataFrame()
+    except Exception as e:
+        print(f"[tushare] get_index_global 失败: {e}")
+        return pd.DataFrame()
+
+
+def get_limit_list_d(trade_date: str = None) -> pd.DataFrame:
+    """获取涨停连板天梯（P0 — 游资追踪核心数据）
+
+    比 limit_list 更详细的连板数据：涨停池/连板池/跌停池/炸板池
+    返回: trade_date, ts_code, name, pct_chg, close,
+          lb_count(连板数), limit_status
+    积分: 5000起
+    """
+    try:
+        kwargs = {}
+        if trade_date:
+            kwargs["trade_date"] = trade_date
+        return pro.limit_list_d(**kwargs) if kwargs else pd.DataFrame()
+    except Exception as e:
+        print(f"[tushare] get_limit_list_d 失败: {e}")
+        return pd.DataFrame()
+
+
+
+
+
 def today_str() -> str:
     """返回今天日期字符串 YYYYMMDD"""
     import datetime
