@@ -60,7 +60,7 @@ Agent4 复盘师(反馈闭环) → Agent7 投资领导(统筹)
 
 | 维度 | 我们(当前) | daily_stock_analysis | 差距 |
 |:-----|:----------|:--------------------|:-----|
-| 部署方式 | 本地Cron+claw MCP | **GitHub Actions+Docker+本地** | 缺零成本云端方案 |
+| 部署方式 | 本地Cron+CronCreate | **GitHub Actions+Docker+本地** | 缺零成本云端方案 |
 | 数据源 | Tushare单源 | **多源自动fallback**(AkShare等6+) | 单点故障风险 |
 | 推送渠道 | PushPlus+QQ | **15+渠道**(Telegram/企微/飞书/邮件等) | 通道单一 |
 | 交互方式 | 定时报告 | **Agent策略问股**(15+策略模板) | 无交互能力 |

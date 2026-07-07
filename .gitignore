@@ -44,6 +44,10 @@ data/checkpoints/
 # 工作树隔离目录（自动生成）
 .claude/worktrees/
 
+# 任务系统 + TodoWrite（运行时生成）
+.tasks/
+.current_todos.json
+
 # Agent 团队收件箱 + 任务输出（运行时生成）
 .claude/teams/
 .claude/task_outputs/

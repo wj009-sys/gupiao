@@ -1,16 +1,3 @@
 {
-  "mcpServers": {
-    "claw": {
-      "command": "node",
-      "args": [
-        "./.claude/mcp-servers/claw/server.js"
-      ]
-    },
-    "qq": {
-      "command": "node",
-      "args": [
-        "./.claude/mcp-servers/qq/server.js"
-      ]
-    }
-  }
+  "mcpServers": {}
 }

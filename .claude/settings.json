@@ -1,4 +1,18 @@
 {
+  "model": "inherit",
+  "effortLevel": "medium",
+  "includeCoAuthoredBy": false,
+  "strictMode": false,
+  "theme": "dark",
+  "cleanupPeriodDays": 90,
+  "smallModel": "claude-haiku-4-5",
+
+  "modelOverrides": {
+    "deep-auditor": "inherit",
+    "research-synthesizer": "inherit",
+    "code-reviewer": "inherit"
+  },
+
   "hooks": {
     "SessionStart": [
       {
@@ -6,16 +20,92 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -u -X utf8 scripts/utils/auto_sync.py --check-only"
+            "command": "python -u -X utf8 scripts/utils/auto_sync.py --check-only",
+            "timeout": 30000
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/protect-knowledge.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/auto-lint.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/save-session-summary.py",
+            "timeout": 15000
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/save-snapshot.py",
+            "timeout": 5000
           }
         ]
       }
     ]
   },
+
   "permissions": {
     "allow": [
       "Bash(python scripts/utils/auto_sync.py:*)",
-      "Bash(python scripts/utils/fetch_all_history.py:*)"
+      "Bash(python scripts/utils/fetch_all_history.py:*)",
+      "Bash(python scripts/utils/knowledge_lint.py:*)",
+      "Bash(python scripts/utils/wechat_send.py:*)",
+      "Bash(python scripts/)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git branch*)",
+      "Bash(git pull*)",
+      "Bash(ls *)",
+      "Bash(mkdir *)",
+      "Bash(head *)",
+      "Bash(wc *)",
+      "Bash(echo *)",
+      "Read",
+      "Glob",
+      "Grep",
+      "WebSearch",
+      "WebFetch",
+      "CronCreate",
+      "CronList",
+      "CronDelete"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(git push --force *)",
+      "Bash(curl * | bash)"
     ]
   }
 }

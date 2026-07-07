@@ -33,6 +33,7 @@
 | [游资追踪策略.md](策略/游资追踪策略.md) | 🔥 龙虎榜基础、游资席位识别方法、资金情绪指数计算、与各策略联动 | Agent9+Agent4 | `scripts/utils/eastmoney_get.py` | 2026-07-05 |
 | [a-stock-data借鉴分析.md](策略/a-stock-data借鉴分析.md) | 🏗️ a-stock-data技术方案吸收记录：mootdx/em_get()/多级优先级/TradingAgents-astock | 全员 | `scripts/utils/mootdx_provider.py`, `scripts/utils/eastmoney_get.py`, `scripts/utils/data_provider.py` | 2026-07-05 |
 | [数据源优先级.md](策略/数据源优先级.md) | 🔌 全局数据源优先级策略(12数据域主/备/兜底+10Agent映射+限流策略) | 全员 | `scripts/utils/_proxy.py`, `scripts/utils/data_provider.py` | 2026-07-05 |
+| [learn-claude-code借鉴分析.md](策略/learn-claude-code借鉴分析.md) | 🏗️ shareAI-lab/learn-claude-code 20章设计模式 vs 项目现状对照分析，TodoWrite/Task System/MessageBus安装计划 | 全员 | — | 2026-07-07 |
 
 ## 📁 复盘记录目录
 

@@ -340,7 +340,7 @@ Agent3（风控官）与 Agent6（操盘手）构成「提案-审查」双轨制
 ## 目录结构
 
 ```
-.mcp.json            - MCP 服务器配置（claw + qq 定时调度）
+.mcp.json            - MCP 服务器配置（已清空，使用内置 Cron 工具替代）
 .env.example         - 环境变量模板
 docs/archive/        - 历史设计文档和过时脚本归档
 data/              - 数据文件（持仓、自选、规则配置、数据库）
@@ -374,10 +374,21 @@ scripts/           - Python 分析脚本
   └── utils/            - 工具函数（Tushare/AkShare/mootdx数据源、em_get()限流网关、技术指标、L2重排序、L3后置分析、风险叠加、RPS、DB管理、自动同步等）
 webui/             - Web界面（FastAPI，策略问股可视化）
 .github/workflows/  - GitHub Actions CI/CD（定时运行全Agent流水线）
-.claude/           - Claude 配置
-  ├── mcp-servers/
-  │   └── claw/        - 定时调度 MCP 服务器 (cron)
+.claude/           - Claude 配置（完整Claude Code集成）
+  ├── mcp-servers/     - 旧版Node.js MCP服务器（已弃用）
+  ├── hooks/           - Hook 脚本（PreToolUse/Stop/PreCompact，Python实现）
+  │   ├── protect-knowledge.py  - 🔒 知识库安全保护（PreToolUse）
+  │   ├── save-session-summary.py - 📋 会话摘要保存（Stop）
+  │   └── save-snapshot.py       - 💾 压缩前快照（PreCompact）
+  ├── agents/          - 自定义子代理定义
+  │   ├── deep-auditor.md        - 🔍 全项目深度审计Agent (opus)
+  │   ├── code-reviewer.md       - 👨‍💻 Python代码审查Agent (sonnet)
+  │   └── research-synthesizer.md - 📊 研究综合Agent (opus)
+  ├── workflows/       - 自动化工作流
+  │   └── darwin-13-health-check.js - 🩺 项目健康度检查工作流
+  ├── settings.json    - 项目共享配置（hooks + permissions）
   ├── settings.local.json - 本地凭据与Token（gitignored）
+  ├── rules/           - 路径作用域规则（agent-scripts/knowledge-files/database-access）
   └── scheduled_tasks.json - 定时任务存储
 knowledge/         - 知识库（Agent4 维护更新）
   ├── 策略/        - 选股/择时/交易策略
@@ -385,7 +396,8 @@ knowledge/         - 知识库（Agent4 维护更新）
   │   ├── 择时策略.md
   │   └── 交易执行规则.md
   └── 复盘记录/    - 历史复盘
-memory/            - Claude 持久记忆
+memory/            - 📁 项目级记忆（决策反思/风控制衡/质量审核，4文件）
+                     📁 持久记忆见: C:\Users\65004\.claude\projects\...\memory\ (MEMORY.md索引，16文件)
 skills/            - 自定义 Skills
   ├── agent1-情报员/SKILL.md + test-prompts.json
   ├── agent2-分析师/SKILL.md + test-prompts.json
@@ -431,21 +443,22 @@ skills/            - 自定义 Skills
 - 单票最大仓位：20%（震荡市）
 - 总仓位上限：80%（震荡市）/ 100%（牛市确认）
 
-## 定时任务（claw MCP 托管）
+## 定时任务（Claude Code 内置 Cron 管理）
 
-使用 claw MCP 服务器管理定时任务，存储在 `.claude/scheduled_tasks.json`。
+使用 Claude Code 内置的 `CronCreate`/`CronList`/`CronDelete` 工具管理定时任务，
+任务持久化存储在 `.claude/scheduled_tasks.json`。
 
 | 时间 | 任务 | cron | 触发方式 |
 |------|------|------|---------|
-| **18:03 工作日** | **🔄 数据自动同步** | `3 18 * * 1-5` | **claw MCP + auto_sync.py → DB更新** |
-| 07:00 工作日 | Agent1 情报采集 | `7 7 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
-| 07:30 工作日 | Agent8 政策分析 | `33 7 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
-| 08:00 工作日 | Agent9 游资追踪 | `3 8 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
-| 08:30 工作日 | Agent2 技术分析 | `13 8 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
-| 09:00 工作日 | Agent5 早盘选股 | `17 9 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
-| 12:00 工作日 | Agent5 午盘选股 | `23 12 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
-| 21:00 工作日 | Agent4 复盘 | `37 21 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
-| 21:30 工作日 | Agent5 晚间选股 | `47 21 * * 1-5` | claw MCP + Python脚本 → 微信推送 |
+| **18:03 工作日** | **🔄 数据自动同步** | `3 18 * * 1-5` | CronCreate → auto_sync.py → DB更新 |
+| 07:00 工作日 | Agent1 情报采集 | `7 7 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
+| 07:30 工作日 | Agent8 政策分析 | `33 7 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
+| 08:00 工作日 | Agent9 游资追踪 | `3 8 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
+| 08:30 工作日 | Agent2 技术分析 | `13 8 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
+| 09:00 工作日 | Agent5 早盘选股 | `17 9 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
+| 12:00 工作日 | Agent5 午盘选股 | `23 12 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
+| 21:00 工作日 | Agent4 复盘 | `37 21 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
+| 21:30 工作日 | Agent5 晚间选股 | `47 21 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
 | 按需 | Agent3 风控检查 | - | 手动 `/风控官` |
 | 按需 | Agent5 盘中/按需选股 | - | 手动 `/选股` 或 `/盘中选股` |
 | 按需 | Agent6 操盘手 | - | 手动 `/操盘` |
@@ -455,8 +468,7 @@ skills/            - 自定义 Skills
 
 > **注意**：cron 分钟字段使用非整点值(7/13/17/23/37/47)以避免:00/:30的集中负载。
 
-> MCP server: `.claude/mcp-servers/claw/server.js` (stdio JSON-RPC)
-> 工具: `cron` (创建) / `cron_list` (查询) / `cron_delete` (删除)
+> 内置工具: `CronCreate` (创建) / `CronList` (查询) / `CronDelete` (删除)
 
 ### 本地命令
 
@@ -579,6 +591,26 @@ source venv/Scripts/activate
 python -X utf8 scripts/agent_ask/ask.py --code 000001.SZ --strategy 均线
 # 可选策略：均线/缠论/波浪/量价/题材/MACD/KDJ/RSI/布林/综合
 # --mode detail 输出详细分析
+
+# 📋 Harness 工具（learn-claude-code 设计模式）
+# ============================================#
+
+# TodoWrite — 规划工具（s05模式：先列计划再执行）
+python scripts/utils/todo_write.py --create "今日任务" --step "步骤1:做A" --step "步骤2:做B"
+python scripts/utils/todo_write.py --update 1 --status completed
+python scripts/utils/todo_write.py --show
+
+# Task System DAG — 文件持久化任务（s12模式：大目标拆小任务，依赖图）
+python scripts/utils/task_manager.py create --subject "任务名" --description "描述" --blocked-by task_id_1 task_id_2
+python scripts/utils/task_manager.py claim TASK_ID --owner Agent2
+python scripts/utils/task_manager.py update TASK_ID --status completed
+python scripts/utils/task_manager.py list
+python scripts/utils/task_manager.py dag TASK_ID
+
+# MessageBus — Agent间通信（s15模式：JSONL文件邮箱）
+python scripts/utils/message_bus.py send --from Agent1 --to Agent7 --content "消息内容" --type result
+python scripts/utils/message_bus.py read Agent7
+python scripts/utils/message_bus.py list
 ```
 
 ## 优化历史（Darwin）
@@ -597,7 +629,9 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001.SZ --strategy 均线
 | 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文9.0** — 借鉴ZhuLinsen三项目全面架构升级(8因子体系+L1→L2→L3+LLM排序+问股系统) | L2 LLM排序+l2_rerank+agent_ask问股9策略+SKILL+env | 已完成 |
 | 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文10.0** — 全项目全面审计修复101项(27CRITICAL+13HIGH+37MEDIUM+24LOW) | 知识库+data全面审计修复14项+knowledge_lint 2项Bug修复+补录11只指数 | c31188d, 1a83e8f, 26682e1 |
 | 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文11.0** — 全项目全面审计修复105项(8CRITICAL+22HIGH+31MEDIUM+40LOW+4INFO) | 7维度并行审计+交叉引用+38项自动修复+requirements.txt+GHA Agent4补全+Token安全+CLAUDE.md修正 | c31188d |
-| 2026-07-06 | `auto-optimize/20260627-0020` | **达尔文12.0** — 全项目深度全面优化(3CRITICAL+6HIGH+8MEDIUM+5LOW共22项) | DB层API封装(6个新方法+4索引)+Agent数据访问重构(trader/leader/review DB优先)+裸SQL消除+文档修复+配置同步 | **当前** |
+| 2026-07-06 | `auto-optimize/20260627-0020` | **达尔文12.0** — 全项目深度全面优化(3CRITICAL+6HIGH+8MEDIUM+5LOW共22项) | DB层API封装(6个新方法+4索引)+Agent数据访问重构(trader/leader/review DB优先)+裸SQL消除+文档修复+配置同步 | |
+| 2026-07-07 | `auto-optimize/20260627-0020` | **达尔文13.0** — Claude Code基础设施升级(全程opus学习+15项改进) | settings.json全面升级(4钩子/扩展权限)+hooks保护(pre-knowledge/session-summary/snapshot)+agents(deep-auditor/code-reviewer/synthesizer)+workflow(health-check)+CLAUDE.md目录结构更新+memory文档化 | |
+| 2026-07-07 | `auto-optimize/20260627-0020` | **达尔文13.1** — hooks Node.js→Python修复+MCP移除+learn-claude-code 3模式安装(全程opus学习) | hooks重写(protect-knowledge/save-session-summary/save-snapshot .js→.py); MCP claw/qq移除; PostToolUse auto-lint; agent增强; .claude/rules/; settings优化; learn-claude-code 20章研读+TodoWrite+TaskSystem+MessageBus安装 | **当前** |
 
 优化内容（第9轮-达尔文9.0）：借鉴ZhuLinsen三项目全面架构升级
 - **L1→L2→L3选股管线**：stock_picker.py重构为三级管线(L1评分→L2重排序→L3后置分析器)
@@ -644,7 +678,7 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001.SZ --strategy 均线
 - **配置修复**：修复止损规则.json的type名重名（大盘联动止损×2→大盘联动止损/大盘联动清仓）
 - **知识库修复**：CHANGES.md路径前缀补全；复盘记录 correct=null→false；knowledge_lint.py stderr AttributeError加注释
 
-### 工具脚本（scripts/utils/ 补充清单 — 共34个脚本）
+### 工具脚本（scripts/utils/ 补充清单 — 共37个脚本）
 
 | 脚本 | 行数 | 用途 |
 |:-----|:----:|:-----|
@@ -682,4 +716,7 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001.SZ --strategy 均线
 | `ths_provider.py` | ~250 | 同花顺数据源Provider（热榜/预测） |
 | `llm_config.py` | ~100 | LLM配置管理（L2重排序辅助） |
 | `_proxy.py` | ~80 | SOCKS5代理配置 |
+| `todo_write.py` | ~150 | 📋 TodoWrite规划工具（Agent执行前先列计划，learn-claude-code s05模式） |
+| `task_manager.py` | ~250 | 📋 文件持久化任务系统DAG（依赖图+认领，learn-claude-code s12模式） |
+| `message_bus.py` | ~150 | 📋 Agent间JSONL文件邮箱通信（learn-claude-code s15-s16模式） |
 

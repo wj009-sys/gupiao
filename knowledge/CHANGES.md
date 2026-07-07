@@ -15,6 +15,27 @@
 | 2026-07-05 | chore | .claude/scheduled_tasks.json | 达尔文16.0: 自动同步任务ID重命名 |
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
+| 2026-07-07 | 📝 feat | scripts/utils/todo_write.py | 达尔文13.1: learn-claude-code s05 TodoWrite规划工具安装 |
+| 2026-07-07 | 📝 feat | scripts/utils/task_manager.py | 达尔文13.1: learn-claude-code s12 Task System DAG安装 |
+| 2026-07-07 | 📝 feat | scripts/utils/message_bus.py | 达尔文13.1: learn-claude-code s15-s16 MessageBus Agent通信安装 |
+| 2026-07-07 | 📝 feat | knowledge/策略/learn-claude-code借鉴分析.md | 达尔文13.1: learn-claude-code 20章对照分析报告 |
+| 2026-07-07 | 📝 feat | .gitignore | 达尔文13.1: 添加.tasks/和.current_todos.json |
+| 2026-07-07 | 📝 feat | CLAUDE.md | 达尔文13.1: 添加Harness工具章节+工具脚本清单更新(34→37)+优化历史 |
+| 2026-07-07 | 🐛 fix | .claude/hooks/*.py | 达尔文13.1: Node.js→Python hooks重写(3个) — 环境中无node导致所有hook静默失败 |
+| 2026-07-07 | 🐛 fix | .mcp.json | 达尔文13.1: 移除claw+qq MCP服务器(node依赖, 环境中不可用) — 功能已由内置CronCreate+wechat_send.py覆盖 |
+| 2026-07-07 | 🐛 fix | CLAUDE.md | 达尔文13.1: 更新目录结构(.js→.py, 移除mcp-servers子条目); 更新定时任务章节(claw MCP→内置CronCreate) |
+| 2026-07-07 | 🐛 fix | .env.example | 达尔文13.1: 移除QQ MCP引用 |
+| 2026-07-07 | 📝 feat | .claude/hooks/auto-lint.py | 达尔文13.1: 新增PostToolUse hook — 编辑后自动检查知识库/报告格式 |
+| 2026-07-07 | 📝 feat | .claude/settings.json | 达尔文13.1: 添加PostToolUse hook + modelOverrides + cleanupPeriodDays + smallModel |
+| 2026-07-07 | 📝 feat | .claude/rules/ | 达尔文13.1: 新增路径作用域规则(agent-scripts/knowledge-files/database-access) |
+| 2026-07-07 | 📝 feat | .claude/agents/*.md | 达尔文13.1: 增强Agent定义(isolation/effort/color/background字段) |
+| 2026-07-07 | 🗑️ chore | .claude/workflows/darwin-11-audit.js | 达尔文13.1: 归档过时workflow到docs/archive/ |
+| 2026-07-07 | 📝 fix | GHA 00-daily-analysis.yml | Python版本3.10→3.12 |
+| 2026-07-07 | 📝 fix | CLAUDE.md | 达尔文13.0: 目录结构更新(.claude子目录展开+memory路径澄清) |
+| 2026-07-07 | 📝 feat | .claude/workflows/darwin-13-health-check.js | 达尔文13.0: 创建健康检查工作流(settings/hooks/agents审计+知识库检查) |
+| 2026-07-07 | 📝 feat | .claude/agents/ | 达尔文13.0: 创建agents目录(deep-auditor/code-reviewer/research-synthesizer) |
+| 2026-07-07 | 📝 feat | .claude/hooks/ | 达尔文13.0: 创建hooks目录(保护知识库+会话摘要+压缩快照 3脚本) |
+| 2026-07-07 | 📝 feat | .claude/settings.json | 达尔文13.0: settings全面升级(4钩子+扩展权限+effortLevel) |
 | 2026-07-07 | 📝 提取 | memory_extractor_2026-07-07 | 自动提取15条知识(4份报告) |
 | 2026-07-07 | 📝 提取 | memory_extractor_2026-07-07 | 自动提取10条知识(4份报告) |
 | 2026-07-07 | 📝 模块 | Phase3记忆提取器 | MemoryExtractor+管线闭环+集成测试6/6通过+验证已提取6份报告知识 |
