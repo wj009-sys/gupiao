@@ -15,6 +15,14 @@
 | 2026-07-05 | chore | .claude/scheduled_tasks.json | 达尔文16.0: 自动同步任务ID重命名 |
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
+| 2026-07-07 | 📝 提取 | memory_extractor_2026-07-07 | 自动提取15条知识(4份报告) |
+| 2026-07-07 | 📝 提取 | memory_extractor_2026-07-07 | 自动提取10条知识(4份报告) |
+| 2026-07-07 | 📝 模块 | Phase3记忆提取器 | MemoryExtractor+管线闭环+集成测试6/6通过+验证已提取6份报告知识 |
+| 2026-07-07 | 📝 提取 | memory_extractor_2026-07-06 | 自动提取25条知识(8份报告) |
+| 2026-07-07 | 📝 提取 | memory_extractor_2026-07-06 | 自动提取25条知识(8份报告) |
+| 2026-07-07 | 📝 模块 | Phase2调度器+管线 | AgentOrchestrator波次调度+run_daily_pipeline入口+集成测试10/10通过 |
+| 2026-07-07 | 📝 模块 | Phase1三件套 | MessageBus+LLMClient+ContextCompact+集成测试+.gitignore更新 |
+| 2026-07-07 | 📝 决策 | 投资决策_2026-07-07.md | 投资领导补跑7月7日早间Agent流水线+生成午盘选股+风控+交易计划+最终决策 |
 | 2026-07-06 | 📝 复盘 | 复盘记录/复盘_20260706.json | 日常复盘：偏差分析 + 策略建议 + 准确率趋势 |
 | 2026-07-06 | 📝 fix | scripts/utils/backfill_ths_daily.py | ths_daily概念板块数据修复: THS AkShare回填55K行/118天+DB-first fallback链 |
 | 2026-07-05 | 📝 feat | policy_analyst.py | Agent8持仓影响分析上线 — DeepSeek LLM驱动(24只全覆盖+分批+容错解析) |

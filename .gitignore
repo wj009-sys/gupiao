@@ -44,8 +44,19 @@ data/checkpoints/
 # 工作树隔离目录（自动生成）
 .claude/worktrees/
 
+# Agent 团队收件箱 + 任务输出（运行时生成）
+.claude/teams/
+.claude/task_outputs/
+
 # 交易日历缓存（自动生成，如不再需版本控制：git rm --cached data/trading_calendar.json）
 # data/trading_calendar.json 目前仍被 git 跟踪，完全忽略前需 git rm --cached
 
 # WebUI运行日志
 logs/*.log
+
+# 测试覆盖率报告（自动生成）
+.coverage
+.coverage.*
+
+# WebUI 服务日志（运行时）
+webui/server.log

@@ -1,6 +1,6 @@
 # 📚 知识库索引
 
-> 最后更新：2026-07-05
+> 最后更新：2026-07-07
 > 维护者：复盘师(Agent4)
 > 说明：每次知识库变更后自动更新此索引
 
@@ -43,6 +43,9 @@
 | [复盘_20260702.json](复盘记录/复盘_20260702.json) | 2026-07-02 | 日常复盘 | 大盘-2.03%大阴线复盘 |
 | [复盘_20260703.json](复盘记录/复盘_20260703.json) | 2026-07-03 | 日常复盘 | 环境评分分离问题、大面积停牌 |
 | [复盘_20260704.json](复盘记录/复盘_20260704.json) | 2026-07-04 | 日常复盘 | 偏空89.5%暂缓交易、风控等级HIGH |
+| [复盘_20260706.json](复盘记录/复盘_20260706.json) | 2026-07-06 | 日度复盘 | 全Agent质量审核+风控仲裁+持仓管理 |
+| [提取_2026-07-06.md](复盘记录/提取_2026-07-06.md) | 2026-07-06 | 自动知识提取（MD） | 25条知识(17风控+6策略+2市场) |
+| [提取_2026-07-06.json](复盘记录/提取_2026-07-06.json) | 2026-07-06 | 自动知识提取（JSON） | 结构化提取数据 |
 
 ## 📁 外部引用
 
@@ -72,6 +75,12 @@
 | `skills/agent-问股/SKILL.md` | 全部 | 策略问股Agent规范 |
 | `skills/agent8-政策分析师/SKILL.md` | 政策分析策略 | 政策分析师操作规范 |
 | `skills/agent9-游资追踪师/SKILL.md` | 游资追踪策略 | 游资追踪师操作规范 |
+| `scripts/utils/message_bus.py` | 全部 | Agent团队文件收件箱通信总线（Phase1） |
+| `scripts/utils/llm_client.py` | 全部 | LLM API三层错误恢复封装（Phase1） |
+| `scripts/utils/context_compact.py` | 全部 | 四层上下文压缩管线（Phase1） |
+| `scripts/utils/agent_orchestrator.py` | 全部 | Agent波次式并行调度器（Phase2） |
+| `scripts/utils/memory_extractor.py` | 全部 | 知识自动提取器（Phase3） |
+| `scripts/run_daily_pipeline.py` | 全部 | 每日全流程管线入口（Phase2+3） |
 | `scripts/utils/eastmoney_get.py` | 全部 | 东方财富限流数据网关（吸收 a-stock-data） |
 | `scripts/utils/mootdx_provider.py` | 全部 | mootdx TCP免费数据源（吸收 a-stock-data） |
 | `knowledge/复盘记录/复盘_20260706.json` | 全部 | 2026-07-06 日度复盘数据 |
@@ -97,4 +106,6 @@ TradingAgents借鉴分析.md ←→ 全部 (多Agent制衡/决策记忆/三方�
      ↕
 memory/决策反思.md ←─ Agent7次日自动加载 (决策记忆)
 ```
+| [复盘记录/提取_2026-07-07.json](复盘记录/提取_2026-07-07.json) | 未知日期 | 日常复盘 | — |
+| [复盘记录/提取_2026-07-07.md](复盘记录/提取_2026-07-07.md) | 未知日期 | 日常复盘 | — |
 

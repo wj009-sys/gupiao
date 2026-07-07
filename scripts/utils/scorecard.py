@@ -204,15 +204,60 @@ class FundamentalConfirmRule(ScorecardRule):
             return {"delta": 0, "reasons": [], "tags": []}
 
 
+class RiskOverlayRule(ScorecardRule):
+    """风险叠加层 — 集成 risk_overlay.py 的6项独立风险检查
+
+    包括：单日涨跌/量比异常/负PE/MACD弱势/高PB/连跌惩罚
+    veto → delta=-100（强行否决），penalty → 负分叠加
+    """
+    name = "风险叠加"
+
+    def apply(self, ts_code: str, trade_date: str, factor_scores: dict = None) -> dict:
+        try:
+            from scripts.utils.risk_overlay import RiskOverlay
+            overlay = RiskOverlay()
+            result = overlay.apply_all(ts_code, trade_date)
+
+            if result.get("veto"):
+                return {
+                    "delta": -100,
+                    "reasons": result.get("reasons", ["风险叠加否决"]),
+                    "tags": ["风险否决"],
+                }
+
+            penalty = result.get("penalty", 0)
+            if penalty < 0:
+                # penalty 已是正值，转为负 delta
+                penalty_abs = abs(penalty)
+            else:
+                penalty_abs = penalty
+
+            reasons = result.get("reasons", [])
+            if penalty_abs > 0 and reasons:
+                return {
+                    "delta": -min(penalty_abs, 50),  # 最多扣50分
+                    "reasons": [f"风险叠加: {'; '.join(reasons[:3])}"],
+                    "tags": ["风险扣分"],
+                }
+
+            return {"delta": 0, "reasons": [], "tags": []}
+
+        except Exception as e:
+            print(f"  [WARN] scorecard RiskOverlay 执行失败 ({ts_code}): {e}")
+            return {"delta": 0, "reasons": [], "tags": []}
+
+
 class Scorecard:
     """
     L3 后置分析器 — 对 Top N 候选进行最终审核调整
 
     组合多个 ScorecardRule，对每只股票进行独立评分调整。
     借鉴 AlphaSift 的 scorecard + DSA 后置分析设计。
+
+    v2: 新增 RiskOverlayRule — 独立风险叠加层
     """
 
-    def __init__(self):
+    def __init__(self, enable_risk_overlay: bool = True):
         self.rules = [
             BreakoutConfirmRule(),
             VolumeConfirmRule(),
@@ -220,6 +265,8 @@ class Scorecard:
             SectorMomentumRule(),
             FundamentalConfirmRule(),
         ]
+        if enable_risk_overlay:
+            self.rules.append(RiskOverlayRule())
 
     def evaluate(self, ts_code: str, trade_date: str,
                  factor_scores: dict = None, base_score: float = None) -> dict:

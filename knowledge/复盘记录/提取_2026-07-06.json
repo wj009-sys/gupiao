@@ -1,0 +1,209 @@
+{
+  "date": "2026-07-06",
+  "reports_loaded": 8,
+  "reports_failed": 0,
+  "items": [
+    {
+      "type": "market_observation",
+      "name": "市场关键观察和模式 - 大盘环境评分: 45",
+      "content": "大盘环境评分: 45",
+      "source": "agent2",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "market_observation",
+      "name": "市场关键观察和模式 - 板块涨幅有限，无明显领涨",
+      "content": "板块涨幅有限，无明显领涨",
+      "source": "agent2",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 风险等级: 🔴 **HIGH**",
+      "content": "风险等级: 🔴 **HIGH**",
+      "source": "agent3",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 止损 | **龙净环保** | 高点回撤22.7%",
+      "content": "止损 | **龙净环保** | 高点回撤22.7%",
+      "source": "agent3",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 止损 | **华友钴业** | 高点回撤33.8%",
+      "content": "止损 | **华友钴业** | 高点回撤33.8%",
+      "source": "agent3",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 止损 | **华电新能** | 高点回撤28.9%",
+      "content": "止损 | **华电新能** | 高点回撤28.9%",
+      "source": "agent3",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 止损 | **北方稀土** | 高点回撤18.4%",
+      "content": "止损 | **北方稀土** | 高点回撤18.4%",
+      "source": "agent3",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 止盈 | 华友钴业(+34.3%",
+      "content": "止盈 | 华友钴业(+34.3%",
+      "source": "agent3",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 止盈 | 华电新能(+54.3%",
+      "content": "止盈 | 华电新能(+54.3%",
+      "source": "agent3",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 止盈 | 北方稀土(+473000%",
+      "content": "止盈 | 北方稀土(+473000%",
+      "source": "agent3",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 仓位 | **100%** | ≤50% | 🔴 超限",
+      "content": "仓位 | **100%** | ≤50% | 🔴 超限",
+      "source": "agent3",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "strategy_adjustment",
+      "name": "策略调整建议 - 减仓** | 龙净环保（36%",
+      "content": "减仓** | 龙净环保（36%",
+      "source": "agent3",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "strategy_adjustment",
+      "name": "策略调整建议 - 减仓** | 中材国际(-16.3%",
+      "content": "减仓** | 中材国际(-16.3%",
+      "source": "agent3",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "strategy_adjustment",
+      "name": "策略调整建议 - 减仓** | 宏川智慧(-19.3%",
+      "content": "减仓** | 宏川智慧(-19.3%",
+      "source": "agent3",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "strategy_adjustment",
+      "name": "策略调整建议 - 减仓** | 顺丰控股(-28.2%",
+      "content": "减仓** | 顺丰控股(-28.2%",
+      "source": "agent3",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "strategy_adjustment",
+      "name": "策略调整建议 - 减仓** | 天和磁材(-29.6%",
+      "content": "减仓** | 天和磁材(-29.6%",
+      "source": "agent3",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 风险等级: MEDIUM | 投资领导审核通过",
+      "content": "风险等级: MEDIUM | 投资领导审核通过",
+      "source": "agent6",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 止损** | 🟡 触发 | 从高点回撤22.7%",
+      "content": "止损** | 🟡 触发 | 从高点回撤22.7%",
+      "source": "agent7",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 止损** | 🟡 触发 | 从高点回撤33.8%",
+      "content": "止损** | 🟡 触发 | 从高点回撤33.8%",
+      "source": "agent7",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 止损** | 🟡 触发 | 从高点回撤28.9%",
+      "content": "止损** | 🟡 触发 | 从高点回撤28.9%",
+      "source": "agent7",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 止损** | 🟡 触发 | 从高点回撤18.4%",
+      "content": "止损** | 🟡 触发 | 从高点回撤18.4%",
+      "source": "agent7",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 止损 | 高点回撤22.7%",
+      "content": "止损 | 高点回撤22.7%",
+      "source": "agent7",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 止损设14.37(-2.5%",
+      "content": "止损设14.37(-2.5%",
+      "source": "agent7",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "risk_discovery",
+      "name": "风控新发现 - 仓位** | 🔴 超限",
+      "content": "仓位** | 🔴 超限",
+      "source": "agent7",
+      "confidence": "low",
+      "tags": []
+    },
+    {
+      "type": "strategy_adjustment",
+      "name": "策略调整建议 - 建议改进：非交易日不自动运行，改由数据同步后触发",
+      "content": "建议改进：非交易日不自动运行，改由数据同步后触发",
+      "source": "agent7",
+      "confidence": "low",
+      "tags": []
+    }
+  ],
+  "llm_used": false,
+  "errors": []
+}

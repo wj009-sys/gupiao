@@ -1,0 +1,158 @@
+{
+  "date": "2026-07-07",
+  "reports_loaded": 4,
+  "reports_failed": 0,
+  "items": [
+    {
+      "type": "market_observation",
+      "name": "大盘环境评分: 45/100",
+      "content": "大盘环境评分: 45/100",
+      "source": "agent7",
+      "confidence": "high",
+      "tags": []
+    },
+    {
+      "type": "market_observation",
+      "name": "[上证指数] 上证指数 | 4041.24 | -0.06%",
+      "content": "| 上证指数 | 4041.24 | -0.06% | KDJ金叉但MACD空头，均线缠绕，RSI 45.9偏弱",
+      "source": "agent7",
+      "confidence": "high",
+      "tags": [
+        "上证指数",
+        "RSI",
+        "KDJ",
+        "MACD"
+      ]
+    },
+    {
+      "type": "market_observation",
+      "name": "[OBV] 深证成指 | 15416.8 | -1.16%",
+      "content": "| 深证成指 | 15416.8 | -1.16% | 空头排列，OBV量能下降",
+      "source": "agent7",
+      "confidence": "high",
+      "tags": [
+        "OBV"
+      ]
+    },
+    {
+      "type": "market_observation",
+      "name": "[OBV] 创业板指 | 3948.86 | -1.77%",
+      "content": "| 创业板指 | 3948.86 | -1.77% | 空头排列，OBV量能下降",
+      "source": "agent7",
+      "confidence": "high",
+      "tags": [
+        "OBV"
+      ]
+    },
+    {
+      "type": "market_observation",
+      "name": "[半导体/存储芯片] | 最强板块 | 半导体/存储芯片（长电科技+5.44%、华天科技+10%首板涨停）",
+      "content": "| 最强板块 | 半导体/存储芯片（长电科技+5.44%、华天科技+10%首板涨停）",
+      "source": "agent7",
+      "confidence": "medium",
+      "tags": [
+        "半导体/存储芯片",
+        "🏆 最强板块"
+      ]
+    },
+    {
+      "type": "market_observation",
+      "name": "宏观 | 美联储6月会议纪要、中国资产大爆发、存储芯片涨价",
+      "content": "宏观 | 美联储6月会议纪要、中国资产大爆发、存储芯片涨价",
+      "source": "agent7",
+      "confidence": "high",
+      "tags": []
+    },
+    {
+      "type": "market_observation",
+      "name": "[KDJ] MACD多头+KDJ金叉",
+      "content": "MACD多头+KDJ金叉",
+      "source": "agent7",
+      "confidence": "high",
+      "tags": [
+        "KDJ",
+        "MACD"
+      ]
+    },
+    {
+      "type": "risk_discovery",
+      "name": "[龙净环保仓位] | 龙净环保仓位 | 超限",
+      "content": "| 龙净环保仓位 | 超限",
+      "source": "agent7",
+      "confidence": "high",
+      "tags": [
+        "龙净环保仓位"
+      ]
+    },
+    {
+      "type": "risk_discovery",
+      "name": "[龙净环保移动止损] | 龙净环保移动止损 | 触发",
+      "content": "| 龙净环保移动止损 | 触发",
+      "source": "agent7",
+      "confidence": "high",
+      "tags": [
+        "龙净环保移动止损"
+      ]
+    },
+    {
+      "type": "risk_discovery",
+      "name": "[华友钴业移动止损] | 华友钴业移动止损 | 触发",
+      "content": "| 华友钴业移动止损 | 触发",
+      "source": "agent7",
+      "confidence": "high",
+      "tags": [
+        "华友钴业移动止损"
+      ]
+    },
+    {
+      "type": "risk_discovery",
+      "name": "[华电新能移动止损] | 华电新能移动止损 | 触发",
+      "content": "| 华电新能移动止损 | 触发",
+      "source": "agent7",
+      "confidence": "high",
+      "tags": [
+        "华电新能移动止损"
+      ]
+    },
+    {
+      "type": "risk_discovery",
+      "name": "[北方稀土移动止损] | 北方稀土移动止损 | 触发",
+      "content": "| 北方稀土移动止损 | 触发",
+      "source": "agent7",
+      "confidence": "high",
+      "tags": [
+        "北方稀土移动止损"
+      ]
+    },
+    {
+      "type": "risk_discovery",
+      "name": "[全仓63,800股] | 全仓63,800股 | 触发",
+      "content": "| 全仓63,800股 | 触发",
+      "source": "agent7",
+      "confidence": "high",
+      "tags": [
+        "全仓63,800股"
+      ]
+    },
+    {
+      "type": "risk_discovery",
+      "name": "[总仓位超限] | 总仓位超限 |",
+      "content": "| 总仓位超限 |",
+      "source": "agent7",
+      "confidence": "high",
+      "tags": [
+        "总仓位超限"
+      ]
+    },
+    {
+      "type": "strategy_adjustment",
+      "name": "减仓和红利低波清仓以逼近50%",
+      "content": "减仓和红利低波清仓以逼近50%",
+      "source": "agent7",
+      "confidence": "medium",
+      "tags": []
+    }
+  ],
+  "llm_used": false,
+  "errors": []
+}
