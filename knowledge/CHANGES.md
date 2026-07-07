@@ -43,6 +43,20 @@
 | 2026-07-07 | 📝 提取 | memory_extractor_2026-07-07 | 自动提取15条知识(4份报告) |
 | 2026-07-07 | 📝 提取 | memory_extractor_2026-07-07 | 自动提取10条知识(4份报告) |
 | 2026-07-07 | 📝 模块 | Phase3记忆提取器 | MemoryExtractor+管线闭环+集成测试6/6通过+验证已提取6份报告知识 |
+| 2026-07-07 | 🐛 fix | scripts/agent_ask/ask.py | 达尔文14.0: 修复 _DB_PATH/sqlite3 未定义导致数据新鲜度校验静默NameError；3处bare except:pass改为警告输出 |
+| 2026-07-07 | 🐛 fix | scripts/agent1-情报采集/fetch_all.py | 达尔文14.0: 修复指数pct_chg字段名错误(info.get("pct_change")→info.get("pct_chg"))；公告循环bare except改为警告输出 |
+| 2026-07-07 | 🐛 fix | scripts/utils/auto_sync.py | 达尔文14.0: 修复dp_status前向引用UnboundLocalError；dp_behind==0但覆盖率不足时触发回补；INDICATOR_COLS集中化从db_manager导入；f-string SQL添加表名列白名单断言 |
+| 2026-07-07 | 📝 upgrade | scripts/utils/db_manager.py | 达尔文14.0: CREATE_TABLES_SQL/daily_price注释新增8个扩展列文档；CREATE_INDEXES_SQL注册11个缺失索引(adj/dragon/hot_money/lockup/policy/portfolio/stock) |
+| 2026-07-07 | 📝 upgrade | scripts/utils/backfill_indicators.py | 达尔文14.0: INDICATOR_COLS改为从db_manager.DAILY_INDICATOR_COLS导入(消除3处重复定义) |
+| 2026-07-07 | 📝 upgrade | scripts/utils/fetch_remaining.py + sync_sector_moneyflow.py | 达尔文14.0: 移除重复的margin/moneyflow_mkt CREATE TABLE SQL(由db_manager集中管理) |
+| 2026-07-07 | 🐛 fix | scripts/agent6-操盘/trader.py | 达尔文14.0: get_limit_prices新增689xxx(科创板扩展)和920xxx(北交所)前缀检查 |
+| 2026-07-07 | 🐛 fix | scripts/agent9-游资追踪/hot_money_tracker.py | 达尔文14.0: net_lg_amount语义修复(buy_lg_amount-sell_lg_amount替代net_amount) |
+| 2026-07-07 | 🐛 fix | scripts/agent3-风控/risk_check.py | 达尔文14.0: 修复index_analysis→indices key顺序；4个独立DatabaseManager实例改为模块级单例 |
+| 2026-07-07 | 📝 upgrade | knowledge/策略/选股策略.md | 达尔文14.0: 去重(合并5组重复auto-extraction)；scoring_profile示例补全10参数 |
+| 2026-07-07 | 📝 upgrade | knowledge/策略/择时策略.md | 达尔文14.0: 去重(合并4组重复auto-extraction) |
+| 2026-07-07 | 📝 upgrade | knowledge/INDEX.md | 达尔文14.0: 移除孤行(提取_2026-07-07) |
+| 2026-07-07 | 🐛 fix | skills/agent1-情报员/SKILL.md | 达尔文14.0: 添加目录名不一致注释 |
+| 2026-07-07 | 🗑️ chore | memory/投研-QQ通知推送.md | 达尔文14.0: 记录废弃QQ工具引用(已无法直接编辑) |
 | 2026-07-07 | 📝 提取 | memory_extractor_2026-07-06 | 自动提取25条知识(8份报告) |
 | 2026-07-07 | 📝 提取 | memory_extractor_2026-07-06 | 自动提取25条知识(8份报告) |
 | 2026-07-07 | 📝 模块 | Phase2调度器+管线 | AgentOrchestrator波次调度+run_daily_pipeline入口+集成测试10/10通过 |

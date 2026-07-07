@@ -314,7 +314,8 @@ def generate_data_json(trade_date: str = None) -> dict:
                     for a in anns:
                         a["watch_code"] = code
                     ann_list.extend(anns)
-                except Exception:
+                except Exception as e:
+                    print(f"  [WARN] 公告抓取失败 {code}: {e}")
                     continue
             if ann_list:
                 # 按日期排序取最新 20 条
@@ -359,7 +360,7 @@ def _save_to_db(data: dict):
                     "ts_code": _INDEX_NAME_MAP.get(name, name),
                     "trade_date": trade_date,
                     "close": info.get("close"),
-                    "pct_chg": info.get("pct_change"),
+                    "pct_chg": info.get("pct_chg"),
                     "amount": info.get("amount", 0) * 1e4,  # 亿元转万元
                 })
             if rows:

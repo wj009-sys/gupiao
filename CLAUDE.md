@@ -631,7 +631,8 @@ python scripts/utils/message_bus.py list
 | 2026-07-04 | `auto-optimize/20260627-0020` | **达尔文11.0** — 全项目全面审计修复105项(8CRITICAL+22HIGH+31MEDIUM+40LOW+4INFO) | 7维度并行审计+交叉引用+38项自动修复+requirements.txt+GHA Agent4补全+Token安全+CLAUDE.md修正 | c31188d |
 | 2026-07-06 | `auto-optimize/20260627-0020` | **达尔文12.0** — 全项目深度全面优化(3CRITICAL+6HIGH+8MEDIUM+5LOW共22项) | DB层API封装(6个新方法+4索引)+Agent数据访问重构(trader/leader/review DB优先)+裸SQL消除+文档修复+配置同步 | |
 | 2026-07-07 | `auto-optimize/20260627-0020` | **达尔文13.0** — Claude Code基础设施升级(全程opus学习+15项改进) | settings.json全面升级(4钩子/扩展权限)+hooks保护(pre-knowledge/session-summary/snapshot)+agents(deep-auditor/code-reviewer/synthesizer)+workflow(health-check)+CLAUDE.md目录结构更新+memory文档化 | |
-| 2026-07-07 | `auto-optimize/20260627-0020` | **达尔文13.1** — hooks Node.js→Python修复+MCP移除+learn-claude-code 3模式安装(全程opus学习) | hooks重写(protect-knowledge/save-session-summary/save-snapshot .js→.py); MCP claw/qq移除; PostToolUse auto-lint; agent增强; .claude/rules/; settings优化; learn-claude-code 20章研读+TodoWrite+TaskSystem+MessageBus安装 | **当前** |
+| 2026-07-07 | `auto-optimize/20260627-0020` | **达尔文13.1** — hooks Node.js→Python修复+MCP移除+learn-claude-code 3模式安装(全程opus学习) | hooks重写(protect-knowledge/save-session-summary/save-snapshot .js→.py); MCP claw/qq移除; PostToolUse auto-lint; agent增强; .claude/rules/; settings优化; learn-claude-code 20章研读+TodoWrite+TaskSystem+MessageBus安装 | |
+| 2026-07-07 | `auto-optimize/20260627-0020` | **达尔文14.0** — 全项目深度优化审计(3CRITICAL+15MEDIUM+8LOW共26项) | 数据正确性(ask.py新鲜度校验/fetch_all指数pct_chg/auto_sync覆盖率跳过); DB集中化(11索引注册/INDICATOR_COLS/CREATE TABLE去重); Agent正确性(trader涨跌停689920/hot_money_net_lg/risk_check key+DB单例); 异常处理强化; 知识库去重+INDEX/CHANGES; 10项LOW修复 | **当前** |
 
 优化内容（第9轮-达尔文9.0）：借鉴ZhuLinsen三项目全面架构升级
 - **L1→L2→L3选股管线**：stock_picker.py重构为三级管线(L1评分→L2重排序→L3后置分析器)

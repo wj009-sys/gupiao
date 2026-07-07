@@ -119,22 +119,8 @@ def main():
     print(f"  [3/4] 融资融券全量")
     print(f"{'='*60}")
 
-    ensure_table(db, "margin", """
-        CREATE TABLE IF NOT EXISTS margin (
-            trade_date  TEXT NOT NULL,
-            exchange    TEXT NOT NULL,
-            rzye        REAL,
-            rqye        REAL,
-            rzrqye      REAL,
-            rzmre       REAL,
-            rqyl        REAL,
-            rzche       REAL,
-            rqchl       REAL,
-            rzjmre      REAL,
-            rqjmyl      REAL,
-            PRIMARY KEY (trade_date, exchange)
-        )
-    """)
+    # margin 表由 db_manager.py DatabaseManager.init_db() 自动创建
+    # CREATE TABLE IF NOT EXISTS 定义见 db_manager.py CREATE_TABLES_SQL
 
     # 拉取所有交易日
     try:
@@ -186,22 +172,8 @@ def main():
     print(f"  [4/4] 大盘资金流向 (超级/大/中/小单)")
     print(f"{'='*60}")
 
-    ensure_table(db, "moneyflow_mkt", """
-        CREATE TABLE IF NOT EXISTS moneyflow_mkt (
-            trade_date      TEXT NOT NULL,
-            ts_code         TEXT NOT NULL,
-            net_amount      REAL,
-            buy_elg_amount  REAL,
-            sell_elg_amount REAL,
-            buy_lg_amount   REAL,
-            sell_lg_amount  REAL,
-            buy_md_amount   REAL,
-            sell_md_amount  REAL,
-            buy_sm_amount   REAL,
-            sell_sm_amount  REAL,
-            PRIMARY KEY (trade_date, ts_code)
-        )
-    """)
+    # moneyflow_mkt 表由 db_manager.py DatabaseManager.init_db() 自动创建
+    # CREATE TABLE IF NOT EXISTS 定义见 db_manager.py CREATE_TABLES_SQL
 
     MARKET_INDICES = ["000001.SH", "399001.SZ", "399006.SZ", "000688.SH"]
     MARKET_NAMES = ["上证指数", "深证成指", "创业板指", "科创50"]

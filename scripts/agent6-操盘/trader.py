@@ -171,10 +171,11 @@ def get_limit_prices(ts_code: str, current_price: float) -> dict:
     """获取当日涨跌停价格范围"""
     if current_price <= 0:
         return {"涨停": None, "跌停": None, "limit_pct": None}
-    # A股主板±10%，创业板/科创板±20%
-    is_cy = ts_code.startswith("30")  # 创业板 300xxx
-    is_kc = ts_code.startswith("688")  # 科创板 688xxx
-    limit_pct = 0.20 if (is_cy or is_kc) else 0.10
+    # A股主板±10%，创业板/科创板±20%，北交所±30%
+    is_cy = ts_code.startswith("30")   # 创业板 300xxx
+    is_kc = ts_code.startswith("688") or ts_code.startswith("689")  # 科创板 688xxx/689xxx
+    is_bj = ts_code.startswith("920")  # 北交所 920xxx
+    limit_pct = 0.30 if is_bj else (0.20 if (is_cy or is_kc) else 0.10)
     return {
         "涨停": round(current_price * (1 + limit_pct), 2),
         "跌停": round(current_price * (1 - limit_pct), 2),

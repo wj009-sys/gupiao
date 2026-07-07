@@ -66,6 +66,18 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 sys.path.insert(0, PROJECT_ROOT)
 from scripts.utils.tushare_client import pro
 
+# ── 模块级 DB 单例（4 个 check 函数共享同一连接） ──
+_DB_INSTANCE = None
+
+
+def _get_db():
+    """获取 DatabaseManager 单例（惰性初始化）"""
+    global _DB_INSTANCE
+    if _DB_INSTANCE is None:
+        from scripts.utils.db_manager import DatabaseManager
+        _DB_INSTANCE = DatabaseManager()
+    return _DB_INSTANCE
+
 
 def load_json(path: str) -> dict:
     """安全加载 JSON 文件，失败时返回空dict"""
@@ -160,7 +172,7 @@ def load_index_analysis() -> list:
     latest = files[0]
     try:
         data = load_json(latest)
-        return data.get("index_analysis") or data.get("indices") or None
+        return data.get("indices") or data.get("index_analysis") or None
     except (FileNotFoundError, json.JSONDecodeError, Exception) as e:
         print(f"[WARN] 加载指数分析数据失败: {e}")
         return None
@@ -751,12 +763,10 @@ def check_lockup_risk(portfolio: dict) -> list:
     """
     alerts = []
     try:
-        from scripts.utils.db_manager import DatabaseManager
-        db = DatabaseManager()
-        import datetime as dt
-
-        today = dt.datetime.now().strftime("%Y%m%d")
-        cutoff = (dt.datetime.now() + dt.timedelta(days=30)).strftime("%Y%m%d")
+        db = _get_db()
+        import datetime as _dt
+        today = _dt.datetime.now().strftime("%Y%m%d")
+        cutoff = (_dt.datetime.now() + _dt.timedelta(days=30)).strftime("%Y%m%d")
 
         holdings = portfolio.get("持仓列表", [])
         for h in holdings:
@@ -806,8 +816,7 @@ def check_financial_risk(portfolio: dict) -> list:
     """
     alerts = []
     try:
-        from scripts.utils.db_manager import DatabaseManager
-        db = DatabaseManager()
+        db = _get_db()
 
         holdings = portfolio.get("持仓列表", [])
         for h in holdings:

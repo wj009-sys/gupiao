@@ -285,25 +285,21 @@ def check_freshness(db: DatabaseManager, trading_days: list) -> dict:
         except Exception as e:
             print(f"  [WARN] key_stocks抽查失败: {e}", flush=True)
 
+    # 初始化 dp_status：基于 dp_behind 和 dp_lagging 综合判定
+    dp_status = "fresh"
+    if dp_behind > 0:
+        dp_status = "stale" if dp_behind <= 2 else "behind"
+    elif dp_lagging > 0 and total_active > 0 and (dp_lagging / total_active) > 0.05:
+        # 日期最新但覆盖率不足 >5% → stale
+        dp_status = "stale"
+
     if missing_key_stocks:
         print(f"  ⚠️ 持仓/自选股缺少今日数据: {', '.join(missing_key_stocks[:5])}"
               f"{'...' if len(missing_key_stocks) > 5 else ''}",
               flush=True)
         dp_lagging += len(missing_key_stocks)
-        # 有关键股票缺失→降级
-        if dp_status == "fresh":
-            dp_status = "stale"
-
-    dp_status = "fresh"
-    if dp_behind == 0:
-        dp_status = "fresh"
-        # 即使日期最新，如果缺失股票比例>5%，降级警告
-        if dp_lagging > 0 and total_active > 0 and (dp_lagging / total_active) > 0.05:
-            dp_status = "stale"
-    elif dp_behind <= 2:
+        # 关键股票缺失 → 强制降级
         dp_status = "stale"
-    else:
-        dp_status = "behind"
 
     result["tables"]["daily_price"] = {
         "max_date": dp_max,
@@ -1305,7 +1301,9 @@ def post_sync_data_check(db: DatabaseManager, trading_days: list,
 
     # C1. 去重
     try:
+        _whitelist_tables = {"daily_price", "daily_basic", "adj_factor"}
         for table in ["daily_price", "daily_basic", "adj_factor"]:
+            assert table in _whitelist_tables, f"非法表名: {table}"
             # 查找重复行
             cur.execute(f"""
                 SELECT COUNT(*) FROM (
@@ -1726,17 +1724,7 @@ def sync_daily_indicators(db: DatabaseManager, latest_td: str,
 
 
 # 常量定义（供 sync_daily_indicators 使用）
-INDICATOR_COLS = [
-    "ts_code", "trade_date",
-    "macd", "macd_signal", "macd_diff",
-    "macd_golden_cross", "macd_death_cross",
-    "kdj_k", "kdj_d", "kdj_j", "kdj_golden_cross",
-    "rsi_14", "rsi_oversold", "rsi_overbought",
-    "boll_upper", "boll_mid", "boll_lower", "boll_width",
-    "boll_break_upper", "boll_break_lower",
-    "obv", "obv_ma20", "obv_trend", "obv_divergence",
-    "ma_5", "ma_10", "ma_20", "ma_60",
-]
+from scripts.utils.db_manager import DAILY_INDICATOR_COLS as INDICATOR_COLS
 BOOL_COLS = {"macd_golden_cross", "macd_death_cross", "kdj_golden_cross",
              "rsi_oversold", "rsi_overbought", "boll_break_upper", "boll_break_lower"}
 STR_COLS = {"ts_code", "trade_date", "obv_trend", "obv_divergence"}
@@ -1914,6 +1902,20 @@ def run_sync(args) -> int:
                 )
             else:
                 print(f"\n  [5/10] 日线行情 — 所有股票已是最新，跳过")
+        elif dp_behind == 0 and dp_max and latest_td:
+            # 日期最新但可能覆盖率不足：抽查滞后股票
+            lagging = db.get_lagging_stocks("daily_price", latest_td)
+            if lagging:
+                dp_start = (datetime.strptime(dp_max, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
+                print(f"\n  [5/10] 日线行情 — 日期{latest_td}已最新，但{len(lagging)}只股票缺少数据（覆盖率不足），回补")
+                budget = total_budget - (time.time() - start_time)
+                max_stocks = getattr(args, 'max_stocks', 0) or 0
+                sync_results["daily_price"] = sync_daily_price_incremental(
+                    db, lagging, dp_start, latest_td,
+                    max(budget, 60), max_stocks
+                )
+            else:
+                print(f"\n  [5/10] 日线行情 — 已是最新，跳过")
         else:
             print(f"\n  [5/10] 日线行情 — 已是最新，跳过")
 

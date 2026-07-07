@@ -284,28 +284,8 @@ def main():
         print("[ERROR] 数据库连接失败")
         return 2
 
-    # 确保 moneyflow_mkt 表存在（不在 db_manager CREATE_TABLES_SQL 中）
-    if "moneyflow_mkt" in tables:
-        try:
-            db.conn.execute("""
-                CREATE TABLE IF NOT EXISTS moneyflow_mkt (
-                    trade_date      TEXT NOT NULL,
-                    ts_code         TEXT NOT NULL,
-                    net_amount      REAL,
-                    buy_elg_amount  REAL,
-                    sell_elg_amount REAL,
-                    buy_lg_amount   REAL,
-                    sell_lg_amount  REAL,
-                    buy_md_amount   REAL,
-                    sell_md_amount  REAL,
-                    buy_sm_amount   REAL,
-                    sell_sm_amount  REAL,
-                    PRIMARY KEY (trade_date, ts_code)
-                )
-            """)
-            db.conn.commit()
-        except Exception as e:
-            print(f"[WARN] moneyflow_mkt 建表失败: {e}")
+    # moneyflow_mkt 表由 db_manager.py DatabaseManager.init_db() 自动创建
+    # CREATE TABLE IF NOT EXISTS 定义见 db_manager.py CREATE_TABLES_SQL
 
     # 统计前
     stats_before = {}

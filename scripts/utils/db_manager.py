@@ -67,6 +67,9 @@ CREATE_TABLES_SQL = [
     """,
 
     # 2. daily_price — 日线行情（核心表）
+    # ⚠️ data_cleaner.py 在运行时还会 ALTER TABLE 添加 8 个扩展列：
+    #   adj_factor_val/adj_close_f/adj_open_f/adj_high_f/adj_low_f/adj_close_b/price_limit_flag/price_limit_note
+    # 建表语句保持核心 12 列，扩展列由 data_cleaner.py 动态添加
     """
     CREATE TABLE IF NOT EXISTS daily_price (
         ts_code     TEXT NOT NULL,
@@ -482,6 +485,18 @@ CREATE_INDEXES_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_margin_detail_date ON margin_detail(trade_date)",
     "CREATE INDEX IF NOT EXISTS idx_dragon_tiger_date ON dragon_tiger_detail(trade_date)",
     "CREATE INDEX IF NOT EXISTS idx_lockup_date ON lockup_schedule(unlock_date)",
+    # 达尔文14.0 新增索引（实际已存在于DB中，补注册到集中定义）
+    "CREATE INDEX IF NOT EXISTS idx_adj_tscode ON adj_factor(ts_code)",
+    "CREATE INDEX IF NOT EXISTS idx_dragon_tscode ON dragon_tiger_detail(ts_code)",
+    "CREATE INDEX IF NOT EXISTS idx_hot_money_seat_name ON hot_money_seats(seat_name)",
+    "CREATE INDEX IF NOT EXISTS idx_lockup_tscode ON lockup_schedule(ts_code)",
+    "CREATE INDEX IF NOT EXISTS idx_policy_category ON policy_events(category)",
+    "CREATE INDEX IF NOT EXISTS idx_policy_date ON policy_events(event_date)",
+    "CREATE INDEX IF NOT EXISTS idx_policy_sector ON policy_events(impact_sector)",
+    "CREATE INDEX IF NOT EXISTS idx_portfolio_tscode ON portfolio_snapshot(ts_code)",
+    "CREATE INDEX IF NOT EXISTS idx_seat_date ON hot_money_seats(trade_date)",
+    "CREATE INDEX IF NOT EXISTS idx_stock_industry ON stock_basic(industry)",
+    "CREATE INDEX IF NOT EXISTS idx_stock_market ON stock_basic(market)",
 ]
 
 

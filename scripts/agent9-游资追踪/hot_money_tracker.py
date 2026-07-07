@@ -464,7 +464,7 @@ def _save_to_db(data: dict):
                     "sell_lg_amount": mf.get("sell_lg_amount", 0),
                     "buy_sm_amount": mf.get("buy_sm_amount", 0),
                     "sell_sm_amount": mf.get("sell_sm_amount", 0),
-                    "net_lg_amount": mf.get("net_amount", 0),
+                    "net_lg_amount": mf.get("buy_lg_amount", 0) - mf.get("sell_lg_amount", 0),
                 })
             if mf_rows:
                 _db.upsert_moneyflow_stock(pd.DataFrame(mf_rows))

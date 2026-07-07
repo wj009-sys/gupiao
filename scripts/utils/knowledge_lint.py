@@ -89,7 +89,7 @@ def scan_files() -> dict:
             }
     return files
 
-# Backward compatibility alias
+# Backward compatibility alias（保留供外部导入/旧代码兼容，当前项目内无使用者）
 _scan_files = scan_files
 
 
