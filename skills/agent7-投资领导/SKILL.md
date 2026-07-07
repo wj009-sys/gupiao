@@ -27,6 +27,27 @@ description: >
 
 ## 管理流程
 
+### 第零步：制定执行计划（TodoWrite + Task System）
+
+在开始综合决策前，先使用 Task System 创建团队任务依赖图，再用 TodoWrite 制定个人执行计划：
+
+```bash
+# 创建任务DAG（依赖图）
+python scripts/utils/task_manager.py create --subject "今日投资决策" \
+  --description "统筹调度全部Agent，质量审核+冲突仲裁+最终决策"
+
+# 制定个人执行计划
+python scripts/utils/todo_write.py --create "投资决策 YYYY-MM-DD" \
+  --step "1.检查团队出勤" \
+  --step "2.加载昨日反思记忆" \
+  --step "3.运行决策脚本" \
+  --step "4.质量审核+打回重做" \
+  --step "5.冲突仲裁" \
+  --step "6.输出最终决策报告"
+```
+
+> 📋 **s05 TodoWrite + s12 Task System**：先列计划再执行。Task manager 为团队任务建立依赖图，TodoWrite 追踪个人步骤进度。累计3个消息未更新进度会自动提醒。
+
 ### 第一步：检查团队出勤
 
 ```bash
@@ -445,17 +466,6 @@ s = limit_up_sentiment("20260703")
 >
 > 如果某个推送通道不可用，跳过即可，不影响决策报告生成。
 >
-> **QQ推送（可选）：**
-> 2. 调用 `qq_agent_notify`，用 QQ 推送：
-> ```
-> agent_id: 7
-> title: "投资决策 YYYY-MM-DD"
-> content: "🏆 最终决策
-> 📊 质量审核：N/N通过
-> ⚠️ 打回重做：N个Agent
-> 🔴 冲突仲裁：N项
-> 💡 执行清单：..."
-> ```
 
 ---
 
@@ -490,6 +500,19 @@ s = limit_up_sentiment("20260703")
 
 ---
 
+## 📋 Harness 工具 + 子Agent
+
+作为团队领导，你可调用以下 Harness 工具和编排子Agent辅助团队管理：
+
+| 工具/子Agent | 位置 | 用途 |
+|:------------|:-----|:-----|
+| TodoWrite | `scripts/utils/todo_write.py` | 制定个人执行计划，追踪步骤进度（learn-claude-code s05） |
+| Task System DAG | `scripts/utils/task_manager.py` | 创建团队任务依赖图，分配任务给各Agent，检查blockedBy依赖（learn-claude-code s12） |
+| MessageBus | `scripts/utils/message_bus.py` | 通过 `.claude/teams/inboxes/` 邮箱向Agent分派任务、接收结果（learn-claude-code s15-s16） |
+| 🕵️ deep-auditor | `.claude/agents/deep-auditor.md` | 全项目深度审计子Agent（`isolation: worktree`），用于Agent输出质量深度审查、代码级审计 |
+| 👨‍💻 code-reviewer | `.claude/agents/code-reviewer.md` | Python代码审查子Agent（`isolation: worktree`），用于Agent脚本代码质量审查 |
+| 🧠 research-synthesizer | `.claude/agents/research-synthesizer.md` | 研究综合子Agent（`model: opus`），用于复杂投资问题研究、策略合成 |
+
 ## 🔗 关联Agent
 
 | Agent | 关系 | 说明 |
@@ -501,6 +524,7 @@ s = limit_up_sentiment("20260703")
 | 🔍 Agent5 选股机器人 | 下属/审核对象 | 审核选股建议，确认因子评分合理性 |
 | 🎯 Agent6 操盘手 | 下属/审核对象+仲裁相关 | 审核交易计划，仲裁风控官vs操盘手分歧 |
 | 🔍 agent-问股 | 下属/审核对象 | 审核问股回复质量（数据支撑、策略匹配、风险提示），不合格打回重做 |
+| 📋 MessageBus + TaskSystem | 通信与调度 | 通过MessageBus向Agent分派任务、接收结果；通过Task System DAG管理团队任务依赖 |
 
 ---
 

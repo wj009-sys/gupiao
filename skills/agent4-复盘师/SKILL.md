@@ -24,6 +24,21 @@ description: >
 
 ## 工作流程
 
+### 第零步：制定执行计划（TodoWrite）
+
+在开始复盘前，使用 TodoWrite 规划工具列出本次执行计划：
+
+```bash
+python scripts/utils/todo_write.py --create "复盘分析 YYYY-MM-DD" \
+  --step "1.读取当日所有报告" \
+  --step "2.获取实际行情" \
+  --step "3.计算准确率+偏差分析" \
+  --step "4.复盘选股+操盘" \
+  --step "5.更新知识库+生成报告"
+```
+
+> 📋 **s05 TodoWrite 模式**：先列计划再执行，避免遗漏关键步骤。每完成一个步骤，用 `python scripts/utils/todo_write.py --update N --status completed` 更新进度。累计3个消息未更新进度会自动提醒。
+
 ### 第一步：读取当日所有报告
 
 读取全部9个Agent + Agent-问股当天的输出：
@@ -456,16 +471,6 @@ knowledge/复盘记录/复盘_YYYYMMDD.json
 >
 > 如果某个推送通道不可用，跳过即可，不影响复盘报告生成。
 >
-> **QQ推送（可选）：**
-> 2. 调用 `qq_agent_notify`，用 QQ 推送：
-> ```
-> agent_id: 4
-> title: "复盘报告 YYYY-MM-DD"
-> content: "🔄 今日复盘总结
-> ✅ 准确预测：N项
-> ❌ 偏差分析：N项
-> 📈 改进建议：..."
-> ```
 
 ---
 
@@ -613,6 +618,16 @@ knowledge/复盘记录/复盘_YYYYMMDD.json
 - `knowledge/策略/选股策略.md` — 选股因子权重（复盘可调整）
 - `knowledge/策略/交易执行规则.md` — 交易规则（复盘可调整）
 
+## 📋 Harness 工具 + 子Agent
+
+本Agent可调用以下 Harness 基础设施和编排子Agent：
+
+| 工具/子Agent | 位置 | 用途 |
+|:------------|:-----|:-----|
+| TodoWrite | `scripts/utils/todo_write.py` | 执行前制定计划，追踪进度（learn-claude-code s05） |
+| MessageBus | `scripts/utils/message_bus.py` | 通过 `.claude/teams/inboxes/` 邮箱接收任务、发送结果（learn-claude-code s15-s16） |
+| 🧠 research-synthesizer | `.claude/agents/research-synthesizer.md` | 研究综合子Agent（`model: opus`），用于复杂偏差深度分析、策略研究、知识库合成 |
+
 ## 🔗 关联Agent
 
 | Agent | 关系 | 说明 |
@@ -626,6 +641,7 @@ knowledge/复盘记录/复盘_YYYYMMDD.json
 | 📜 Agent8 政策分析师 | 上游输入 | 复盘政策分析的准确性和持仓关联判断 |
 | 🔥 Agent9 游资追踪师 | 上游输入 | 复盘游资追踪的分析质量和情绪指数准确性 |
 | 🔮 Agent-问股 | 上游输入 | 复盘策略问股的回答质量和策略选择合理性 |
+| 📋 MessageBus | 通信基础设施 | 通过 `.claude/teams/inboxes/` JSONL文件邮箱接收任务指派、发送复盘结果 |
 
 ## 触发方式
 

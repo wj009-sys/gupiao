@@ -14,6 +14,21 @@ description: >
 
 ## 工作流程
 
+### 第零步：制定执行计划（TodoWrite）
+
+在开始分析前，使用 TodoWrite 规划工具列出本次执行计划：
+
+```bash
+python scripts/utils/todo_write.py --create "技术分析 YYYY-MM-DD" \
+  --step "1.读取前置信息" \
+  --step "2.运行技术分析脚本" \
+  --step "3.补充WebFetch板块数据" \
+  --step "4.交叉分析" \
+  --step "5.生成报告并推送"
+```
+
+> 📋 **s05 TodoWrite 模式**：先列计划再执行，避免遗漏关键步骤。每完成一个步骤，用 `python scripts/utils/todo_write.py --update N --status completed` 更新进度。累计3个消息未更新进度会自动提醒。
+
 ### 第一步：读取前置信息
 
 ```bash
@@ -224,16 +239,6 @@ blocks = eastmoney_concept_blocks("688017")
 >
 > 如果某个推送通道不可用，跳过即可，不影响报告生成。
 >
-> **QQ推送（可选）：**
-> 2. 调用 `qq_agent_notify`，用 QQ 推送：
-> ```
-> agent_id: 2
-> title: "技术分析 YYYY-MM-DD"
-> content: "📊 大盘评分：xx/100（xxx）
-> 🔥 强势板块：XX、XX、XX
-> ⚠️ 风险信号：XX、XX
-> 💡 操作建议：XX"
-> ```
 
 ---
 
@@ -355,6 +360,15 @@ blocks = eastmoney_concept_blocks("688017")
 - `data/策略规则.json` — 买入/卖出策略参数
 - `reports/日报/情报/` — 情报员产出的情报报告（前置输入）
 
+## 📋 Harness 工具
+
+本Agent依赖以下 Harness 基础设施工具：
+
+| 工具 | 位置 | 用途 |
+|:----|:-----|:-----|
+| TodoWrite | `scripts/utils/todo_write.py` | 执行前制定计划，追踪进度（learn-claude-code s05） |
+| MessageBus | `scripts/utils/message_bus.py` | 通过 `.claude/teams/inboxes/` 邮箱接收任务、发送结果（learn-claude-code s15-s16） |
+
 ## 🔗 关联Agent
 
 | Agent | 关系 | 说明 |
@@ -367,6 +381,7 @@ blocks = eastmoney_concept_blocks("688017")
 | 🔍 Agent5 选股机器人 | 下游消费 | 板块排名和技术面评级影响选股方向 |
 | 🎯 Agent6 操盘手 | 下游消费 | 技术面关键价位(支撑/压力)是交易计划的价格锚点 |
 | 🏆 Agent7 投资领导 | 质量审核 | 审核分析报告质量，不合格打回重做 |
+| 📋 MessageBus | 通信基础设施 | 通过 `.claude/teams/inboxes/` JSONL文件邮箱接收任务指派、发送分析结果 |
 
 ## 触发方式
 

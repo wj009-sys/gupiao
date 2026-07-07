@@ -18,6 +18,21 @@ description: >
 
 ## 工作流程
 
+### 第零步：制定执行计划（TodoWrite）
+
+在开始制定交易计划前，使用 TodoWrite 规划工具列出本次执行计划：
+
+```bash
+python scripts/utils/todo_write.py --create "交易计划 YYYY-MM-DD" \
+  --step "1.读取所有输入(规则/持仓/选股/风控)" \
+  --step "2.运行交易脚本" \
+  --step "3.人工校验与调整" \
+  --step "4.等待风控审查并处理反馈" \
+  --step "5.输出最终交易计划"
+```
+
+> 📋 **s05 TodoWrite 模式**：先列计划再执行，避免遗漏关键步骤。每完成一个步骤，用 `python scripts/utils/todo_write.py --update N --status completed` 更新进度。累计3个消息未更新进度会自动提醒。
+
 ### 第一步：读取所有输入
 
 ```bash
@@ -226,16 +241,6 @@ cat reports/日报/风控/风控报告_YYYY-MM-DD.md
 >
 > 如果某个推送通道不可用，跳过即可，不影响交易计划生成。
 >
-> **QQ推送（可选）：**
-> 2. 调用 `qq_agent_notify`，用 QQ 推送：
-> ```
-> agent_id: 6
-> title: "交易计划 YYYY-MM-DD"
-> content: "🎯 交易计划
-> 🟢 买入：N只
-> 🔴 卖出：N只
-> ⚠️ 止损提醒：..."
-> ```
 
 ---
 
@@ -306,6 +311,15 @@ cat reports/日报/风控/风控报告_YYYY-MM-DD.md
 - `reports/日报/选股/` — Agent5选股建议（输入）
 - `reports/日报/风控/` — Agent3风控报告（输入+审查）
 
+## 📋 Harness 工具
+
+本Agent依赖以下 Harness 基础设施工具：
+
+| 工具 | 位置 | 用途 |
+|:----|:-----|:-----|
+| TodoWrite | `scripts/utils/todo_write.py` | 执行前制定计划，追踪进度（learn-claude-code s05） |
+| MessageBus | `scripts/utils/message_bus.py` | 通过 `.claude/teams/inboxes/` 邮箱接收任务、发送结果（learn-claude-code s15-s16） |
+
 ## 🔗 关联Agent
 
 | Agent | 关系 | 说明 |
@@ -316,6 +330,7 @@ cat reports/日报/风控/风控报告_YYYY-MM-DD.md
 | 🛡️ Agent3 风控官 | 审查+制衡 | 风控审查交易计划，分歧上报 |
 | 🏆 Agent7 投资领导 | 仲裁+审核 | 风控分歧仲裁，质量审核 |
 | 🔄 Agent4 复盘师 | 下游反馈 | 复盘交易计划执行效果 |
+| 📋 MessageBus | 通信基础设施 | 通过 `.claude/teams/inboxes/` JSONL文件邮箱接收任务指派、发送交易计划 |
 
 ## 触发方式
 

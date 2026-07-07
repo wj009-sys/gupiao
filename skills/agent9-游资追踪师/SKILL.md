@@ -18,6 +18,20 @@ description: >
 
 ## 工作流程
 
+### 第零步：制定执行计划（TodoWrite）
+
+在开始游资追踪前，使用 TodoWrite 规划工具列出本次执行计划：
+
+```bash
+python scripts/utils/todo_write.py --create "游资追踪 YYYY-MM-DD" \
+  --step "1.读取配置和数据" \
+  --step "2.运行游资追踪脚本" \
+  --step "3.审核分析结果" \
+  --step "4.生成报告并推送"
+```
+
+> 📋 **s05 TodoWrite 模式**：先列计划再执行，避免遗漏关键步骤。每完成一个步骤，用 `python scripts/utils/todo_write.py --update N --status completed` 更新进度。累计3个消息未更新进度会自动提醒。
+
 ### 第一步：读取配置和数据
 
 ```bash
@@ -157,6 +171,15 @@ python -X utf8 scripts/agent9-游资追踪/hot_money_tracker.py
 | `knowledge/策略/游资追踪策略.md` | 游资追踪方法论和席位识别规则 |
 | `scripts/utils/eastmoney_get.py` | 东方财富限流数据网关 |
 
+## 📋 Harness 工具
+
+本Agent依赖以下 Harness 基础设施工具：
+
+| 工具 | 位置 | 用途 |
+|:----|:-----|:-----|
+| TodoWrite | `scripts/utils/todo_write.py` | 执行前制定计划，追踪进度（learn-claude-code s05） |
+| MessageBus | `scripts/utils/message_bus.py` | 通过 `.claude/teams/inboxes/` 邮箱接收任务、发送结果（learn-claude-code s15-s16） |
+
 ## 🔗 关联Agent
 
 | 关系 | Agent | 方向 | 说明 |
@@ -168,6 +191,7 @@ python -X utf8 scripts/agent9-游资追踪/hot_money_tracker.py
 | 🔽 下游输出 | Agent6 操盘手 | Agent9 → | 资金面风险影响交易决策 |
 | 🔽 下游输出 | Agent7 投资领导 | Agent9 → | 资金情绪纳入最终决策 |
 | 🔄 双向反馈 | Agent4 复盘师 | ↔ Agent9 | 复盘追踪游资分析的准确率 |
+| 📋 MessageBus | 通信基础设施 | ↔ 全部 | 通过 `.claude/teams/inboxes/` JSONL文件邮箱接收任务指派、发送游资追踪结果 |
 
 ## 触发方式
 

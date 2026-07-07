@@ -18,6 +18,20 @@ description: >
 
 ## 工作流程
 
+### 第零步：制定执行计划（TodoWrite）
+
+在开始政策分析前，使用 TodoWrite 规划工具列出本次执行计划：
+
+```bash
+python scripts/utils/todo_write.py --create "政策分析 YYYY-MM-DD" \
+  --step "1.读取配置和数据" \
+  --step "2.运行政策分析脚本" \
+  --step "3.审核分析结果" \
+  --step "4.生成报告并推送"
+```
+
+> 📋 **s05 TodoWrite 模式**：先列计划再执行，避免遗漏关键步骤。每完成一个步骤，用 `python scripts/utils/todo_write.py --update N --status completed` 更新进度。累计3个消息未更新进度会自动提醒。
+
 ### 第一步：读取配置和数据
 
 ```bash
@@ -95,13 +109,6 @@ python -X utf8 scripts/agent8-政策分析/policy_analyst.py
 >    - 通过 **PushPlus API** 推送 Markdown 报告到微信（主通道）
 >    - 如 PushPlus 不可用，自动降级到 cc-connect（备选通道）
 >
-> **QQ推送（可选）：**
-> 2. 调用 `qq_agent_notify`，用 QQ 推送：
-> ```
-> agent_id: 8
-> title: "📜 政策分析报告 YYYY-MM-DD"
-> content: "📊 宏观政策X条 | 🏭 产业政策X条 | 🔗 关联持仓X只"
-> ```
 
 ---
 
@@ -178,6 +185,15 @@ python -X utf8 scripts/agent8-政策分析/policy_analyst.py
 | `data/策略规则.json` | 策略信号定义 |
 | `knowledge/策略/政策分析策略.md` | 政策分析框架和方法论 |
 
+## 📋 Harness 工具
+
+本Agent依赖以下 Harness 基础设施工具：
+
+| 工具 | 位置 | 用途 |
+|:----|:-----|:-----|
+| TodoWrite | `scripts/utils/todo_write.py` | 执行前制定计划，追踪进度（learn-claude-code s05） |
+| MessageBus | `scripts/utils/message_bus.py` | 通过 `.claude/teams/inboxes/` 邮箱接收任务、发送结果（learn-claude-code s15-s16） |
+
 ## 🔗 关联Agent
 
 | 关系 | Agent | 方向 | 说明 |
@@ -187,6 +203,7 @@ python -X utf8 scripts/agent8-政策分析/policy_analyst.py
 | 🔽 下游输出 | Agent7 投资领导 | Agent8 → | 政策影响纳入最终投资决策 |
 | 🔄 双向反馈 | Agent4 复盘师 | ↔ Agent8 | 复盘师追踪政策分析的准确率，更新分析框架 |
 | 🔄 协作 | Agent3 风控官 | ↔ Agent8 | 政策风险（如监管收紧）纳入风控检查 |
+| 📋 MessageBus | 通信基础设施 | ↔ 全部 | 通过 `.claude/teams/inboxes/` JSONL文件邮箱接收任务指派、发送政策分析结果 |
 
 ## 触发方式
 

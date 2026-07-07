@@ -27,6 +27,21 @@ description: >
 
 ## 通用工作流程
 
+### 第零步：制定执行计划（TodoWrite）
+
+在开始选股前，使用 TodoWrite 规划工具列出本次执行计划：
+
+```bash
+python scripts/utils/todo_write.py --create "选股分析 YYYY-MM-DD" \
+  --step "1.读取配置和已有报告" \
+  --step "2.运行选股脚本(--mode XX)" \
+  --step "3.人工验证评分合理性" \
+  --step "4.执行模式特有检查" \
+  --step "5.生成报告并推送"
+```
+
+> 📋 **s05 TodoWrite 模式**：先列计划再执行，避免遗漏关键步骤。每完成一个步骤，用 `python scripts/utils/todo_write.py --update N --status completed` 更新进度。累计3个消息未更新进度会自动提醒。
+
 ### 第一步：读取配置和已有报告
 
 ```bash
@@ -247,17 +262,6 @@ python -X utf8 scripts/agent5-选股/stock_picker.py --mode evening --top-n 5 --
 >
 > 如果某个推送通道不可用，跳过即可，不影响选股报告生成。
 >
-> **QQ推送（可选）：**
-> 2. 调用 `qq_agent_notify`，用 QQ 推送：
-> ```
-> agent_id: 5
-> title: "选股建议 YYYY-MM-DD"
-> content: "🔍 选股结果（XX模式）
-> 🥇 第1名：xx xx分
-> 🥈 第2名：xx xx分
-> 🥉 第3名：xx xx分
-> 💡 操作建议：..."
-> ```
 
 ---
 
@@ -362,6 +366,15 @@ python -X utf8 scripts/agent5-选股/stock_picker.py --mode evening --top-n 5 --
 - `reports/日报/分析/` — Agent2分析报告（输入，技术面评级）
 - `reports/日报/复盘/` — Agent4复盘报告（输入，evening模式读偏差分析）
 
+## 📋 Harness 工具
+
+本Agent依赖以下 Harness 基础设施工具：
+
+| 工具 | 位置 | 用途 |
+|:----|:-----|:-----|
+| TodoWrite | `scripts/utils/todo_write.py` | 执行前制定计划，追踪进度（learn-claude-code s05） |
+| MessageBus | `scripts/utils/message_bus.py` | 通过 `.claude/teams/inboxes/` 邮箱接收任务、发送结果（learn-claude-code s15-s16） |
+
 ## 🔗 关联Agent
 
 | Agent | 关系 | 说明 |
@@ -372,6 +385,7 @@ python -X utf8 scripts/agent5-选股/stock_picker.py --mode evening --top-n 5 --
 | 🛡️ Agent3 风控官 | 约束条件 | 风控等级影响推荐力度 |
 | 🎯 Agent6 操盘手 | 下游消费 | 选股建议是交易计划的输入 |
 | 🏆 Agent7 投资领导 | 质量审核 | 审核选股质量，不合格打回重做 |
+| 📋 MessageBus | 通信基础设施 | 通过 `.claude/teams/inboxes/` JSONL文件邮箱接收任务指派、发送选股结果 |
 
 ## 多因子模型理论（套利定价理论 APT）
 

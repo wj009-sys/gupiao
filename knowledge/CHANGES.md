@@ -15,6 +15,7 @@
 | 2026-07-05 | chore | .claude/scheduled_tasks.json | 达尔文16.0: 自动同步任务ID重命名 |
 | 日期 | 类型 | 文件 | 变更摘要 |
 |:----|:----|:-----|:--------|
+| 2026-07-07 | 📝 upgrade | skills/*/SKILL.md (10 files) | 达尔文13.1技能同步：qq_agent_notify死引用删除(9技能)+TodoWrite第零步(10技能)+Harness工具表(10技能)+MessageBus关联(10技能)+Agent4 research-synthesizer子Agent引用+Agent7 task_manager+deep-auditor+code-reviewer子Agent引用 |
 | 2026-07-07 | 📝 feat | scripts/utils/todo_write.py | 达尔文13.1: learn-claude-code s05 TodoWrite规划工具安装 |
 | 2026-07-07 | 📝 feat | scripts/utils/task_manager.py | 达尔文13.1: learn-claude-code s12 Task System DAG安装 |
 | 2026-07-07 | 📝 feat | scripts/utils/message_bus.py | 达尔文13.1: learn-claude-code s15-s16 MessageBus Agent通信安装 |

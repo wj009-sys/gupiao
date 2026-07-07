@@ -16,6 +16,21 @@ description: >
 
 每个情报采集任务按以下步骤执行：
 
+### 第零步：制定执行计划（TodoWrite）
+
+在开始采集前，使用 TodoWrite 规划工具列出本次执行计划：
+
+```bash
+python scripts/utils/todo_write.py --create "情报采集 YYYY-MM-DD" \
+  --step "1.读取配置" \
+  --step "2.并行采集(大盘/新闻/板块/龙虎榜/资金)" \
+  --step "3.交叉验证" \
+  --step "4.生成报告" \
+  --step "5.推送通知"
+```
+
+> 📋 **s05 TodoWrite 模式**：先列计划再执行，避免遗漏关键步骤。每完成一个步骤，用 `python scripts/utils/todo_write.py --update N --status completed` 更新进度。累计3个消息未更新进度会自动提醒。
+
 ### 第一步：读取配置信息
 
 首先读取项目中的配置和数据文件，了解用户关注的股票和板块：
@@ -207,16 +222,6 @@ limit_list = pro.limit_list(trade_date='YYYYMMDD')
 >
 > 如果某个推送通道不可用，跳过对应的推送通道即可，不影响报告生成。
 >
-> **QQ推送（可选）：**
-> 2. 调用 `qq_agent_notify`，用 QQ 推送：
-> ```
-> agent_id: 1
-> title: "情报摘要 YYYY-MM-DD"
-> content: "📈 大盘：上证±x% | 深证±x% | 创业板±x%
-> 💰 北向资金：净流入/出 xx亿
-> 📰 关键资讯：N条
-> 🏭 热点板块：XX、XX、XX"
-> ```
 
 ---
 
@@ -321,6 +326,15 @@ limit_list = pro.limit_list(trade_date='YYYYMMDD')
 - `data/portfolio.json` — 用户持仓信息
 - `data/watchlist.json` — 用户关注列表
 
+## 📋 Harness 工具
+
+本Agent依赖以下 Harness 基础设施工具：
+
+| 工具 | 位置 | 用途 |
+|:----|:-----|:-----|
+| TodoWrite | `scripts/utils/todo_write.py` | 执行前制定计划，追踪进度（learn-claude-code s05） |
+| MessageBus | `scripts/utils/message_bus.py` | 通过 `.claude/teams/inboxes/` 邮箱接收任务、发送结果（learn-claude-code s15-s16） |
+
 ## 🔗 关联Agent
 
 | Agent | 关系 | 说明 |
@@ -331,6 +345,7 @@ limit_list = pro.limit_list(trade_date='YYYYMMDD')
 | 🔍 Agent5 选股机器人 | 下游消费 | 情报热点决定选股方向，板块异动是早盘选股的核心输入 |
 | 🎯 Agent6 操盘手 | 间接下游消费 | 通过 Agent2 分析报告和 Agent5 选股建议间接获取情报支持的交易决策 |
 | 🏆 Agent7 投资领导 | 质量审核 | 审核情报报告质量（完整性、时效性、置信度），不合格打回重做 |
+| 📋 MessageBus | 通信基础设施 | 通过 `.claude/teams/inboxes/` JSONL文件邮箱接收任务指派、发送采集结果 |
 
 ## 信息不对称与市场有效性（理论框架）
 

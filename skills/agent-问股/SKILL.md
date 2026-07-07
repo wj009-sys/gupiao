@@ -29,6 +29,19 @@ description: >
 
 ## 工作流程
 
+### 第零步：制定执行计划（TodoWrite）
+
+在开始分析前，使用 TodoWrite 规划工具列出本次执行计划：
+
+```bash
+python scripts/utils/todo_write.py --create "策略问股 [股票] [策略]" \
+  --step "1.识别用户意图(股票+策略)" \
+  --step "2.执行分析脚本" \
+  --step "3.解读与回复"
+```
+
+> 📋 **s05 TodoWrite 模式**：先列计划再执行，避免遗漏关键步骤。每完成一个步骤，用 `python scripts/utils/todo_write.py --update N --status completed` 更新进度。
+
 ### 第一步：识别用户意图
 
 用户可能说：
@@ -103,6 +116,15 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001 --strategy 综合 --mode b
 
 ---
 
+## 📋 Harness 工具
+
+本Agent依赖以下 Harness 基础设施工具：
+
+| 工具 | 位置 | 用途 |
+|:----|:-----|:-----|
+| TodoWrite | `scripts/utils/todo_write.py` | 执行前制定计划，追踪进度（learn-claude-code s05） |
+| MessageBus | `scripts/utils/message_bus.py` | 通过 `.claude/teams/inboxes/` 邮箱接收任务、发送结果（learn-claude-code s15-s16） |
+
 ## 🔗 关联Agent
 
 | Agent | 关系 | 说明 |
@@ -114,6 +136,7 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001 --strategy 综合 --mode b
 | 🛡️ Agent3 风控官 | 规则约束 | 风控等级和止损规则影响问股建议中的风险提示措辞；HIGH风控时加大风险警示力度 |
 | 🎯 Agent6 操盘手 | 规则共享 | 交易执行规则中的买卖规范与问股建议对齐；用户问"该不该买/卖"时参考操盘手的仓位管理和止盈止损规则 |
 | 🏆 Agent7 投资领导 | 质量审核 | 审核问股回复质量，不合格打回重做；用户通过微信发来的问股请求由投资领导识别意图后派发给本Agent |
+| 📋 MessageBus | 通信基础设施 | 通过 `.claude/teams/inboxes/` JSONL文件邮箱接收投资领导的任务指派、发送分析结果 |
 
 ---
 
@@ -162,17 +185,6 @@ python -X utf8 scripts/agent_ask/ask.py --code 000001 --strategy 综合 --mode b
 >
 > 如果某个推送通道不可用，跳过即可，不影响分析结果生成。
 >
-> **QQ推送（可选）：**
-> 2. 调用 `qq_agent_notify`，用 QQ 推送：
-> ```
-> agent_id: ask
-> title: "策略问股 — {股票名称}({代码}) {策略名}"
-> content: "🔍 {股票名称}({代码}) — {策略}分析
-> 📊 结论：{偏多/偏空/中性}
-> 📈 关键信号：{信号1}、{信号2}
-> ⚠️ 风险提示：{风险点}
-> 💡 关注方向：{建议}"
-> ```
 
 ---
 
