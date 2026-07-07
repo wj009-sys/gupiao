@@ -42,6 +42,43 @@ python scripts/utils/todo_write.py --create "策略问股 [股票] [策略]" \
 
 > 📋 **s05 TodoWrite 模式**：先列计划再执行，避免遗漏关键步骤。每完成一个步骤，用 `python scripts/utils/todo_write.py --update N --status completed` 更新进度。
 
+### 第零步B：数据新鲜度验证 🔍
+
+在开始分析前，先用腾讯实时行情校验库中数据是否最新，避免重蹈"昨收当现价"的覆辙：
+
+```bash
+# 快速校验：对比实时价 vs 数据库中最新收盘价
+python -X utf8 -c "
+from scripts.utils.tencent_provider import tencent_quote
+from scripts.utils.db_manager import DatabaseManager
+import json
+
+code = '600388'  # 替换为实际股票代码
+# 获取交易所后缀（600/601/603→SH，000/001/002/003→SZ，688→SH，300→SZ）
+suffix = '.SH' if code[:1] in ('6', '9') else '.SZ'
+ts_code = code + suffix
+
+# 实时行情
+q = tencent_quote([code])
+real_price = q.get(code, {}).get('price', 0)
+db = DatabaseManager()
+rows = db.get_daily_price(ts_code, limit=1)
+db_price = rows[0]['close'] if rows else 0
+
+if real_price and db_price and abs(real_price - db_price) > 0.01:
+    diff_pct = (real_price - db_price) / db_price * 100
+    if abs(diff_pct) > 0.5:
+        print(f'⚠️ 数据可能滞后：实时价{real_price} vs 库中收盘{db_price} (差异{diff_pct:.1f}%)')
+        print(f'建议：先运行 python scripts/utils/auto_sync.py --auto-sync 更新数据')
+    else:
+        print(f'✅ 数据基本一致：实时价{real_price} vs 库中{db_price}')
+else:
+    print(f'⚠️ 无法获取实时行情验证')
+"
+```
+
+> **核心原则**：数据库里的收盘价可能是前一天的。`ask.py` 读的是DB数据，`tencent_quote()` 拿的是实时行情。两者差异>0.5%时，先补数据再分析。
+
 ### 第一步：识别用户意图
 
 用户可能说：

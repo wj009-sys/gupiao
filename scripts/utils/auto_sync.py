@@ -225,7 +225,7 @@ def check_freshness(db: DatabaseManager, trading_days: list) -> dict:
     if dp_max and latest_td:
         dp_behind = sum(1 for d in trading_days if dp_max < d <= latest_td)
     dp_lagging = 0
-    if dp_max and latest_td and dp_max < latest_td:
+    if dp_max and latest_td:
         try:
             cur = db.conn.cursor()
             cur.execute("""
@@ -235,13 +235,71 @@ def check_freshness(db: DatabaseManager, trading_days: list) -> dict:
                 )
             """, (latest_td,))
             dp_lagging = cur.fetchone()[0]
+            total_active = cur.execute(
+                "SELECT COUNT(*) FROM stock_basic WHERE list_status = 'L'"
+            ).fetchone()[0]
+            if dp_lagging > 0:
+                missing_pct = dp_lagging / total_active * 100
+                print(f"  ⚠️ daily_price：最新日期{latest_td}，"
+                      f"但{total_active}只活跃股中有{dp_lagging}只({missing_pct:.1f}%)缺少今日数据",
+                      flush=True)
         except Exception as e:
             print(f"  [WARN] lagging_stocks查询失败: {e}", flush=True)
             dp_lagging = 0
 
+    # === 个股级抽查：持仓+自选是否覆盖 ===
+    missing_key_stocks = []
+    if dp_max == latest_td:
+        try:
+            cur = db.conn.cursor()
+            for fname in ('portfolio.json', 'watchlist.json'):
+                fpath = os.path.join(os.path.dirname(__file__), '..', '..', 'data', fname)
+                if os.path.exists(fpath):
+                    with open(fpath, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    codes = []
+                    if isinstance(data, dict):
+                        for v in data.values():
+                            if isinstance(v, dict) and 'code' in v:
+                                c = str(v['code']).strip()
+                                if c and not c.startswith('000000'):
+                                    codes.append(c)
+                    elif isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, dict) and 'code' in item:
+                                c = str(item['code']).strip()
+                                if c and not c.startswith('000000'):
+                                    codes.append(c)
+                    if codes:
+                        for c in codes:
+                            # 尝试多种代码格式
+                            for fmt in (f"{c}.SH", f"{c}.SZ", f"{c}.BJ", c):
+                                row = cur.execute(
+                                    "SELECT 1 FROM daily_price WHERE trade_date=? AND ts_code=?",
+                                    (latest_td, fmt)
+                                ).fetchone()
+                                if row:
+                                    break
+                            else:
+                                missing_key_stocks.append(c)
+        except Exception as e:
+            print(f"  [WARN] key_stocks抽查失败: {e}", flush=True)
+
+    if missing_key_stocks:
+        print(f"  ⚠️ 持仓/自选股缺少今日数据: {', '.join(missing_key_stocks[:5])}"
+              f"{'...' if len(missing_key_stocks) > 5 else ''}",
+              flush=True)
+        dp_lagging += len(missing_key_stocks)
+        # 有关键股票缺失→降级
+        if dp_status == "fresh":
+            dp_status = "stale"
+
     dp_status = "fresh"
     if dp_behind == 0:
         dp_status = "fresh"
+        # 即使日期最新，如果缺失股票比例>5%，降级警告
+        if dp_lagging > 0 and total_active > 0 and (dp_lagging / total_active) > 0.05:
+            dp_status = "stale"
     elif dp_behind <= 2:
         dp_status = "stale"
     else:

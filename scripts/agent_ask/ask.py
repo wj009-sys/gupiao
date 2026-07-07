@@ -730,6 +730,33 @@ def ask(code: str, strategy_name: str = "综合", mode: str = "standard") -> dic
         else:
             ts_code = ts_code + ".SZ"
 
+    # ── 数据新鲜度校验：实时行情 vs DB收盘 ──
+    _check_data_freshness = True
+    try:
+        db_conn = sqlite3.connect(_DB_PATH)
+        cur = db_conn.cursor()
+        latest_row = cur.execute(
+            "SELECT close FROM daily_price WHERE ts_code=? ORDER BY trade_date DESC LIMIT 1",
+            (ts_code,)
+        ).fetchone()
+        db_conn.close()
+        if latest_row and _HAS_TENCENT:
+            from scripts.utils.tencent_provider import tencent_quote
+            raw_code = code.strip().upper()
+            if raw_code.endswith('.SH') or raw_code.endswith('.SZ') or raw_code.endswith('.BJ'):
+                raw_code = raw_code[:-3]
+            q = tencent_quote([raw_code])
+            real_price = q.get(raw_code, {}).get('price', 0)
+            db_price = latest_row[0]
+            if real_price and db_price and abs(real_price - db_price) > 0.01:
+                diff_pct = (real_price - db_price) / db_price * 100
+                if abs(diff_pct) > 0.5:
+                    print(f"  ⚠️ 数据新鲜度警告: 实时价{real_price:.2f} vs DB收盘{db_price:.2f}"
+                          f" (差异{diff_pct:+.1f}%)", file=sys.stderr)
+                    print(f"     建议运行: python scripts/utils/auto_sync.py --auto-sync", file=sys.stderr)
+    except Exception:
+        pass  # 校验失败不阻塞分析
+
     # 获取股票名称
     stock_name = _get_stock_name(ts_code)
 

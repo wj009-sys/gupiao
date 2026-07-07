@@ -29,6 +29,30 @@ python scripts/utils/todo_write.py --create "技术分析 YYYY-MM-DD" \
 
 > 📋 **s05 TodoWrite 模式**：先列计划再执行，避免遗漏关键步骤。每完成一个步骤，用 `python scripts/utils/todo_write.py --update N --status completed` 更新进度。累计3个消息未更新进度会自动提醒。
 
+### 第零步B：数据新鲜度验证 🔍
+
+在开始分析前，先用腾讯实时行情校验库中数据是否最新。如果分析个股（如持仓股），逐个校验：
+
+```python
+# 核心校验逻辑（简化版）
+from scripts.utils.tencent_provider import tencent_quote
+from scripts.utils.db_manager import DatabaseManager
+
+codes = ['600388', '000001']  # 需要校验的股票
+q = tencent_quote(codes)
+db = DatabaseManager()
+for code in codes:
+    info = q.get(code, {})
+    real_price = info.get('price', 0)
+    suffix = '.SH' if code[:1] in ('6', '9') else '.SZ'
+    rows = db.get_daily_price(code + suffix, limit=1)
+    db_price = rows[0]['close'] if rows else 0
+    if real_price and db_price and abs(real_price - db_price) / max(db_price, 0.01) > 0.005:
+        print(f"⚠️ {code}: 实时价{real_price} vs 库中{db_price}，建议补数据")
+```
+
+> **数据新鲜度铁律**：如果实时价与库中收盘价差异>0.5%，说明数据滞后。先运行 `python scripts/utils/auto_sync.py --auto-sync` 更新数据，再继续分析。否则你的均线、MACD、RSI全都基于过期数据，结论不可靠。
+
 ### 第一步：读取前置信息
 
 ```bash
