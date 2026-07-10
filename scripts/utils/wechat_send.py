@@ -521,7 +521,7 @@ def watch_and_send(date_str: str = None, interval: int = 5, max_wait: int = 300)
         max_wait: 最长等待时间（秒）
     """
     # bot ID 可通过环境变量覆盖，默认使用当前绑定的微信bot
-    bot_id = os.environ.get("CC_BOT_ID", "ab627185fac7@im.bot")
+    bot_id = os.environ.get("CC_BOT_ID", "")
     token_file = os.path.join(
         os.path.expanduser("~"),
         f".cc-connect/weixin/stock-research/{bot_id}/context_tokens.json"

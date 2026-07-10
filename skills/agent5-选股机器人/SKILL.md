@@ -80,7 +80,7 @@ python -X utf8 scripts/agent5-选股/stock_picker.py --mode evening --top-n 5
 python -X utf8 scripts/agent5-选股/stock_picker.py --mode evening --top-n 5 --force-refresh
 ```
 
-> **脚本参数说明**：`--mode` 选股模式（pre_market/intraday/noon/evening，默认evening）；`--top-n` 候选数量（默认5）；`--force-refresh` 强制刷新数据缓存（可选）
+> **脚本参数说明**：`--mode` 选股模式（pre_market/intraday/noon/evening，默认evening）；`--top-n` 候选数量（默认5）；`--force-refresh` 强制刷新数据缓存（可选）；`--deep-scan` 全市场扫描模式（默认仅热点板块）
 
 脚本输出到 `data/raw/选股原始数据_YYYYMMDD_{mode}.json`。
 

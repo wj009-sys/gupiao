@@ -131,6 +131,8 @@ def check_agent_status(report_dir: str, today_str: str) -> dict:
         "风控官": {"dir": "风控", "prefix": "风控报告", "raw_prefix": "风控报告"},
         "操盘手": {"dir": "操盘", "prefix": "交易计划", "raw_prefix": "交易原始数据"},
         "复盘师": {"dir": "复盘", "prefix": "复盘报告", "raw_prefix": "复盘报告"},
+        "政策分析师": {"dir": "政策", "prefix": "政策分析", "raw_prefix": "政策原始数据"},
+        "游资追踪师": {"dir": "游资", "prefix": "游资追踪", "raw_prefix": "游资原始数据"},
     }
 
     raw_dir = os.path.join(PROJECT_ROOT, "data", "raw")
@@ -421,6 +423,16 @@ def analyze_agent_quality(reports: dict, agent_status: dict) -> dict:
             if "操作" not in text and "指令" not in text:
                 warnings.append("缺少具体操作指令")
 
+        elif name == "复盘师":
+            if "偏差" not in text and "预测" not in text:
+                issues.append("缺少偏差分析（预测vs实际对比）")
+            if "知识库" not in text and "knowledge" not in text:
+                warnings.append("未提及知识库更新")
+            if "准确率" not in text and "正确率" not in text:
+                warnings.append("缺少Agent效能准确率统计")
+            if "投资领导" not in text and "反馈" not in text:
+                warnings.append("缺少对投资领导的审核反馈")
+
         elif name == "操盘手":
             if "买入" not in text:
                 warnings.append("没有买入建议")
@@ -430,6 +442,22 @@ def analyze_agent_quality(reports: dict, agent_status: dict) -> dict:
                 issues.append("买入清单缺少止损位")
             if "仓位" not in text and "上限" not in text:
                 issues.append("缺少仓位汇总和合规检查")
+
+        elif name == "政策分析师":
+            if "政策" not in text and "宏观" not in text:
+                issues.append("缺少政策事件分析")
+            if "影响" not in text and "impact" not in text:
+                warnings.append("缺少政策影响评估")
+            if "来源" not in text and "数据源" not in text:
+                warnings.append("未标注信息来源")
+
+        elif name == "游资追踪师":
+            if "龙虎榜" not in text and "游资" not in text:
+                issues.append("缺少龙虎榜/游资分析")
+            if "情绪" not in text and "资金" not in text:
+                warnings.append("缺少资金情绪指数分析")
+            if "席位" not in text and "营业部" not in text:
+                warnings.append("缺少知名游资席位追踪")
 
         # 综合评级
         if issues:
@@ -544,13 +572,10 @@ def track_rework_status(rework_orders: list, report_dir: str, today_str: str) ->
         path = os.path.join(report_dir, d, f"{p}_{today_str}.md")
         text = load_report(path)
 
-        # 检查 #REWORKED 标记
+        # 检查 #REWORKED 标记（唯一可信的重做证据）
         has_rework_tag = "#REWORKED" in text if text else False
 
-        # 检查内容是否明显更新（长度 > 100 且包含头部的日期信息，说明被重新生成）
-        has_content = len(text) > 150 if text else False
-
-        reworked = has_rework_tag or has_content
+        reworked = has_rework_tag
 
         updated.append({
             "agent": name,
@@ -584,7 +609,7 @@ def make_decision() -> dict:
         "rework_status": [],
         "market_assessment": "未知",
         "final_plan": {
-            "should_trade": False,
+            "should_trade": None,
             "action": "观望",
             "buy": [],
             "sell": [],
@@ -741,7 +766,7 @@ def make_decision() -> dict:
             result["market_assessment"] = "高风险 — 建议减仓防御"
         elif has_warning:
             result["market_assessment"] = "中等风险 — 谨慎操作"
-        elif has_low and "牛市" in (risk_text or ""):
+        elif has_low:
             result["market_assessment"] = "低风险 — 可积极操作"
         else:
             result["market_assessment"] = "震荡市 — 控制仓位"

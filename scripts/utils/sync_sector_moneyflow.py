@@ -187,8 +187,7 @@ def sync_ths_daily(db: DatabaseManager, since: str) -> dict:
     today = datetime.now().strftime("%Y%m%d")
     target_date = since if since else today
 
-    print(f"
-{'='*60}")
+    print(f"\n{'='*60}")
     print(f"  同步 概念板块 (ths_daily)")
     print(f"  目标日期: {target_date}")
     print(f"{'='*60}")

@@ -802,7 +802,7 @@ def generate_review_report(trade_date: str = None) -> dict:
     if _db_review:
         # 读取当日大盘指数和主要持仓的收盘行情
         try:
-            index_codes = ["000001.SH", "399001.SZ", "399006.SZ", "688001.SH"]
+            index_codes = ["000001.SH", "399001.SZ", "399006.SZ", "000688.SH"]
             db_actual = {}
             for code in index_codes:
                 df = _db_review.get_daily_price(code, trade_date, trade_date)

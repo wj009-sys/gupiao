@@ -760,12 +760,13 @@ class DatabaseManager:
 
         try:
             cur = self.conn.cursor()
-            sql = f"""INSERT OR REPLACE INTO daily_price
+            sql = """INSERT OR REPLACE INTO daily_price
                 (ts_code, trade_date, asset_type, open, high, low, close,
                  pre_close, change, pct_chg, vol, amount)
-                VALUES (?, ?, '{asset_type}', ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
             cur.executemany(sql, [
-                (r["ts_code"], r["trade_date"], r["open"], r["high"], r["low"],
+                (r["ts_code"], r["trade_date"], asset_type,
+                 r["open"], r["high"], r["low"],
                  r["close"], r["pre_close"], r["change"], r["pct_chg"],
                  r["vol"], r["amount"])
                 for r in rows

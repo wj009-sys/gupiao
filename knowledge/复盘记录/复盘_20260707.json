@@ -1,6 +1,6 @@
 {
   "date": "2026-07-07",
-  "timestamp": "2026-07-07 23:03",
+  "timestamp": "2026-07-08 17:41",
   "inputs": {
     "情报": true,
     "分析": true,
@@ -189,7 +189,7 @@
   "因子建议": [],
   "errors": [],
   "accuracy_trend": {
-    "total_days": 6,
+    "total_days": 7,
     "avg_accuracy": 0.0,
     "recent_avg": 0.0,
     "trend": "持平 →"

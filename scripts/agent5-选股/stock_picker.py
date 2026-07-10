@@ -62,6 +62,30 @@ DEFAULT_SCORING_PROFILE = {
     "reversal_max_decline_pct": -15.0,         # 最大可接受回撤幅度
 }
 
+STOP_LOSS_RATIO = None  # lazy-loaded
+
+
+def _get_stop_loss_ratio() -> float:
+    """从止损规则.json读取固定比例止损阈值，默认-7%"""
+    global STOP_LOSS_RATIO
+    if STOP_LOSS_RATIO is not None:
+        return STOP_LOSS_RATIO
+    try:
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        path = os.path.join(project_root, "data", "止损规则.json")
+        with open(path, "r", encoding="utf-8") as f:
+            rules = json.load(f)
+        for rule in rules.get("规则", []):
+            if rule.get("类型") == "固定比例止损":
+                ratio = rule.get("参数", {}).get("比例", -7)
+                STOP_LOSS_RATIO = 1.0 + ratio / 100.0
+                return STOP_LOSS_RATIO
+    except Exception:
+        pass
+    STOP_LOSS_RATIO = 0.93
+    return STOP_LOSS_RATIO
+
+
 def _load_scoring_profile(config: dict) -> dict:
     """从配置加载评分曲线参数，缺失项用默认值"""
     rules = config.get("rules", {})
@@ -115,14 +139,11 @@ def _score_ideal_middle(value: float, ideal: float, max_score: float = 100,
     tiers = int((deviation - tolerance) / tolerance) + 1
     score = max_score - tiers * penalty
     return max(max_score * 0.3, min(max_score, score))
+
+import os, sys, json
 import pandas as pd
 import numpy as np
-
-import os
-import sys
-import json
 from datetime import datetime, timedelta
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.tushare_client import pro
 
@@ -803,8 +824,7 @@ def score_technical(ts_code: str) -> dict:
 def score_sentiment(ts_code: str, trade_date: str = None) -> dict:
     """情绪因子评分（0-100）— DB优先(moneyflow_stock)→Tushare API→涨跌幅兜底"""
     if not trade_date:
-        import datetime
-        trade_date = datetime.date.today().strftime("%Y%m%d")
+        trade_date = datetime.now().strftime("%Y%m%d")
 
     # === 路径A: 优先从 moneyflow_stock DB读取 ===
     if _db:
@@ -1297,7 +1317,7 @@ def pre_market_picks(top_n: int, config: dict, today: str) -> dict:
                 df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
                 close = df.iloc[0]["close"]
                 s["current_price"] = round(float(close), 2)
-                s["suggested_stop_loss"] = round(float(close) * 0.93, 2)
+                s["suggested_stop_loss"] = round(float(close) * _get_stop_loss_ratio(), 2)
             else:
                 s["current_price"] = None
                 s["suggested_stop_loss"] = None
@@ -1472,7 +1492,7 @@ def intraday_picks(top_n: int, config: dict, today: str) -> dict:
                 df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
                 close = df.iloc[0]["close"]
                 s["current_price"] = round(float(close), 2)
-                s["suggested_stop_loss"] = round(float(close) * 0.93, 2)
+                s["suggested_stop_loss"] = round(float(close) * _get_stop_loss_ratio(), 2)
             else:
                 s["current_price"] = None
                 s["suggested_stop_loss"] = None
@@ -1622,7 +1642,7 @@ def noon_picks(top_n: int, config: dict, today: str) -> dict:
                 df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
                 close = df.iloc[0]["close"]
                 s["current_price"] = round(float(close), 2)
-                s["suggested_stop_loss"] = round(float(close) * 0.93, 2)
+                s["suggested_stop_loss"] = round(float(close) * _get_stop_loss_ratio(), 2)
             else:
                 s["current_price"] = None
                 s["suggested_stop_loss"] = None
@@ -1785,7 +1805,7 @@ def evening_picks(top_n: int, config: dict, today: str) -> dict:
                 # Tushare数据按trade_date升序，需降序取最新
                 df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
                 close = df.iloc[0]["close"]
-                s["suggested_stop_loss"] = round(float(close) * 0.93, 2)
+                s["suggested_stop_loss"] = round(float(close) * _get_stop_loss_ratio(), 2)
                 s["current_price"] = round(float(close), 2)
             else:
                 s["suggested_stop_loss"] = None
@@ -2031,7 +2051,7 @@ def deep_scan_picks(top_n: int, config: dict, today: str) -> dict:
             if df is not None and not df.empty and len(df) >= 20:
                 df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
                 close = df.iloc[0]["close"]
-                s["suggested_stop_loss"] = round(float(close) * 0.93, 2)
+                s["suggested_stop_loss"] = round(float(close) * _get_stop_loss_ratio(), 2)
                 s["current_price"] = round(float(close), 2)
             else:
                 s["suggested_stop_loss"] = None

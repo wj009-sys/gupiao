@@ -41,7 +41,6 @@ python scripts/utils/todo_write.py --create "情报采集 YYYY-MM-DD" \
 ```
 data/portfolio.json     → 用户的持仓
 data/watchlist.json     → 用户的关注列表
-data/策略规则.json       → 交易策略（辅助理解信息重要性）
 ```
 
 > 如果这些文件尚未填写，仍可基于全市场数据完成采集，并在报告中提示用户填写。
@@ -51,14 +50,13 @@ data/策略规则.json       → 交易策略（辅助理解信息重要性）
 使用以下工具并行获取信息（尽量同时发起请求以提高效率）：
 
 #### 1. 大盘行情（Tushare）
-调用 `scripts/utils/tushare_client.py` Python 脚本获取：
+从 `scripts.utils.tushare_client` 导入 `pro` 对象获取：
 - 上证指数、深证成指、创业板指 的昨日收盘价、涨跌幅
 - 成交额、涨跌家数
 
 ```python
-# 通过 tushare_client.py 获取
-# 或直接调用 scripts/utils/tushare_client.py
-from scripts.utils import tushare_client
+# 通过 tushare_client 模块导入
+from scripts.utils.tushare_client import pro
 pro = tushare_client.pro
 sh = pro.index_daily(ts_code='000001.SH', start_date='YYYYMMDD', end_date='YYYYMMDD')
 sz = pro.index_daily(ts_code='399001.SZ', start_date='YYYYMMDD', end_date='YYYYMMDD')

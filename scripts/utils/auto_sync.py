@@ -1253,7 +1253,6 @@ def post_sync_data_check(db: DatabaseManager, trading_days: list,
                 if asset_type == 'F':
                     # ETF: fund_daily 不在 Provider 中，走 DataProvider.daily()
                     # 但DataProvider没有fund_daily，直接用Tushare
-                    import tushare as ts
                     from scripts.utils.tushare_client import pro as tushare_pro
                     df = tushare_pro.fund_daily(ts_code=code,
                                                  start_date=latest_td,
@@ -1467,11 +1466,11 @@ def sync_moneyflow_hsgt(db: DatabaseManager, trading_days: list,
             if df is not None and not df.empty:
                 row = df.iloc[0]
                 data = {
-                    "north_money": float(row.get("north_money", 0)),
-                    "south_money": float(row.get("south_money", 0)),
-                    "hgt": float(row.get("hgt", 0)),
-                    "sgt": float(row.get("sgt", 0)),
-                    "north_net": float(row.get("north_money", 0)),  # 无直接north_net，近似
+                    "north_money": float(row.get("north_money") or 0),
+                    "south_money": float(row.get("south_money") or 0),
+                    "hgt": float(row.get("hgt") or 0),
+                    "sgt": float(row.get("sgt") or 0),
+                    "north_net": float(row.get("north_money") or 0),  # 无直接north_net，近似
                 }
                 if db.upsert_moneyflow_hsgt(td, data):
                     pulled += 1

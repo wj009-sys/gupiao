@@ -1,6 +1,5 @@
 ---
 name: agent6-操盘手
-model: default
 description: >
   A股交易计划Agent。基于选股建议、风控约束和仓位规则，
   制定具体可执行的买入/卖出/持有交易计划。

@@ -808,7 +808,7 @@ def generate_markdown_report(data: dict) -> str:
     # 其他政策
     others = [e for e in data["policy_events"] if e["category"] == "宏观政策"]
     if others:
-        lines.append("## 📋 其他重要政策")
+        lines.append("## 📋 其他宏观消息")
         for e in others:
             lines.append(f"- **{e['title']}**")
             lines.append(f"  - {e['content']}")

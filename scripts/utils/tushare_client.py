@@ -490,7 +490,7 @@ def get_pro_bar(ts_code: str, freq: str = "D", asset: str = "E",
             kwargs["ma"] = ma
         if factors:
             kwargs["factors"] = factors
-        return ts.pro_bar(**kwargs)
+        return pro.pro_bar(**kwargs)
     except Exception as e:
         print(f"[tushare] get_pro_bar 失败({ts_code}): {e}")
         return pd.DataFrame()

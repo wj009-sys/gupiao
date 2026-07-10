@@ -13,8 +13,22 @@
 | 2026-07-05 | fix | scripts/utils/fetch_*.py | 达尔文16.0: 移除无效revenue_yoy字段引用 |
 | 2026-07-05 | feat | webui/ | 达尔文16.0: WEBUI升级(Agent8/9+数据库监控+版本16.0) |
 | 2026-07-05 | chore | .claude/scheduled_tasks.json | 达尔文16.0: 自动同步任务ID重命名 |
-| 日期 | 类型 | 文件 | 变更摘要 |
-|:----|:----|:-----|:--------|
+| 2026-07-10 | 📝 修复 | scripts/utils/eastmoney_client.py | 使用全局限流网关替代裸requests.get(HIGH) |
+| 2026-07-10 | 📝 修复 | skills/agent6-操盘手/SKILL.md | 移除无效model:default字段(CRITICAL) |
+| 2026-07-10 | 📝 修复 | scripts/agent2-技术分析/analyze.py | 恒等映射删除+vol回退amount改为0(2HIGH) |
+| 2026-07-10 | 📝 修复 | scripts/agent3-风控/risk_check.py | 止损规则前缀匹配+load_position_rules消费JSON+移动止损变体(2CRITICAL+2HIGH) |
+| 2026-07-10 | 📝 修复 | scripts/agent7-决策/leader.py | should_trade初始None+Agent8/9质量审核+复盘师标准+重做检测+LOW判定(4HIGH) |
+| 2026-07-10 | 📝 修复 | scripts/agent9-游资追踪/hot_money_tracker.py | 资金流向/1e4移除+net_amount含超大单elg(CRITICAL+HIGH) |
+| 2026-07-10 | 📝 修复 | scripts/agent6-操盘/trader.py | 正则捕获组顺序修复+CRITICAL风险等级映射(2CRITICAL) |
+| 2026-07-10 | 📝 修复 | scripts/agent_ask/ask.py | MaStrategy/VolumePriceStrategy数据方向修复+北交所BJ后缀+新鲜度校验(2CRITICAL+3HIGH) |
+| 2026-07-10 | 📝 修复 | scripts/agent4-复盘/review.py | 科创50指数代码修正: 688001.SH→000688.SH(CRITICAL) |
+| 2026-07-10 | 📝 修复 | scripts/utils/tushare_client.py | get_pro_bar bypass lazy loading修复: ts.pro_bar→pro.pro_bar(CRITICAL) |
+| 2026-07-10 | 📝 修复 | scripts/utils/db_manager.py | asset_type SQL注入修复: f-string→参数化查询(CRITICAL) |
+| 2026-07-10 | 📝 fix | scripts/utils/sync_sector_moneyflow.py | 修复line 190多行f-string语法错误（{'='*60}跨行导致SyntaxError） |
+| 2026-07-10 | 📝 major | data/portfolio.json, data/watchlist.json | 全部清仓：24持仓归零+自选股清空 |
+| 2026-07-10 | 📝 major | data/watchlist.json | 全部清仓时同步清空自选股列表 |
+| 2026-07-10 | 📝 major | data/portfolio.json | 全部清仓：24个持仓品种归零，更新为清仓状态 |
+| 2026-07-08 | 📝 复盘 | 复盘记录/复盘_20260707.json | 日常复盘：偏差分析 + 策略建议 + 准确率趋势 |
 | 2026-07-07 | 📝 update | 参考/Tushare-Pro-API参考.md | Document/1完整学情编译：平台概述+演进历史+MCP Server+Skills+HTTP API+多语言SDK+Web调试工具+分类更新225接口 |
 | 2026-07-07 | 🔧 新增 | scripts/utils/tushare_client.py | 新增7个API封装: get_pro_bar(通用行情P0)/margin/hk_hold/forecast/index_global/limit_list_d |
 | 2026-07-07 | 📝 更新 | 参考/Tushare-Pro-API参考.md | 扩展为18大类220+API完整目录+项目使用对照+P0/P1建议接入清单 |
@@ -184,3 +198,19 @@
 | ✏️ 修正 | 内容错误修正 |
 | 🔄 重构 | 组织结构调整 |
 | ❌ 废弃 | 标记为过时 |
+| 2026-07-10 | 📝 修复 | documentation | 知识库Agent数字修正(LLM-Wiki/CHANGES表格/选股策略MACD描述)(MEDIUM) |
+| 2026-07-10 | 📝 修复 | data/止损规则.json | 移除后缀变体,统一使用基础类型名(MEDIUM) |
+| 2026-07-10 | 📝 修复 | scripts/agent3-风控/risk_check.py | 仓位上限max 100% cap(MEDIUM) |
+| 2026-07-10 | 📝 修复 | scripts/agent8-政策分析/policy_analyst.py | 报告标题'其他重要政策→其他宏观消息'(MEDIUM) |
+| 2026-07-10 | 📝 修复 | scripts/agent9-游资追踪/hot_money_tracker.py | 打板数据查找提前break(MEDIUM) |
+| 2026-07-10 | 📝 修复 | scripts/utils/wechat_send.py | 移除硬编码CC_BOT_ID默认值(MEDIUM) |
+| 2026-07-10 | 📝 修复 | scripts/agent1-情报采集/fetch_all.py | top_gainers→top_sectors命名修正(LOW) |
+| 2026-07-10 | 📝 修复 | scripts/utils/auto_sync.py | 移除未使用的import tushare+import顺序整理(MEDIUM) |
+| 2026-07-10 | 📝 修复 | scripts/agent5-选股/stock_picker.py | import移到函数外+datetime.date→datetime.now(LOW) |
+| 2026-07-10 | 📝 修复 | scripts/agent6-操盘/trader.py | 硬编码-7%止损改为从止损规则.json读取(HIGH) |
+| 2026-07-10 | 📝 修复 | scripts/agent5-选股/stock_picker.py | 5处硬编码0.93止损改为从止损规则.json读取(HIGH) |
+| 2026-07-10 | 📝 修复 | scripts/agent9-游资追踪/hot_money_tracker.py | 龙虎榜代码映射支持北交所+提取_code_to_ts函数(HIGH) |
+| 2026-07-10 | 📝 修复 | scripts/utils/data_cleaner.py | 添加SQL注入防护白名单+_check_whitelist(HIGH) |
+| 2026-07-10 | 📝 修复 | skills/agent1-情报员/SKILL.md | 修正tushare_client描述+移除策略规则.json引用(HIGH) |
+| 2026-07-10 | 📝 修复 | skills/agent2-分析师/SKILL.md | 移除策略规则.json引用(HIGH) |
+| 2026-07-10 | 📝 修复 | skills/agent5-选股机器人/SKILL.md | 添加--deep-scan参数说明(HIGH) |

@@ -211,7 +211,7 @@ def determine_market_environment(env_score: int, index_data: dict = None,
 
     # 应用风险偏好偏移量
     if base["level"] != "extreme":
-        base["max_position"] = max(0, base["max_position"] + pos_offset)
+        base["max_position"] = min(100, max(0, base["max_position"] + pos_offset))
         base["max_single"] = max(0, base["max_single"] + single_offset)
 
     # 标注风控档位
@@ -222,19 +222,34 @@ def determine_market_environment(env_score: int, index_data: dict = None,
 
 
 def _base_market_environment(env_score: int, index_data: dict = None) -> dict:
-    """原始市场环境判断（不含风险偏好偏移，供 determine_market_environment 调用）"""
+    """原始市场环境判断（不含风险偏好偏移，供 determine_market_environment 调用）
+
+    仓位上限优先从 data/仓位管理规则.json 读取，无配置时使用内置默认值。
+    """
     if env_score is None and index_data is None:
         return {"level": "unknown", "name": "未知", "max_position": 80, "max_single": 20}
 
+    # 从配置读取仓位上限（如果可用）
+    position_rules = load_position_rules()
+    env_configs = position_rules.get("市场环境", {}) if position_rules else {}
+
+    def _get_limits(env_name):
+        cfg = env_configs.get(env_name, {})
+        return cfg.get("总仓位上限"), cfg.get("单票上限")
+
     if env_score is not None:
         if env_score >= 85:
-            return {"level": "bull", "name": "牛市确认", "max_position": 100, "max_single": 30}
+            mp, ms = _get_limits("牛市确认") or (100, 30)
+            return {"level": "bull", "name": "牛市确认", "max_position": mp, "max_single": ms}
         elif env_score >= 60:
-            return {"level": "range", "name": "震荡市", "max_position": 80, "max_single": 20}
+            mp, ms = _get_limits("震荡市") or (80, 20)
+            return {"level": "range", "name": "震荡市", "max_position": mp, "max_single": ms}
         elif env_score >= 30:
-            return {"level": "bear", "name": "熊市/调整", "max_position": 50, "max_single": 10}
+            mp, ms = _get_limits("熊市/调整") or (50, 10)
+            return {"level": "bear", "name": "熊市/调整", "max_position": mp, "max_single": ms}
         else:
-            return {"level": "extreme", "name": "极端行情", "max_position": 0, "max_single": 0}
+            mp, ms = _get_limits("极端行情") or (0, 0)
+            return {"level": "extreme", "name": "极端行情", "max_position": mp, "max_single": ms}
 
     # 如果有指数数据但无评分，用均线判断
     if index_data:
@@ -243,15 +258,20 @@ def _base_market_environment(env_score: int, index_data: dict = None) -> dict:
         ma_align = index_data.get("ma_align", "")
 
         if above_ma60 and "多头" in ma_align:
-            return {"level": "bull", "name": "牛市确认", "max_position": 100, "max_single": 30}
+            mp, ms = _get_limits("牛市确认") or (100, 30)
+            return {"level": "bull", "name": "牛市确认", "max_position": mp, "max_single": ms}
         elif above_ma20:
-            return {"level": "range", "name": "震荡市", "max_position": 80, "max_single": 20}
+            mp, ms = _get_limits("震荡市") or (80, 20)
+            return {"level": "range", "name": "震荡市", "max_position": mp, "max_single": ms}
         elif above_ma20 is False and above_ma60 is True:
-            return {"level": "bear", "name": "熊市/调整", "max_position": 50, "max_single": 10}
+            mp, ms = _get_limits("熊市/调整") or (50, 10)
+            return {"level": "bear", "name": "熊市/调整", "max_position": mp, "max_single": ms}
         else:
-            return {"level": "extreme", "name": "极端行情", "max_position": 0, "max_single": 0}
+            mp, ms = _get_limits("极端行情") or (0, 0)
+            return {"level": "extreme", "name": "极端行情", "max_position": mp, "max_single": ms}
 
-    return {"level": "range", "name": "震荡市", "max_position": 80, "max_single": 20}
+    mp, ms = _get_limits("震荡市") or (80, 20)
+    return {"level": "range", "name": "震荡市", "max_position": mp, "max_single": ms}
 
 
 def check_stop_loss(holding: dict, current_price: float, pct_chg: float,
@@ -305,7 +325,7 @@ def check_stop_loss(holding: dict, current_price: float, pct_chg: float,
         rule_type = rule.get("类型", "")
         params = rule.get("参数", {})
 
-        if rule_type == "固定比例止损":
+        if rule_type.startswith("固定比例止损"):
             # 基础阈值 + 风险偏好偏移量
             base_threshold = params.get("比例", -7)
             threshold = base_threshold + stop_offset  # stop_offset: 激进=-3(→-10), 中性=0(→-7), 保守=+2(→-5)
@@ -320,7 +340,7 @@ def check_stop_loss(holding: dict, current_price: float, pct_chg: float,
                     "action": "强制止损",
                 })
 
-        elif rule_type == "移动止损":
+        elif rule_type.startswith("移动止损"):
             base_retreat = params.get("回撤比例", -5)
             retreat = base_retreat + trail_offset  # trail_offset: 激进=-3(→-8), 中性=0(→-5), 保守=+2(→-3)
             # 如果盈利状态下从最高点回撤超过阈值

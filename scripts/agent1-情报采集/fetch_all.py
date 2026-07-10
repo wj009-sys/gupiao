@@ -200,8 +200,8 @@ def generate_data_json(trade_date: str = None) -> dict:
         "market_overview": {},
         "moneyflow_hsgt": {},
         "up_down_count": {},
-        "top_gainers": [],
-        "top_losers": [],
+        "top_sectors": [],
+        "bottom_sectors": [],
         "limit_list": [],
         "ths_hot": [],
         "hot_reason": [],          # 同花顺热点题材归因（a-stock-data）
@@ -251,10 +251,10 @@ def generate_data_json(trade_date: str = None) -> dict:
         ths_df = fetch_ths_hot(trade_date)
         if not ths_df.empty:
             data["ths_hot"] = ths_df.to_dict("records")
-            data["top_gainers"] = ths_df.head(5).to_dict("records")
+            data["top_sectors"] = ths_df.head(5).to_dict("records")
             # 跌幅靠前的
             losers = ths_df[ths_df["pct_chg"] < 0].tail(5)
-            data["top_losers"] = losers.to_dict("records") if not losers.empty else []
+            data["bottom_sectors"] = losers.to_dict("records") if not losers.empty else []
             print(f"  {ok} 板块排名: {len(ths_df)} 个概念板块")
     except Exception as e:
         data["errors"].append(f"板块排名获取失败: {e}")

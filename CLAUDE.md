@@ -53,7 +53,7 @@
 
 ### 自动同步架构
 ```
-Cron: 每天18:03 (工作日)
+Cron: 每天16:03 (工作日)
   python auto_sync.py --auto-sync  ← 主力：收盘后自动拉全量
         │
         ▼
@@ -113,7 +113,7 @@ python scripts/utils/auto_sync.py --auto-sync --max-minutes 15 --max-stocks 500
 | 🕵️ Agent1 情报员 | `skills/agent1-情报员/SKILL.md` | `fetch_all.py` | **96** (Darwin五星) | 默认 | 07:00 |
 | 📊 Agent2 分析师 | `skills/agent2-分析师/SKILL.md` | `analyze.py` | **97** (Darwin五星) | 默认 | 08:30 |
 | 🛡️ Agent3 风控官 | `skills/agent3-风控官/SKILL.md` | `risk_check.py` | **97** (Darwin五星) | 默认 | 按需 |
-| 🔄 Agent4 复盘师 | `skills/agent4-复盘师/SKILL.md` | `review.py` | **97** (Darwin五星) | **opus** | 21:00 |
+| 🔄 Agent4 复盘师 | `skills/agent4-复盘师/SKILL.md` | `review.py` | **97** (Darwin五星) | **opus** | 16:00 |
 | 🔍 Agent5 选股机器人 | `skills/agent5-选股机器人/SKILL.md` | `stock_picker.py` | **100** (Darwin五星) | 默认 | 09:00/12:00/21:30 |
 | 🎯 Agent6 操盘手 | `skills/agent6-操盘手/SKILL.md` | `trader.py` | **97** (Darwin五星) | 默认 | 按需 |
 | 🏆 Agent7 投资领导 | `skills/agent7-投资领导/SKILL.md` | `leader.py` | **96** (Darwin五星) | **opus** | 按需 |
@@ -176,7 +176,7 @@ Agent 的 SKILL.md frontmatter 中通过 `model:` 字段声明所需模型。
 - **D9反例**：10条（新增测试数据当真、移动止损用当日涨跌幅、忽略MA20/MA60联动）
 
 ### Agent4：复盘师（自我进化）
-- **职责**：每晚9点复盘当天研判，对比预测vs实际，更新知识库
+- **职责**：每天16点复盘当天研判，对比预测vs实际，更新知识库
 - **输出**：`reports/日报/复盘/复盘报告_YYYY-MM-DD.md`
 - **维护**：`knowledge/策略/` + `knowledge/复盘记录/`
 - **D3异常**：11条fallback（新增停牌/退市、预测提取混乱、板块匹配失败等）
@@ -450,15 +450,15 @@ skills/            - 自定义 Skills
 
 | 时间 | 任务 | cron | 触发方式 |
 |------|------|------|---------|
-| **18:03 工作日** | **🔄 数据自动同步** | `3 18 * * 1-5` | CronCreate → auto_sync.py → DB更新 |
 | 07:00 工作日 | Agent1 情报采集 | `7 7 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
 | 07:30 工作日 | Agent8 政策分析 | `33 7 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
 | 08:00 工作日 | Agent9 游资追踪 | `3 8 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
 | 08:30 工作日 | Agent2 技术分析 | `13 8 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
 | 09:00 工作日 | Agent5 早盘选股 | `17 9 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
 | 12:00 工作日 | Agent5 午盘选股 | `23 12 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
-| 21:00 工作日 | Agent4 复盘 | `37 21 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
-| 21:30 工作日 | Agent5 晚间选股 | `47 21 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
+| **16:03 工作日** | **🔄 数据自动同步** | `3 16 * * 1-5` | CronCreate → auto_sync.py → DB更新 |
+| 16:47 工作日 | Agent5 晚间选股 | `47 16 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
+| 17:03 工作日 | Agent4 复盘 | `3 17 * * 1-5` | CronCreate → Python脚本 → 微信推送 |
 | 按需 | Agent3 风控检查 | - | 手动 `/风控官` |
 | 按需 | Agent5 盘中/按需选股 | - | 手动 `/选股` 或 `/盘中选股` |
 | 按需 | Agent6 操盘手 | - | 手动 `/操盘` |

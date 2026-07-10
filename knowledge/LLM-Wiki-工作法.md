@@ -228,7 +228,7 @@ tags: []
 | **index.md** | `knowledge/INDEX.md` | ✅ | 2026-07-03 新建 |
 | **log.md** | `knowledge/CHANGES.md` | ✅ | 2026-07-03 新建 |
 | **Lint** | `scripts/utils/knowledge_lint.py` | ✅ | 2026-07-03 新建 |
-| **ingest 工作流** | Agent1 情报采集 → Agent2 分析 → ... | ✅ | 7 Agent 流水线 |
+| **ingest 工作流** | Agent1 情报采集 → Agent2 分析 → ... | ✅ | 10 Agent 流水线 |
 | **query 工作流** | 用户提问 → 查知识库 → 合成回答 | ✅ | 但可更正式化 |
 | **前端 YAML frontmatter** | 无 | ❌ | 可逐步添加 |
 | **3个月过时自动标记** | 无 | ❌ | lint 已支持检测，可加自动标记 |
@@ -240,7 +240,7 @@ tags: []
 Karpathy 的 gist 面向**通用知识管理**，而我们面向**A股投研自动化**，有天然优势：
 
 1. **数据自动更新**：行情数据每日自动同步，不需要手动 "ingest"
-2. **Agent 流水线**：7 Agent 闭环本身就是 ingest → compile → verify 的自动化
+2. **Agent 流水线**：10 Agent 闭环本身就是 ingest → compile → verify 的自动化
 3. **时间序列维度**：复盘记录天然按时间索引，适合趋势分析
 4. **回测验证**：预测 vs 实际对比，本身就是 lint 的验证环节
 

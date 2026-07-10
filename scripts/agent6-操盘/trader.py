@@ -52,6 +52,21 @@ from datetime import datetime
 
 # 项目根目录
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+
+def _get_stop_loss_ratio() -> float:
+    """从止损规则.json读取固定比例止损阈值，默认-7%"""
+    try:
+        path = os.path.join(PROJECT_ROOT, "data", "止损规则.json")
+        with open(path, "r", encoding="utf-8") as f:
+            rules = json.load(f)
+        for rule in rules.get("规则", []):
+            if rule.get("类型") == "固定比例止损":
+                ratio = rule.get("参数", {}).get("比例", -7)
+                return 1.0 + ratio / 100.0
+    except Exception:
+        pass
+    return 0.93
 sys.path.insert(0, PROJECT_ROOT)
 from scripts.utils.tushare_client import get_daily
 
@@ -96,7 +111,7 @@ def extract_top_picks(intelligence_text: str) -> list:
     codes = re.findall(r'\b(\d{6}\.(SZ|SH))\b', intelligence_text)
     # Also try markdown table format
     names = re.findall(r'\*\*(.+?)\((\d{6}\.(?:SZ|SH))\)\*\*', intelligence_text)
-    names = names or re.findall(r'\|\s*\d+\s*\|\s*(\d{6}\.(?:SZ|SH))\s*\|\s*\*\*(.+?)\*\*', intelligence_text)
+    names = names or re.findall(r'\|\s*\d+\s*\|\s*\*\*(.+?)\*\*\s*\|\s*(\d{6}\.(?:SZ|SH))', intelligence_text)
 
     for name, code in names:
         picks.append({"name": name, "code": code})
@@ -252,7 +267,9 @@ def generate_trade_plan() -> dict:
     # 2. 解析风控等级
     risk_level = "MEDIUM"
     if risk_text:
-        if "HIGH" in risk_text or "CRITICAL" in risk_text:
+        if "CRITICAL" in risk_text:
+            risk_level = "CRITICAL"
+        elif "HIGH" in risk_text:
             risk_level = "HIGH"
         elif "LOW" in risk_text and "WARNING" not in risk_text:
             risk_level = "LOW"
@@ -261,6 +278,7 @@ def generate_trade_plan() -> dict:
     # 3. 确定仓位上限（从仓位管理规则.json读取）
     position_rules = load_json(os.path.join(PROJECT_ROOT, "data", "仓位管理规则.json"))
     _env_map = {
+        "CRITICAL": "极端行情",
         "HIGH": "熊市/调整",
         "LOW": "牛市确认",
         "MEDIUM": "震荡市",
@@ -348,7 +366,7 @@ def generate_trade_plan() -> dict:
                 ),
                 "support": levels["support"],
                 "resistance": levels["resistance"],
-                "stop_loss": round(current_price * 0.93, 2) if current_price > 0 else 0,
+                "stop_loss": round(current_price * _get_stop_loss_ratio(), 2) if current_price > 0 else 0,
                 "limit_up": limit_info.get("涨停") if limit_info else None,
                 "limit_down": limit_info.get("跌停") if limit_info else None,
                 "price_ok": price_ok,
@@ -373,8 +391,9 @@ def generate_trade_plan() -> dict:
         cost = h.get("成本价", 0)
         pnl_pct = ((current_price - cost) / cost * 100) if cost > 0 else 0
 
-        # 检查止损
-        if pnl_pct <= -7:
+        # 检查止损（从止损规则.json读取阈值）
+        stop_loss_pct = (_get_stop_loss_ratio() - 1.0) * 100  # 0.93→-7
+        if pnl_pct <= stop_loss_pct:
             result["sell_plan"].append({
                 "code": code,
                 "name": name,

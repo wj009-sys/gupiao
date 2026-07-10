@@ -67,7 +67,7 @@ def ths_hot_reason(date: Optional[str] = None) -> pd.DataFrame:
     if date is None:
         date = _date.today().strftime("%Y-%m-%d")
 
-    url = (f"http://zx.10jqka.com.cn/event/api/getharden/"
+    url = (f"https://zx.10jqka.com.cn/event/api/getharden/"
            f"date/{date}/orderby/date/orderway/desc/charset/GBK/")
     headers = {"User-Agent": UA}
 

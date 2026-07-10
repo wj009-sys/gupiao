@@ -93,14 +93,13 @@ def analyze_index(ts_code: str, name: str, end_date: str) -> dict:
     # D4-CP1: 按 trade_date 排序（旧→新），否则指标计算倒置
     df = df.sort_values("trade_date").reset_index(drop=True)
 
-    # 重命名列以匹配 technical_analysis 的接口
-    df_ta = df.rename(columns={
-        "open": "open", "high": "high", "low": "low",
-        "close": "close", "vol": "volume"
-    })
-    # 确保列存在
+    # 重命名 vol→volume 以匹配 technical_analysis 接口
+    df_ta = df.rename(columns={"vol": "volume"})
+    # 确保列存在（缺失 high/low/open 时标记警告而非静默用close填充）
     for col in ["open", "high", "low", "close"]:
         if col not in df_ta.columns:
+            if col != "close":
+                print(f"  [WARN] {name} 缺少{col}列，使用close近似，波动率指标不可靠")
             df_ta[col] = df_ta.get("close", 0)
 
     # D4-CP2: 指标数据长度检查
@@ -130,7 +129,7 @@ def analyze_index(ts_code: str, name: str, end_date: str) -> dict:
         "ts_code": ts_code,
         "close": round(close, 2),
         "pct_chg": round(float(last.get("pct_chg", 0)), 2),
-        "volume": float(last.get("vol", last.get("amount", 0))),
+        "volume": float(last.get("vol", 0)),
         "signals": signals,
         "ma_align": ma_align,
         "ma_5": round(ma5, 2) if ma5 else None,

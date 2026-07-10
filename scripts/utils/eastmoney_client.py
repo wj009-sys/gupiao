@@ -36,10 +36,10 @@ D9 工作反例:
 
 import time
 import pandas as pd
-import requests
 import json
 from datetime import datetime
 from typing import Optional
+from scripts.utils._proxy import rate_limited_get, get_session_with_proxy
 
 # 东方财富API配置
 EASTMONEY_API = "https://push2.eastmoney.com/api/qt/clist/get"
@@ -109,16 +109,14 @@ def get_sector_data(retry: int = 2) -> pd.DataFrame:
     }
 
     proxies = _load_proxy()
+    _session = get_session_with_proxy(proxies)
     today_str = datetime.now().strftime("%Y%m%d")
 
     for attempt in range(retry + 1):
         try:
-            # 第一次请求：获取总数
-            resp = requests.get(
-                EASTMONEY_API, params=params,
-                headers=EASTMONEY_HEADERS, proxies=proxies,
-                timeout=15
-            )
+            # 第一次请求：获取总数(通过全局限流网关)
+            resp = rate_limited_get(_session, EASTMONEY_API, params=params,
+                                    headers=EASTMONEY_HEADERS, timeout=15)
             data = resp.json()
 
             if data.get("rc") != 0 or data.get("data") is None:
@@ -137,18 +135,15 @@ def get_sector_data(retry: int = 2) -> pd.DataFrame:
             PAGE_SIZE = 100
             total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
             all_rows = []
+            non_bk_count = 0
 
             for page in range(1, total_pages + 1):
                 params["pn"] = str(page)
                 params["pz"] = str(PAGE_SIZE)
 
                 if page > 1:
-                    time.sleep(0.15)  # 翻页间隔，避免限频
-                    resp = requests.get(
-                        EASTMONEY_API, params=params,
-                        headers=EASTMONEY_HEADERS, proxies=proxies,
-                        timeout=15
-                    )
+                    resp = rate_limited_get(_session, EASTMONEY_API, params=params,
+                                            headers=EASTMONEY_HEADERS, timeout=15)
                     page_data = resp.json()
                     if page_data.get("rc") != 0:
                         print(f"[EastMoney] 第{page}页拉取失败 rc={page_data.get('rc')}，跳过", flush=True)
@@ -168,6 +163,7 @@ def get_sector_data(retry: int = 2) -> pd.DataFrame:
 
                     ts_code = str(item.get("f12", ""))
                     if not ts_code.startswith("BK"):
+                        non_bk_count += 1
                         continue
 
                     close_val = item.get("f2")
@@ -222,6 +218,9 @@ def get_sector_data(retry: int = 2) -> pd.DataFrame:
 
             up_count = len(df[df['pct_chg'] > 0])
             down_count = len(df[df['pct_chg'] < 0])
+            # CP4: 检查非BK代码占比（API格式变化检测）
+            if non_bk_count > 0 and non_bk_count > total * 0.05:
+                print(f"[EastMoney] WARN: 非BK前缀代码 {non_bk_count}/{total} ({non_bk_count/total*100:.0f}%), API格式可能已变化", flush=True)
             print(f"[EastMoney] 获取 {len(df)}/{total} 个板块 (涨:{up_count} 跌:{down_count})", flush=True)
             return df
 

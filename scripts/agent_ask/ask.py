@@ -159,8 +159,8 @@ class MaStrategy(StrategyTemplate):
     def analyze(self, ts_code: str, df: pd.DataFrame, indicators: dict) -> dict:
         if df.empty or len(df) < 20:
             return {"conclusion": "数据不足", "signals": [], "detail": ""}
-        closes = df["close"].values
-        vols = df["vol"].values if "vol" in df.columns else None
+        closes = df["close"].values[::-1]
+        vols = df["vol"].values[::-1] if "vol" in df.columns else None
 
         def ma(x, n):
             return np.mean(x[:n]) if len(x) >= n else None
@@ -446,8 +446,8 @@ class VolumePriceStrategy(StrategyTemplate):
     def analyze(self, ts_code: str, df: pd.DataFrame, indicators: dict) -> dict:
         if df.empty or len(df) < 20:
             return {"conclusion": "数据不足", "signals": [], "detail": ""}
-        closes = df["close"].values
-        volumes = df["vol"].values if "vol" in df.columns else None
+        closes = df["close"].values[::-1]
+        volumes = df["vol"].values[::-1] if "vol" in df.columns else None
         if volumes is None:
             return {"conclusion": "无成交量数据", "signals": [], "detail": ""}
 
@@ -459,8 +459,8 @@ class VolumePriceStrategy(StrategyTemplate):
         avg_vol_5 = np.mean(volumes[:5])
         recent_vol = np.mean(volumes[:3])
 
-        # 价格趋势
-        ret_5d = (closes[0] - closes[min(4, len(closes)-1)]) / closes[min(4, len(closes)-1)] * 100 if len(closes) >= 5 else 0
+        # 价格趋势（最新 vs 5日前）
+        ret_5d = (closes[0] - closes[4]) / closes[4] * 100 if len(closes) >= 5 else 0
 
         vol_ratio = recent_vol / avg_vol_20 if avg_vol_20 > 0 else 1
 
@@ -721,31 +721,32 @@ def ask(code: str, strategy_name: str = "综合", mode: str = "standard") -> dic
     Returns:
         分析结果dict
     """
-    # 代码补全
+    # 代码补全（含北交所 BJ 支持）
     ts_code = code.upper()
-    if not ts_code.endswith(".SH") and not ts_code.endswith(".SZ"):
-        # 自动补全
+    if not ts_code.endswith(".SH") and not ts_code.endswith(".SZ") and not ts_code.endswith(".BJ"):
         if ts_code.startswith("6"):
             ts_code = ts_code + ".SH"
+        elif ts_code.startswith(("4", "8")):
+            ts_code = ts_code + ".BJ"
         else:
             ts_code = ts_code + ".SZ"
 
     # ── 数据新鲜度校验：实时行情 vs DB收盘 ──
     try:
         if _HAS_TENCENT:
-            from scripts.utils.tencent_provider import tencent_quote
-            raw_code = code.strip().upper()
-            if raw_code.endswith('.SH') or raw_code.endswith('.SZ') or raw_code.endswith('.BJ'):
-                raw_code = raw_code[:-3]
+            from scripts.utils.tencent_provider import tencent_quote, normalize_code
+            raw_code = normalize_code(code.strip().upper())
             q = tencent_quote([raw_code])
-            real_price = q.get(raw_code, {}).get('price', 0)
+            rp = q.get(raw_code, {})
+            real_price = rp.get('price')
+            has_realtime = rp.get('name') is not None
             # 用 DatabaseManager 读取 DB 最新收盘价
             from scripts.utils.db_manager import DatabaseManager
             _db_fresh = DatabaseManager()
             df_price = _db_fresh.get_daily_price(ts_code)
             # get_daily_price 按 trade_date ASC 排列，取最后一行即最新收盘
-            db_price = df_price.iloc[-1]['close'] if not df_price.empty else 0
-            if real_price and db_price and abs(real_price - db_price) > 0.01:
+            db_price = df_price.iloc[-1]['close'] if not df_price.empty else None
+            if real_price is not None and db_price is not None and abs(real_price) > 1e-6 and abs(db_price) > 1e-6:
                 diff_pct = (real_price - db_price) / db_price * 100
                 if abs(diff_pct) > 0.5:
                     print(f"  ⚠️ 数据新鲜度警告: 实时价{real_price:.2f} vs DB收盘{db_price:.2f}"

@@ -59,8 +59,8 @@ for code in codes:
 # 读取情报员今日的报告（若有）
 cat reports/日报/情报/情报摘要_YYYY-MM-DD.md
 
-# 读取策略规则
-cat data/策略规则.json
+# 读取技术指标基线参数（如需自定义MACD/KDJ周期）
+# MACD(12,26,9), KDJ(9,3,3), RSI(14), BOLL(20) 已内置到 technical_analysis.py
 
 # 读取前一次分析报告（若有，用于对比变化）
 cat reports/日报/分析/分析报告_YYYY-MM-DD.md
@@ -381,7 +381,6 @@ blocks = eastmoney_concept_blocks("688017")
 
 - `scripts/agent2-技术分析/analyze.py` — 技术分析核心脚本
 - `scripts/utils/technical_analysis.py` — 技术指标计算函数库
-- `data/策略规则.json` — 买入/卖出策略参数
 - `reports/日报/情报/` — 情报员产出的情报报告（前置输入）
 
 ## 📋 Harness 工具

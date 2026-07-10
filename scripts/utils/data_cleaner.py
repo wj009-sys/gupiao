@@ -65,6 +65,29 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from scripts.utils.db_manager import DatabaseManager
 
+# SQL 表名/列名白名单（防止 f-string SQL 注入）
+_TABLE_WHITELIST = frozenset({
+    "daily_price", "daily_basic", "daily_indicator", "adj_factor",
+    "stock_basic", "index_basic", "fund_basic", "dividend",
+    "moneyflow_stock", "moneyflow_hsgt", "moneyflow_mkt",
+    "ths_daily", "fina_indicator", "trade_cal", "margin",
+})
+_COL_WHITELIST = frozenset({
+    "close", "open", "high", "low", "vol", "amount",
+    "pct_chg", "trade_date", "ts_code",
+    "adj_factor", "adj_close", "adj_high", "adj_low", "adj_open",
+    "pe", "pb", "pe_ttm", "total_mv", "circ_mv",
+    "turnover_rate", "volume_ratio",
+})
+
+
+def _check_whitelist(table: str, col: str = None):
+    """SQL注入防御：验证表名/列名在白名单中"""
+    assert table in _TABLE_WHITELIST, f"表名不在白名单: {table}"
+    if col:
+        assert col in _COL_WHITELIST, f"列名不在白名单: {col}"
+
+
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DB_PATH = os.path.join(PROJECT_ROOT, "data", "stocks.db")
 
@@ -201,6 +224,7 @@ def audit_database(db: DatabaseManager) -> dict:
     print("[审计] 3/12 NULL值检查...")
     null_cols = []
     for col in ["open", "high", "low", "close", "vol", "amount", "pre_close", "pct_chg"]:
+        _check_whitelist("daily_price", col)
         cur.execute(f"SELECT COUNT(*) FROM daily_price WHERE {col} IS NULL")
         n = cur.fetchone()[0]
         if n > 0:

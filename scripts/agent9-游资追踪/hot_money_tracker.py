@@ -99,6 +99,18 @@ def get_today() -> str:
     return datetime.now().strftime("%Y%m%d")
 
 
+def _code_to_ts(code: str) -> str:
+    """东财原始代码→ts_code格式（含北交所）"""
+    code = code.strip().upper()
+    if len(code) != 6 or not code.isdigit():
+        return code  # 非标准代码原样返回
+    if code.startswith(("6", "688", "689")):
+        return code + ".SH"
+    if code.startswith(("4", "8", "920")):
+        return code + ".BJ"
+    return code + ".SZ"
+
+
 def load_portfolio() -> list:
     try:
         path = os.path.join(PROJECT_ROOT, "data", "portfolio.json")
@@ -189,7 +201,7 @@ def fetch_dragon_tiger_eastmoney(trade_date: str) -> list:
             result = []
             for item in items:
                 result.append({
-                    "ts_code": item.get("SECURITY_CODE", "") + ".SH" if item.get("SECURITY_CODE", "").startswith("6") else item.get("SECURITY_CODE", "") + ".SZ",
+                    "ts_code": _code_to_ts(item.get("SECURITY_CODE", "")),
                     "name": item.get("SECURITY_NAME", ""),
                     "close": item.get("CLOSE_PRICE", 0),
                     "pct_chg": item.get("CHANGE_RATE", 0),
@@ -382,6 +394,7 @@ def generate_hot_money_tracking(trade_date: str = None) -> dict:
                 if zt_test:
                     data["limit_up_sentiment"] = limit_up_sentiment(ds)
                     data["limit_up_summary_text"] = sentiment_summary_text(ds)
+                    break  # 找到最近交易日数据后提前退出
                     data["limit_up_date"] = ds
                     data["limit_up_zt_count"] = len(zt_test)
                     data["limit_up_zb_count"] = len(em_zb_pool(ds))
@@ -414,11 +427,12 @@ def generate_hot_money_tracking(trade_date: str = None) -> dict:
                 data["holdings_moneyflow"].append({
                     "ts_code": code,
                     "name": h.get("名称", ""),
-                    "net_amount": float(row.get("buy_lg_amount", 0) - row.get("sell_lg_amount", 0)) / 1e4,
-                    "buy_lg_amount": float(row.get("buy_lg_amount", 0)) / 1e4 if "buy_lg_amount" in row else 0,
-                    "sell_lg_amount": float(row.get("sell_lg_amount", 0)) / 1e4 if "sell_lg_amount" in row else 0,
-                    "buy_sm_amount": float(row.get("buy_sm_amount", 0)) / 1e4 if "buy_sm_amount" in row else 0,
-                    "sell_sm_amount": float(row.get("sell_sm_amount", 0)) / 1e4 if "sell_sm_amount" in row else 0,
+                    "net_amount": float(row.get("buy_elg_amount", 0) + row.get("buy_lg_amount", 0)
+                                         - row.get("sell_elg_amount", 0) - row.get("sell_lg_amount", 0)),
+                    "buy_lg_amount": float(row.get("buy_lg_amount", 0)) if "buy_lg_amount" in row else 0,
+                    "sell_lg_amount": float(row.get("sell_lg_amount", 0)) if "sell_lg_amount" in row else 0,
+                    "buy_sm_amount": float(row.get("buy_sm_amount", 0)) if "buy_sm_amount" in row else 0,
+                    "sell_sm_amount": float(row.get("sell_sm_amount", 0)) if "sell_sm_amount" in row else 0,
                 })
         except Exception as e:
             logger.warning(f"个股资金流向获取失败 ({code} {h.get('名称', '')}): {e}")
